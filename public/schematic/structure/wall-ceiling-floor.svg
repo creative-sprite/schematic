@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<!-- Creator: CorelDRAW Home & Student 2018 -->
+<svg xmlns="http://www.w3.org/2000/svg" xml:space="preserve" width="300px" height="300px" version="1.1" style="shape-rendering:geometricPrecision; text-rendering:geometricPrecision; image-rendering:optimizeQuality; fill-rule:evenodd; clip-rule:evenodd"
+viewBox="0 0 300 300"
+ xmlns:xlink="http://www.w3.org/1999/xlink">
+ <defs>
+  <style type="text/css">
+   <![CDATA[
+    .fil2 {fill:none}
+    .fil1 {fill:black}
+    .fil0 {fill:white}
+   ]]>
+  </style>
+   <clipPath id="id0">
+    <path d="M75 75l150 0 0 150 -150 0 0 -150z"/>
+   </clipPath>
+ </defs>
+ <g id="Layer_x0020_1">
+  <metadata id="CorelCorpID_0Corel-Layer"/>
+  <polygon class="fil0" points="75,75 225,75 225,225 75,225 "/>
+  <g style="clip-path:url(#id0)">
+   <g id="_815436776">
+    <g>
+     <rect class="fil1" transform="matrix(8.83983 -8.83983 10.4458 10.4458 26.2421 43.9344)" width="2" height="22"/>
+     <rect class="fil1" transform="matrix(8.83983 -8.83983 10.4458 10.4458 26.2421 -4.82123)" width="2" height="22"/>
+     <rect class="fil1" transform="matrix(8.83983 -8.83983 10.4458 10.4458 26.2421 -54.8229)" width="2" height="22"/>
+     <rect class="fil1" transform="matrix(8.83983 -8.83983 10.4458 10.4458 26.2421 -104.825)" width="2" height="22"/>
+     <rect class="fil1" transform="matrix(8.83983 -8.83983 10.4458 10.4458 26.2421 -154.82)" width="2" height="22"/>
+     <rect class="fil1" transform="matrix(8.83983 -8.83983 10.4458 10.4458 26.2421 92.69)" width="2" height="22"/>
+     <rect class="fil1" transform="matrix(8.83983 -8.83983 10.4458 10.4458 26.2421 142.692)" width="2" height="22"/>
+     <rect class="fil1" transform="matrix(8.83983 -8.83983 10.4458 10.4458 26.2421 192.693)" width="2" height="22"/>
+     <rect class="fil1" transform="matrix(8.83983 -8.83983 10.4458 10.4458 26.2421 242.689)" width="2" height="22"/>
+    </g>
+   </g>
+  </g>
+  <polygon class="fil2" points="75,75 225,75 225,225 75,225 "/>
+  <rect class="fil2" width="300" height="300"/>
+ </g>
+</svg>

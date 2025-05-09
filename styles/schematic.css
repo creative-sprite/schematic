@@ -1,0 +1,24 @@
+/* styles\schematic.css */
+
+/* Ensure the html and body fill the viewport (page-specific overrides if needed) */
+html,
+body {
+  height: 100%;
+}
+
+/* Canvas placed images and numbering */
+.placed-item-img {
+  width: 50px !important;
+  height: 50px !important;
+}
+
+.access-panel-overlay {
+  position: absolute;
+  top: 0;
+  right: 0;
+  background: grey;
+  color: white;
+  font-size: 8px;
+  padding: 0 2px;
+  z-index: 10;
+}

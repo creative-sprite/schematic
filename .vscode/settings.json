@@ -1,0 +1,13 @@
+// {
+//     "editor.fontFamily": "'Cascadia Mono Regular', Robot, ",
+//     "editor.formatOnSave": true,
+//     "editor.fontSize": 18,
+//     "workbench.iconTheme": "material-icon-theme",
+//     "material-icon-theme.activeIconPack": "react",
+//     "workbench.colorTheme": "Default Dark Modern",
+//     "editor.letterSpacing": 1.5,
+//     "workbench.colorCustomizations": {
+//     "editorUnnecessaryCode.border": "#00ff15",
+//     "editorUnnecessaryCode.opacity": "#5555"
+// },
+// }

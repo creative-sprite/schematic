@@ -1,0 +1,217 @@
+/* styles/pdfPrint.css */
+/* Special styling for PDF generation - applied only when pdf-capture-mode class is present */
+
+/* When pdf-capture-mode is active, apply these styles */
+.pdf-capture-mode {
+    /* Hide UI elements that shouldn't be in PDF */
+    button:not(.force-visible),
+    .p-dropdown-trigger,
+    .p-button,
+    .add-btn,
+    .delete-btn,
+    .upload-btn,
+    .section-visibility-toggle,
+    .section-dropdown,
+    .add-contact-form,
+    .modify-prices-section label span,
+    .modify-prices-section input,
+    .hide-in-pdf,
+    .pdf-duplicate,
+    [data-duplicate="true"] {
+        display: none !important;
+        visibility: hidden !important;
+    }
+
+    /* Show elements that should be visible */
+    .force-visible,
+    .force-structure-visible,
+    .has-content,
+    .price-tables,
+    .p-datatable,
+    .card,
+    .common-table,
+    .price-container,
+    .grand-total-section,
+    .structure-dimensions,
+    .structure-data,
+    .input-with-content,
+    .textarea-with-content,
+    input.p-filled,
+    textarea.p-filled {
+        display: block !important;
+        visibility: visible !important;
+    }
+
+    /* Price tables - ensure they're visible and formatted properly */
+    .price-container,
+    .card,
+    .common-table,
+    .p-datatable,
+    .grand-total-section {
+        display: block !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+        height: auto !important;
+        min-height: auto !important;
+        overflow: visible !important;
+    }
+
+    /* Table formatting for PDF */
+    table.common-table {
+        width: 100% !important;
+        border-collapse: collapse !important;
+        margin-bottom: 1rem !important;
+    }
+
+    table.common-table th,
+    table.common-table td {
+        border: 1px solid #ddd !important;
+        padding: 8px !important;
+        text-align: left !important;
+    }
+
+    table.common-table th {
+        background-color: #f2f2f2 !important;
+        font-weight: bold !important;
+    }
+
+    /* Ensure visibility of form fields with content */
+    input[type="text"]:not(:placeholder-shown),
+    input[type="number"]:not(:placeholder-shown),
+    textarea:not(:placeholder-shown),
+    input.p-filled,
+    textarea.p-filled,
+    .p-inputtext.p-filled,
+    .has-content,
+    .p-checkbox.p-checkbox-checked,
+    .p-radiobutton.p-radiobutton-checked,
+    .force-visible input,
+    .force-visible textarea,
+    .force-structure-visible input,
+    .force-structure-visible textarea {
+        display: inline-block !important;
+        visibility: visible !important;
+        background-color: #fff !important;
+        border: 1px solid #ddd !important;
+        min-height: 20px !important;
+    }
+
+    /* For dropdowns with selected values, show the value */
+    .p-dropdown.p-filled .p-dropdown-label {
+        display: block !important;
+        visibility: visible !important;
+    }
+
+    /* Hide dropdown trigger but show selected value */
+    .p-dropdown-trigger {
+        display: none !important;
+    }
+
+    /* Structure data visibility - enhanced for better display */
+    .structure-dimensions,
+    .structure-data,
+    .dimensions-field,
+    .structure-container,
+    .force-structure-visible,
+    .structure-container input,
+    .structure-container textarea,
+    .structure-data input,
+    .structure-data textarea {
+        display: block !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+    }
+    
+    /* Force structure input fields to be visible */
+    .structure-container input,
+    .structure-container textarea,
+    .structure-data input,
+    .structure-data textarea {
+        display: inline-block !important;
+        visibility: visible !important;
+        border: none !important;
+        background-color: transparent !important;
+        font-weight: normal !important;
+    }
+
+    /* Make accordions always expanded in PDFs */
+    .p-accordion-header:not(.p-highlight) + .p-accordion-content {
+        display: block !important;
+        height: auto !important;
+        visibility: visible !important;
+        overflow: visible !important;
+    }
+
+    /* Hide accordion toggle icons */
+    .p-accordion-toggle-icon {
+        display: none !important;
+    }
+
+    /* Form container formatting */
+    .form-container {
+        page-break-inside: avoid !important;
+        margin-bottom: 20px !important;
+    }
+
+    /* Checkbox and radio button displays */
+    .p-checkbox.p-checkbox-checked .p-checkbox-box,
+    .p-radiobutton.p-radiobutton-checked .p-radiobutton-box {
+        background-color: #007ad9 !important;
+        border-color: #007ad9 !important;
+        display: inline-block !important;
+    }
+
+    /* Display Yes/No toggle states */
+    .yes-no-toggle[data-state="yes"] .yes-value,
+    .yes-no-toggle[data-state="no"] .no-value {
+        display: inline-block !important;
+        font-weight: bold !important;
+    }
+
+    /* Fix for the modify prices section */
+    .modify-prices-section {
+        display: none !important; /* Hide the controls */
+    }
+
+    /* Show non-empty form fields with labels */
+    .field-label-pair {
+        display: flex !important;
+        margin-bottom: 0.5rem !important;
+    }
+
+    .field-label-pair .field-label {
+        font-weight: bold !important;
+        margin-right: 0.5rem !important;
+    }
+
+    /* Display special text for empty fields */
+    .empty-field-placeholder:empty::after {
+        content: "Not specified";
+        color: #999;
+        font-style: italic;
+    }
+
+    /* Fix for price total sections */
+    .grand-total-section {
+        border: 2px solid #333 !important;
+        padding: 1rem !important;
+        margin-top: 2rem !important;
+        page-break-inside: avoid !important;
+    }
+
+    .grand-total-value {
+        font-size: 1.2rem !important;
+        font-weight: bold !important;
+        color: #333 !important;
+    }
+    
+    /* Duplicate content prevention */
+    [data-temp-id] {
+        border: none !important;
+    }
+    
+    /* Ensure content marked with duplicate prevention selectors is handled correctly */
+    .duplicate-prevention {
+        position: relative !important;
+    }
+}

@@ -1,0 +1,59 @@
+/* styles\form.css */
+
+/* Style the entire form container */
+form {
+    display: flex;                /* Use flex layout to align children */
+    flex-direction: column;       /* Arrange form elements in a column */
+    gap: 1rem;                    /* Set a gap of 1rem between each form element */
+    padding: 1rem;                /* Add padding inside the form container */
+    background-color: #f9f9f9;    /* Light background color for the form */
+    border: 1px solid #ddd;       /* Light border around the form */
+    border-radius: 4px;           /* Rounded corners for the form */
+  }
+  
+  /* Style each direct child div of the form to group form fields */
+  form div {
+    display: flex;                /* Use flex layout for form groups */
+    flex-direction: column;       /* Stack label and input vertically */
+  }
+  
+  /* Style the form labels */
+  form label {
+    margin-bottom: 0.5rem;        /* Add space below the label */
+    font-weight: bold;            /* Make the label text bold */
+  }
+  
+  /* Style text-based input fields and textareas */
+  form input[type="text"],
+  form input[type="number"],
+  form input[type="email"],
+  form input[type="password"],
+  form textarea {
+    padding: 0.5rem;              /* Add padding inside the input */
+    border: 1px solid #ccc;       /* Light gray border for the input */
+    border-radius: 4px;           /* Rounded corners for inputs */
+    font-size: 1rem;              /* Set a readable font size */
+  }
+  
+  /* Style checkboxes to make them slightly larger and add spacing */
+  form input[type="checkbox"] {
+    transform: scale(1.2);        /* Scale up the checkbox for better visibility */
+    margin-right: 0.5rem;         /* Add space to the right of the checkbox */
+  }
+  
+  /* Style buttons within the form */
+  form button {
+    padding: 0.5rem 1rem;         /* Padding inside the button */
+    background-color: #0070f3;    /* Blue background color for the button */
+    color: #fff;                  /* White text color for the button */
+    border: none;                 /* Remove default border */
+    border-radius: 4px;           /* Rounded corners for the button */
+    font-size: 1rem;              /* Set font size for button text */
+    cursor: pointer;              /* Show pointer cursor on hover */
+  }
+  
+  /* Add a hover effect to buttons for better interactivity */
+  form button:hover {
+    background-color: #005bb5;    /* Darker blue background on hover */
+  }
+  

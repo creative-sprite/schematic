@@ -1,0 +1,98 @@
+/* styles\priceList.css */
+
+/* Price List Container */
+.price-container {
+  width: 100%;
+}
+.price-container h2 {
+  margin: 1rem 0;
+  text-align: center;
+}
+
+/* Price Form Styling */
+.price-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 2rem;
+  width: 100%;
+}
+.form-field {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 1rem;
+}
+.form-field input,
+.form-field select {
+  width: 100%;
+  height: 30px;
+  padding: 0 8px;
+  font-size: 1rem;
+  box-sizing: border-box;
+  border-radius: 3px;
+  border: 1px solid #B3B3B3;
+}
+.long-field {
+  flex: 1 1 300px;
+}
+.grade-field {
+  flex: 1 1 50px;
+  min-width: 100px;
+}
+.grade-field input {
+  width: 100%;
+  box-sizing: border-box;
+  height: 30px;
+}
+
+/* Price Table Styling */
+.price-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 1rem;
+  table-layout: fixed;
+}
+.price-table th,
+.price-table td {
+  border: none;
+  padding: 4px 4px 4px 0;
+  text-align: left;
+  border-bottom: 1px solid #ddd;
+  height: 30px;
+  vertical-align: middle;
+  overflow: hidden;
+}
+.price-table th {
+  background: #7e7e7e;
+  color: white;
+}
+.price-col-long {
+  width: 15%;
+}
+.price-col-grade {
+  width: 10%;
+  text-align: right;
+}
+.price-col-actions {
+  width: 195px;
+  text-align: center;
+  vertical-align: middle;
+}
+.action-buttons {
+  display: inline-flex;
+  width: 100%;
+  justify-content: center;
+  gap: 4px;
+  align-items: center;
+}
+.price-col-actions button,
+.action-buttons button {
+  height: 26px;
+  padding: 0 8px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  margin: 0;
+}
+.editing-row {
+  background-color: #f0f8ff;
+}

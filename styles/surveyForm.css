@@ -1,0 +1,110 @@
+/* styles\surveyForm.css */
+
+/* Survey Container */
+.survey-container {
+  font-family: "Roboto", Arial, sans-serif;
+  width: 100%;
+}
+
+/* Common table styling for survey components */
+.common-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 1rem;
+}
+.common-table th,
+.common-table td {
+  padding: 8px;
+  border-bottom: 1px solid #ccc;
+  text-align: left;
+}
+.common-table th {
+  background-color: #f2f2f2;
+  border-bottom: 2px solid #ccc;
+}
+
+table,
+th,
+td {
+  border-left: none !important;
+  border-right: none !important;
+}
+
+table th,
+table td {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+table input,
+table select {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Common styling for table headers used by both Structure and Filter tables */
+.common-table thead th {
+  padding: 8px;
+  background-color: #f2f2f2;
+  border-bottom: 2px solid #ccc;
+  text-align: left;
+  font-weight: normal; /* or bold, if desired */
+}
+
+/* Form Group Spacing */
+.form-group {
+  margin-bottom: 15px;
+  display: flex;
+  flex-direction: column;
+}
+.form-group label {
+  margin-bottom: 5px;
+  font-weight: bold;
+}
+.form-group input,
+.form-group select,
+.form-group textarea {
+  padding: 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+/* Contact Inputs, etc. */
+.survey-flex-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 30px;
+}
+
+/* A flexible item that can shrink and grow */
+.survey-flex-item {
+  flex: 1 1 200px;
+}
+
+/* Shorter variant for narrower inputs */
+.survey-flex-item-short {
+  flex: 1 1 150px;
+}
+
+/* Medium variant for moderate widths */
+.survey-flex-item-medium {
+  flex: 1 1 250px;
+}
+
+/* Longer variant for bigger inputs */
+.survey-flex-item-long {
+  flex: 1 1 300px;
+}
+
+@media (max-width: 600px) {
+  .survey-flex-item,
+  .survey-flex-item-short,
+  .survey-flex-item-medium,
+  .survey-flex-item-long {
+    flex: 1 1 100% !important;
+  }
+  .survey-flex-row {
+    gap: 10px; /* reduce gap on smaller screens if you like */
+  }
+}
