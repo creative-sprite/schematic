@@ -19,6 +19,47 @@ export default function VentilationInformationAccordion({
 }) {
     const [locationInput, setLocationInput] = useState("");
 
+    // Custom CSS for highlighting fields with data
+    const customStyles = `
+        .p-multiselect-has-data .p-multiselect {
+            border-color: var(--primary-color) !important;
+        }
+        .p-inputtext-has-data {
+            border-color: var(--primary-color) !important;
+        }
+        .p-togglebutton-has-data {
+            border-color: var(--primary-color) !important;
+        }
+        
+        /* Force text wrapping in all inputs */
+        .p-inputtextarea {
+            white-space: normal !important;
+            word-wrap: break-word !important;
+            overflow-wrap: break-word !important;
+        }
+        
+        /* Control multiselect display */
+        .p-multiselect-label {
+            white-space: nowrap !important;
+            overflow: hidden !important;
+            text-overflow: ellipsis !important;
+        }
+    `;
+
+    // Helper function to check if toggle is "Yes"
+    const isToggleYes = (fieldName) => {
+        return ventilation[fieldName] === "Yes";
+    };
+
+    // Helper function to check if field has data
+    const fieldHasData = (field) => {
+        const value = ventilation[field];
+        if (value === null || value === undefined) return false;
+        if (typeof value === "string") return value.trim() !== "";
+        if (Array.isArray(value)) return value.length > 0;
+        return true;
+    };
+
     const addLocation = () => {
         if (locationInput.trim()) {
             const updatedLocations = [
@@ -59,6 +100,7 @@ export default function VentilationInformationAccordion({
         });
     };
 
+    // FIXED: Keep selected options when appending text
     const handleMultiSelectChange = (e) => {
         const selected = e.value;
         let appendedText = "";
@@ -71,7 +113,7 @@ export default function VentilationInformationAccordion({
             ...ventilation,
             obstructionsManualText: newManualText,
             obstructionsText: newManualText,
-            obstructionsOptions: [],
+            obstructionsOptions: selected, // FIXED: Preserve selected options
         });
     };
 
@@ -85,6 +127,7 @@ export default function VentilationInformationAccordion({
         });
     };
 
+    // FIXED: Keep selected options when appending text
     const handleDamageMultiSelectChange = (e) => {
         const selected = e.value;
         let appendedText = "";
@@ -97,7 +140,7 @@ export default function VentilationInformationAccordion({
             ...ventilation,
             damageManualText: newManualText,
             damageText: newManualText,
-            damageOptions: [],
+            damageOptions: selected, // FIXED: Preserve selected options
         });
     };
 
@@ -111,6 +154,7 @@ export default function VentilationInformationAccordion({
         });
     };
 
+    // FIXED: Keep selected options when appending text
     const handleInaccessibleAreasMultiSelectChange = (e) => {
         const selected = e.value;
         let appendedText = "";
@@ -123,7 +167,7 @@ export default function VentilationInformationAccordion({
             ...ventilation,
             inaccessibleAreasManualText: newManualText,
             inaccessibleAreasText: newManualText,
-            inaccessibleAreasOptions: [],
+            inaccessibleAreasOptions: selected, // FIXED: Preserve selected options
         });
     };
 
@@ -137,6 +181,7 @@ export default function VentilationInformationAccordion({
         });
     };
 
+    // FIXED: Keep selected options when appending text
     const handleClientActionsMultiSelectChange = (e) => {
         const selected = e.value;
         let appendedText = "";
@@ -149,11 +194,11 @@ export default function VentilationInformationAccordion({
             ...ventilation,
             clientActionsManualText: newManualText,
             clientActionsText: newManualText,
-            clientActionsOptions: [],
+            clientActionsOptions: selected, // FIXED: Preserve selected options
         });
     };
 
-    // Unified card style with auto height.
+    // Unified card style with auto height - USING ORIGINAL LAYOUT
     const cardStyle = {
         border: "1px solid #ccc",
         padding: "20px",
@@ -249,6 +294,11 @@ export default function VentilationInformationAccordion({
                         height: "40px",
                         pointerEvents: "auto",
                     }}
+                    className={
+                        isToggleYes("obstructionsToggle")
+                            ? "p-togglebutton-has-data"
+                            : ""
+                    }
                 />
                 {ventilation.obstructionsToggle === "Yes" && (
                     <div style={{ marginTop: "0.5rem" }}>
@@ -258,16 +308,36 @@ export default function VentilationInformationAccordion({
                             placeholder="Describe the obstructions"
                             autoResize
                             rows={1}
-                            style={{ width: "100%", overflowX: "hidden" }}
+                            style={{
+                                width: "100%",
+                                overflowX: "hidden",
+                                wordWrap: "break-word",
+                                borderColor: fieldHasData("obstructionsText")
+                                    ? "var(--primary-color)"
+                                    : "",
+                            }}
                         />
                         <div style={{ marginTop: "0.5rem" }}>
-                            <MultiSelect
-                                value={ventilation.obstructionsOptions || []}
-                                options={obstructionsOptions}
-                                onChange={handleMultiSelectChange}
-                                placeholder="Select obstructions"
-                                style={{ width: "100%", overflowX: "hidden" }}
-                            />
+                            <div
+                                className={
+                                    fieldHasData("obstructionsOptions")
+                                        ? "p-multiselect-has-data"
+                                        : ""
+                                }
+                            >
+                                <MultiSelect
+                                    value={
+                                        ventilation.obstructionsOptions || []
+                                    }
+                                    options={obstructionsOptions}
+                                    onChange={handleMultiSelectChange}
+                                    placeholder="Select obstructions"
+                                    style={{
+                                        width: "100%",
+                                        overflowX: "hidden",
+                                    }}
+                                />
+                            </div>
                         </div>
                     </div>
                 )}
@@ -326,6 +396,11 @@ export default function VentilationInformationAccordion({
                         height: "40px",
                         pointerEvents: "auto",
                     }}
+                    className={
+                        isToggleYes("damageToggle")
+                            ? "p-togglebutton-has-data"
+                            : ""
+                    }
                 />
                 {ventilation.damageToggle === "Yes" && (
                     <div style={{ marginTop: "0.5rem" }}>
@@ -335,16 +410,34 @@ export default function VentilationInformationAccordion({
                             placeholder="Describe the damage"
                             autoResize
                             rows={1}
-                            style={{ width: "100%", overflowX: "hidden" }}
+                            style={{
+                                width: "100%",
+                                overflowX: "hidden",
+                                wordWrap: "break-word",
+                                borderColor: fieldHasData("damageText")
+                                    ? "var(--primary-color)"
+                                    : "",
+                            }}
                         />
                         <div style={{ marginTop: "0.5rem" }}>
-                            <MultiSelect
-                                value={ventilation.damageOptions || []}
-                                options={damageOptions}
-                                onChange={handleDamageMultiSelectChange}
-                                placeholder="Select damage options"
-                                style={{ width: "100%", overflowX: "hidden" }}
-                            />
+                            <div
+                                className={
+                                    fieldHasData("damageOptions")
+                                        ? "p-multiselect-has-data"
+                                        : ""
+                                }
+                            >
+                                <MultiSelect
+                                    value={ventilation.damageOptions || []}
+                                    options={damageOptions}
+                                    onChange={handleDamageMultiSelectChange}
+                                    placeholder="Select damage options"
+                                    style={{
+                                        width: "100%",
+                                        overflowX: "hidden",
+                                    }}
+                                />
+                            </div>
                         </div>
                     </div>
                 )}
@@ -371,6 +464,11 @@ export default function VentilationInformationAccordion({
                 onLabel="Yes"
                 offLabel="No"
                 style={{ width: "100%", height: "40px", pointerEvents: "auto" }}
+                className={
+                    isToggleYes("inaccessibleAreasToggle")
+                        ? "p-togglebutton-has-data"
+                        : ""
+                }
             />
             {ventilation.inaccessibleAreasToggle === "Yes" && (
                 <div style={{ marginTop: "0.5rem" }}>
@@ -380,25 +478,44 @@ export default function VentilationInformationAccordion({
                         placeholder="Describe the inaccessible areas"
                         autoResize
                         rows={1}
-                        style={{ width: "100%", overflowX: "hidden" }}
+                        style={{
+                            width: "100%",
+                            overflowX: "hidden",
+                            wordWrap: "break-word",
+                            borderColor: fieldHasData("inaccessibleAreasText")
+                                ? "var(--primary-color)"
+                                : "",
+                        }}
                     />
                     <div style={{ marginTop: "0.5rem" }}>
-                        <MultiSelect
-                            value={ventilation.inaccessibleAreasOptions || []}
-                            options={[
-                                {
-                                    label: "Any areas noted above may represent an area that cannot be accessed. Further information will be available on the report",
-                                    value: "Any areas noted above may represent an area that cannot be accessed. Further information will be available on the report",
-                                },
-                                {
-                                    label: "None reported at time of survey",
-                                    value: "None reported at time of survey",
-                                },
-                            ]}
-                            onChange={handleInaccessibleAreasMultiSelectChange}
-                            placeholder="Select inaccessible area options"
-                            style={{ width: "100%", overflowX: "hidden" }}
-                        />
+                        <div
+                            className={
+                                fieldHasData("inaccessibleAreasOptions")
+                                    ? "p-multiselect-has-data"
+                                    : ""
+                            }
+                        >
+                            <MultiSelect
+                                value={
+                                    ventilation.inaccessibleAreasOptions || []
+                                }
+                                options={[
+                                    {
+                                        label: "Any areas noted above may represent an area that cannot be accessed. Further information will be available on the report",
+                                        value: "Any areas noted above may represent an area that cannot be accessed. Further information will be available on the report",
+                                    },
+                                    {
+                                        label: "None reported at time of survey",
+                                        value: "None reported at time of survey",
+                                    },
+                                ]}
+                                onChange={
+                                    handleInaccessibleAreasMultiSelectChange
+                                }
+                                placeholder="Select inaccessible area options"
+                                style={{ width: "100%", overflowX: "hidden" }}
+                            />
+                        </div>
                     </div>
                 </div>
             )}
@@ -424,6 +541,11 @@ export default function VentilationInformationAccordion({
                 onLabel="Yes"
                 offLabel="No"
                 style={{ width: "100%", height: "40px", pointerEvents: "auto" }}
+                className={
+                    isToggleYes("clientActionsToggle")
+                        ? "p-togglebutton-has-data"
+                        : ""
+                }
             />
             {ventilation.clientActionsToggle === "Yes" && (
                 <div style={{ marginTop: "0.5rem" }}>
@@ -433,41 +555,56 @@ export default function VentilationInformationAccordion({
                         placeholder="Describe client actions"
                         autoResize
                         rows={1}
-                        style={{ width: "100%", overflowX: "hidden" }}
+                        style={{
+                            width: "100%",
+                            overflowX: "hidden",
+                            wordWrap: "break-word",
+                            borderColor: fieldHasData("clientActionsText")
+                                ? "var(--primary-color)"
+                                : "",
+                        }}
                     />
                     <div style={{ marginTop: "0.5rem" }}>
-                        <MultiSelect
-                            value={ventilation.clientActionsOptions || []}
-                            options={[
-                                {
-                                    label: "Remove insulation from the ventilation system to allow access panels to be fitted",
-                                    value: "Remove insulation from the ventilation system to allow access panels to be fitted",
-                                },
-                                {
-                                    label: "Provide sufficient accessibility to all areas the grease extract is present within the building",
-                                    value: "Provide sufficient accessibility to all areas the grease extract is present within the building",
-                                },
-                                {
-                                    label: "Consider organising a mechanical and engineer to be present at time of service to dismantle the fan unit",
-                                    value: "Consider organising a mechanical and engineer to be present at time of service to dismantle the fan unit",
-                                },
-                                {
-                                    label: "Organise chaperone for the team at time of service",
-                                    value: "Organise chaperone for the team at time of service",
-                                },
-                                {
-                                    label: "Provide boarding within the loft space area to make the environment safe and practicable to use",
-                                    value: "Provide boarding within the loft space area to make the environment safe and practicable to use",
-                                },
-                                {
-                                    label: "Provide keys to the areas the grease extract runs through",
-                                    value: "Provide keys to the areas the grease extract runs through",
-                                },
-                            ]}
-                            onChange={handleClientActionsMultiSelectChange}
-                            placeholder="Select client action options"
-                            style={{ width: "100%", overflowX: "hidden" }}
-                        />
+                        <div
+                            className={
+                                fieldHasData("clientActionsOptions")
+                                    ? "p-multiselect-has-data"
+                                    : ""
+                            }
+                        >
+                            <MultiSelect
+                                value={ventilation.clientActionsOptions || []}
+                                options={[
+                                    {
+                                        label: "Remove insulation from the ventilation system to allow access panels to be fitted",
+                                        value: "Remove insulation from the ventilation system to allow access panels to be fitted",
+                                    },
+                                    {
+                                        label: "Provide sufficient accessibility to all areas the grease extract is present within the building",
+                                        value: "Provide sufficient accessibility to all areas the grease extract is present within the building",
+                                    },
+                                    {
+                                        label: "Consider organising a mechanical and engineer to be present at time of service to dismantle the fan unit",
+                                        value: "Consider organising a mechanical and engineer to be present at time of service to dismantle the fan unit",
+                                    },
+                                    {
+                                        label: "Organise chaperone for the team at time of service",
+                                        value: "Organise chaperone for the team at time of service",
+                                    },
+                                    {
+                                        label: "Provide boarding within the loft space area to make the environment safe and practicable to use",
+                                        value: "Provide boarding within the loft space area to make the environment safe and practicable to use",
+                                    },
+                                    {
+                                        label: "Provide keys to the areas the grease extract runs through",
+                                        value: "Provide keys to the areas the grease extract runs through",
+                                    },
+                                ]}
+                                onChange={handleClientActionsMultiSelectChange}
+                                placeholder="Select client action options"
+                                style={{ width: "100%", overflowX: "hidden" }}
+                            />
+                        </div>
                     </div>
                 </div>
             )}
@@ -496,7 +633,15 @@ export default function VentilationInformationAccordion({
                 placeholder="Enter detailed description"
                 autoResize
                 rows={3}
-                style={{ width: "100%", minHeight: "80px", overflow: "hidden" }}
+                style={{
+                    width: "100%",
+                    minHeight: "80px",
+                    overflow: "hidden",
+                    wordWrap: "break-word",
+                    borderColor: fieldHasData("description")
+                        ? "var(--primary-color)"
+                        : "",
+                }}
             />
         </div>
     );
@@ -523,6 +668,9 @@ export default function VentilationInformationAccordion({
                         height: "40px",
                         width: "100%",
                         marginRight: "5px",
+                        borderColor: locationInput.trim()
+                            ? "var(--primary-color)"
+                            : "",
                     }}
                     onKeyDown={(e) => {
                         if (e.key === "Enter") {
@@ -569,14 +717,17 @@ export default function VentilationInformationAccordion({
     );
 
     return (
-        <Accordion
-            multiple
-            activeIndex={isOpen ? [0] : null}
-            onTabChange={(e) => toggleAccordion("ventilation")}
-        >
-            <AccordionTab header="Ventilation Information">
-                {renderFields()}
-            </AccordionTab>
-        </Accordion>
+        <>
+            <style>{customStyles}</style>
+            <Accordion
+                multiple
+                activeIndex={isOpen ? [0] : null}
+                onTabChange={(e) => toggleAccordion("ventilation")}
+            >
+                <AccordionTab header="Ventilation Information">
+                    {renderFields()}
+                </AccordionTab>
+            </Accordion>
+        </>
     );
 }

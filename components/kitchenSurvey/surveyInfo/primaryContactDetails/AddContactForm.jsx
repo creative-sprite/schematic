@@ -17,6 +17,13 @@ export default function AddContactForm({
         marginBottom: "1rem",
     };
 
+    // Helper function to check if field has data
+    const fieldHasData = (value) => {
+        if (value === null || value === undefined) return false;
+        if (typeof value === "string") return value.trim() !== "";
+        return true;
+    };
+
     return (
         <form noValidate onSubmit={handleAddContact}>
             <div style={flexContainerStyle}>
@@ -29,7 +36,13 @@ export default function AddContactForm({
                             contactFirstName: e.target.value,
                         })
                     }
-                    style={{ flex: "1 1 200px", minWidth: "200px" }}
+                    style={{
+                        flex: "1 1 200px",
+                        minWidth: "200px",
+                        borderColor: fieldHasData(contactInput.contactFirstName)
+                            ? "var(--primary-color)"
+                            : "",
+                    }}
                     disabled={!siteDetails || !siteDetails._id || isSaving}
                 />
                 <InputText
@@ -41,7 +54,13 @@ export default function AddContactForm({
                             contactLastName: e.target.value,
                         })
                     }
-                    style={{ flex: "1 1 200px", minWidth: "200px" }}
+                    style={{
+                        flex: "1 1 200px",
+                        minWidth: "200px",
+                        borderColor: fieldHasData(contactInput.contactLastName)
+                            ? "var(--primary-color)"
+                            : "",
+                    }}
                     disabled={!siteDetails || !siteDetails._id || isSaving}
                 />
                 <InputText
@@ -53,7 +72,13 @@ export default function AddContactForm({
                             position: e.target.value,
                         })
                     }
-                    style={{ flex: "1 1 200px", minWidth: "200px" }}
+                    style={{
+                        flex: "1 1 200px",
+                        minWidth: "200px",
+                        borderColor: fieldHasData(contactInput.position)
+                            ? "var(--primary-color)"
+                            : "",
+                    }}
                     disabled={!siteDetails || !siteDetails._id || isSaving}
                 />
                 <InputText
@@ -65,7 +90,13 @@ export default function AddContactForm({
                             number: e.target.value,
                         })
                     }
-                    style={{ flex: "1 1 200px", minWidth: "200px" }}
+                    style={{
+                        flex: "1 1 200px",
+                        minWidth: "200px",
+                        borderColor: fieldHasData(contactInput.number)
+                            ? "var(--primary-color)"
+                            : "",
+                    }}
                     disabled={!siteDetails || !siteDetails._id || isSaving}
                 />
                 <InputText
@@ -77,7 +108,13 @@ export default function AddContactForm({
                             email: e.target.value,
                         })
                     }
-                    style={{ flex: "1 1 200px", minWidth: "200px" }}
+                    style={{
+                        flex: "1 1 200px",
+                        minWidth: "200px",
+                        borderColor: fieldHasData(contactInput.email)
+                            ? "var(--primary-color)"
+                            : "",
+                    }}
                     disabled={!siteDetails || !siteDetails._id || isSaving}
                 />
                 <Button

@@ -7,57 +7,6 @@ import { calculateItemPrice } from "../../../lib/priceCalculator";
 import { calculateVentilationPrice } from "../../../lib/ventCalculations";
 
 /**
- * Helper function to generate a unique key for an individual placed item.
- * Used for non-aggregated items.
- */
-function getItemKey(item) {
-    return item.id || item._id || "";
-}
-
-/**
- * Helper function to generate a display aggregation key.
- * For both pricing and parts items, if aggregateEntry is true,
- * we group items by a composite key. We use item.item if available,
- * otherwise fallback to item.name, concatenated with the originalId.
- * If aggregateEntry is false, we return null.
- */
-function getDisplayAggregationKey(item) {
-    if (item.aggregateEntry) {
-        const keyPart = item.item ? item.item : item.name;
-        if (keyPart) {
-            return keyPart.trim().toLowerCase() + "-" + item.originalId;
-        }
-        return getItemKey(item);
-    }
-    return null;
-}
-
-/**
- * Helper function to generate a price aggregation key for pricing items.
- * This applies only to pricing items (items with a prices object) that have:
- * - aggregateEntry true,
- * - a nonempty calculationType,
- * - requiresDimensions true.
- * If so, return a composite key (using item.item if available, otherwise item.name, plus originalId);
- * otherwise, return null.
- */
-function getPriceAggregationKey(item) {
-    if (
-        item.prices &&
-        item.aggregateEntry &&
-        item.calculationType &&
-        item.calculationType.trim() !== "" &&
-        item.requiresDimensions
-    ) {
-        const keyPart = item.item ? item.item : item.name;
-        if (keyPart) {
-            return keyPart.trim().toLowerCase() + "-" + item.originalId;
-        }
-    }
-    return null;
-}
-
-/**
  * Helper function to identify ventilation or grease extract items
  */
 function isVentilationOrGreaseItem(item) {
@@ -70,7 +19,8 @@ function isVentilationOrGreaseItem(item) {
             category.includes("grease") ||
             category.includes("ventilation") ||
             category.includes("air intake") ||
-            category.includes("extract")
+            category.includes("extract") ||
+            category === "air"
         ) {
             return true;
         }
@@ -96,66 +46,48 @@ function isVentilationOrGreaseItem(item) {
             name.includes("grease") ||
             name.includes("vent") ||
             name.includes("air intake") ||
-            name.includes("extract")
+            name.includes("extract") ||
+            name.includes("duct") ||
+            name.includes("flexi")
         ) {
             return true;
         }
     }
 
-    return false;
+    // Also check for requiresDimensions flag
+    return !!item.requiresDimensions;
 }
 
 export default function SchematicListContainer(props) {
     const {
         placedItems,
-        onAccessDoorSelect, // For price updates only
+        setPlacedItems, // We'll modify this to update item dimensions directly
+        onAccessDoorSelect,
         onVentilationPriceChange,
         onFanPartsPriceChange,
         onAirInExPriceChange,
         structureIds = [],
-        onSchematicItemsTotalChange, // Callback to pass the computed totals (object with overall and breakdown)
-        setPlacedItems, // Add this to update items when access door selection changes
+        onSchematicItemsTotalChange, // Callback to pass the computed totals
         flexiDuctSelections = {},
         setFlexiDuctSelections,
-        initialFlexiDuctSelections = {},
-        // Add proper props for access door selections
         accessDoorSelections = {},
         setAccessDoorSelections,
-        // Add prop for initial dimensions from saved data
-        initialGroupDimensions = {},
+        fanGradeSelections = {},
+        setFanGradeSelections,
     } = props;
 
     // For display, we group items based on aggregateEntry (display grouping)
     const [displayList, setDisplayList] = useState([]);
-    const [groupDimensions, setGroupDimensions] = useState({});
-    const [fanGradeSelections, setFanGradeSelections] = useState({});
 
     // State to track ventilation price from Flexi-Duct/Flexi Hose items
     const [flexiDuctVentilationPrice, setFlexiDuctVentilationPrice] =
         useState(0);
+
     // Flag to track if ventilation price was already set to prevent duplicates
     const ventilationPriceSetRef = useRef(false);
 
     // Track access door price separately to avoid reconciliation issues
     const [accessDoorPriceState, setAccessDoorPriceState] = useState(0);
-
-    // Track access door selections and prices locally, but use parent's state for persistence
-    const [localAccessDoorSelections, setLocalAccessDoorSelections] = useState(
-        accessDoorSelections || {}
-    );
-
-    // Debug logging to track if access door selections are present on mount
-    useEffect(() => {
-        if (
-            accessDoorSelections &&
-            Object.keys(accessDoorSelections).length > 0
-        ) {
-            console.log(
-                "SchematicList initialized with accessDoorSelections:",
-                Object.keys(accessDoorSelections)
-            );
-        }
-    }, []);
 
     // Use a ref to hold the parent's callback so that our dependency array remains constant.
     const schematicTotalCallbackRef = useRef(onSchematicItemsTotalChange);
@@ -177,6 +109,7 @@ export default function SchematicListContainer(props) {
             );
         }
     }, [accessDoorSelections, setAccessDoorSelections]);
+
     useEffect(() => {
         schematicTotalCallbackRef.current = onSchematicItemsTotalChange;
     }, [onSchematicItemsTotalChange]);
@@ -187,51 +120,25 @@ export default function SchematicListContainer(props) {
         ventilationPriceCallbackRef.current = onVentilationPriceChange;
     }, [onVentilationPriceChange]);
 
-    const accessDoorSelectCallbackRef = useRef(onAccessDoorSelect); // Renamed ref for consistency
+    const accessDoorSelectCallbackRef = useRef(onAccessDoorSelect);
     useEffect(() => {
         accessDoorSelectCallbackRef.current = onAccessDoorSelect;
     }, [onAccessDoorSelect]);
 
-    // Initialize flexiDuctSelections from props if available
-    useEffect(() => {
-        if (
-            initialFlexiDuctSelections &&
-            Object.keys(initialFlexiDuctSelections).length > 0 &&
-            Object.keys(flexiDuctSelections).length === 0
-        ) {
-            console.log(
-                "Initializing flexiDuctSelections from props:",
-                initialFlexiDuctSelections
-            );
-            setFlexiDuctSelections(initialFlexiDuctSelections);
-
-            // Calculate initial ventilation price
-            let initialVentPrice = 0;
-            Object.values(initialFlexiDuctSelections).forEach((selections) => {
-                selections.forEach((selection) => {
-                    initialVentPrice +=
-                        (Number(selection.price) || 0) *
-                        (Number(selection.quantity) || 0);
-                });
-            });
-
-            if (initialVentPrice > 0 && !ventilationPriceSetRef.current) {
-                setFlexiDuctVentilationPrice(initialVentPrice);
-                ventilationPriceSetRef.current = true;
-            }
-        }
-    }, [initialFlexiDuctSelections, flexiDuctSelections]);
-
     // Log placedItems for debugging.
     useEffect(() => {
-        console.log("SchematicListContainer - placedItems:", placedItems);
+        console.log(
+            "SchematicListContainer - placedItems:",
+            placedItems.length
+        );
     }, [placedItems]);
 
-    // Compute displayList: for connectors, only one card per pair; for others, use existing grouping.
+    // Compute displayList: for connectors, only one card per pair; for others, group by aggregateEntry
     useEffect(() => {
         const aggregated = {};
         const nonAggregated = [];
         const seenConnectors = new Set();
+
         placedItems.forEach((item) => {
             if (item.type === "connectors") {
                 if (seenConnectors.has(item.pairNumber)) {
@@ -241,100 +148,57 @@ export default function SchematicListContainer(props) {
                 nonAggregated.push(item);
                 return;
             }
-            const aggKey = getDisplayAggregationKey(item);
-            if (aggKey) {
-                // Group items with the same aggregation key.
-                if (!aggregated[aggKey]) {
-                    aggregated[aggKey] = item;
+
+            // Group items with the same aggregation key if aggregateEntry is true
+            if (item.aggregateEntry) {
+                // Use item name and original ID as a composite key
+                const key = item.name?.toLowerCase() + "-" + item.originalId;
+
+                if (!aggregated[key]) {
+                    aggregated[key] = item;
                 }
             } else {
                 nonAggregated.push(item);
             }
         });
+
         const newDisplayList = [...Object.values(aggregated), ...nonAggregated];
         console.log("Display list computed. Count:", newDisplayList.length);
         setDisplayList(newDisplayList);
     }, [placedItems]);
 
-    // Initialize groupDimensions from saved data when component mounts or initialGroupDimensions changes
-    useEffect(() => {
-        if (
-            initialGroupDimensions &&
-            Object.keys(initialGroupDimensions).length > 0
-        ) {
-            console.log(
-                "Initializing dimensions from saved data:",
-                initialGroupDimensions
-            );
-            setGroupDimensions(initialGroupDimensions);
+    // UPDATED: Modified to update dimensions directly on items
+    const handleDimensionChange = (item, field, value) => {
+        if (!item || !item.id) {
+            console.error("Invalid item for dimension change:", item);
+            return;
         }
-    }, [initialGroupDimensions]);
 
-    // DIMENSIONS AGGREGATION: Merge new dimensions from placedItems with existing state.
-    useEffect(() => {
-        setGroupDimensions((prev) => {
-            const newDims = { ...prev };
-            placedItems.forEach((item) => {
-                const key = getItemKey(item);
+        console.log(
+            `Changing dimension for item "${item.name}" (${item.id}): ${field} = ${value}`
+        );
 
-                // Get current dimensions (if any)
-                const currentDims = newDims[key] || {
-                    length: "",
-                    width: "",
-                    height: "",
-                };
-
-                // Get dimensions from item
-                const itemDims = {
-                    length: item.length || "",
-                    width: item.width || "",
-                    height: item.height || "",
-                };
-
-                // Merge dimensions, prioritizing non-empty values from current state
-                const mergedDims = {
-                    length: currentDims.length || itemDims.length,
-                    width: currentDims.width || itemDims.width,
-                    height: currentDims.height || itemDims.height,
-                };
-
-                // Only update if something changed
-                if (
-                    JSON.stringify(currentDims) !== JSON.stringify(mergedDims)
-                ) {
-                    newDims[key] = mergedDims;
-                    console.log(
-                        `Setting dimensions for key "${key}":`,
-                        mergedDims
-                    );
+        // Update the item's dimension directly
+        setPlacedItems((prevItems) =>
+            prevItems.map((prevItem) => {
+                if (prevItem.id === item.id) {
+                    return {
+                        ...prevItem,
+                        [field]: value,
+                    };
                 }
-            });
-
-            console.log("Dimensions aggregation complete:", newDims);
-            return newDims;
-        });
-    }, [placedItems]);
-
-    // Initialize local state from props when they change
-    useEffect(() => {
-        if (
-            accessDoorSelections &&
-            Object.keys(accessDoorSelections).length > 0
-        ) {
-            setLocalAccessDoorSelections(accessDoorSelections);
-        }
-    }, [accessDoorSelections]);
+                return prevItem;
+            })
+        );
+    };
 
     // Calculate total access door price from selections
     useEffect(() => {
         const calculateTotalAccessDoorPrice = () => {
             let totalPrice = 0;
 
-            // Sum up all door prices using accessDoorSelections (properly propagated from props)
-            const selections =
-                accessDoorSelections || localAccessDoorSelections;
-
-            Object.values(selections).forEach((door) => {
+            // Sum up all door prices using accessDoorSelections directly
+            Object.values(accessDoorSelections || {}).forEach((door) => {
                 if (door && door.price) {
                     totalPrice += Number(door.price);
                 }
@@ -360,62 +224,49 @@ export default function SchematicListContainer(props) {
     }, [accessDoorSelections, accessDoorPriceState]);
 
     // Compute a breakdown by category and an overall total.
-    // This effect now depends only on placedItems and groupDimensions.
-    // UPDATED: Added special handling for ventilation/grease items
+    // UPDATED: Get dimensions directly from items instead of groupDimensions
     useEffect(() => {
-        console.log("Starting grouped price calculation...");
+        console.log("Starting price calculation from items...");
         let overallTotal = 0;
         const groupedTotals = {}; // e.g., { "Access Door": 123, "Air": 456 }
-        const aggregatedPriceMap = {};
 
-        // Process non-aggregated pricing items:
+        // For aggregated pricing, track by item name + original ID
+        const aggregatedItems = {};
+
+        // First pass: identify which items should be aggregated for pricing
         placedItems.forEach((item) => {
-            if (item.prices) {
-                const priceAggKey = getPriceAggregationKey(item);
-                if (priceAggKey) {
-                    if (!aggregatedPriceMap[priceAggKey]) {
-                        aggregatedPriceMap[priceAggKey] = item;
-                    }
-                } else {
-                    const key = getItemKey(item);
-                    const dims = groupDimensions[key] || {};
-
-                    // Special handling for ventilation and grease extract items
-                    let price = 0;
-                    if (isVentilationOrGreaseItem(item)) {
-                        console.log(
-                            `Using specialized calculation for item "${item.name}"`
-                        );
-                        price = calculateVentilationPrice(item, dims);
-                    } else {
-                        price = calculateItemPrice(item, dims) || 0;
-                    }
-
-                    const category = item.category || "Other";
-                    console.log(
-                        `Calculated price for non-aggregated item "${item.name}" in category "${category}" with dimensions`,
-                        dims,
-                        ":",
-                        price
-                    );
-                    groupedTotals[category] =
-                        (groupedTotals[category] || 0) + price;
-                    overallTotal += price;
+            if (item.prices && item.aggregateEntry && item.requiresDimensions) {
+                const key = item.name?.toLowerCase() + "-" + item.originalId;
+                if (!aggregatedItems[key]) {
+                    aggregatedItems[key] = item;
                 }
             }
         });
 
-        // Process aggregated pricing groups:
-        for (const aggKey in aggregatedPriceMap) {
-            const item = aggregatedPriceMap[aggKey];
-            const key = getItemKey(item);
-            const dims = groupDimensions[key] || {};
+        // Calculate prices for non-aggregated items
+        placedItems.forEach((item) => {
+            if (!item.prices) return;
+
+            // Skip aggregated items in this loop
+            if (item.aggregateEntry && item.requiresDimensions) {
+                const key = item.name?.toLowerCase() + "-" + item.originalId;
+                if (aggregatedItems[key] !== item) {
+                    return;
+                }
+            }
+
+            // Get dimensions directly from the item
+            const dims = {
+                length: item.length || "",
+                width: item.width || "",
+                height: item.height || "",
+            };
 
             // Special handling for ventilation and grease extract items
             let price = 0;
             if (isVentilationOrGreaseItem(item)) {
                 console.log(
-                    `Using specialized calculation for aggregated item "${item.name}"`
+                    `Using specialized calculation for item "${item.name}"`
                 );
                 price = calculateVentilationPrice(item, dims);
             } else {
@@ -424,14 +275,15 @@ export default function SchematicListContainer(props) {
 
             const category = item.category || "Other";
             console.log(
-                `Calculated price for aggregated pricing group "${item.name}" in category "${category}" (agg key: "${aggKey}") with dimensions`,
+                `Calculated price for item "${item.name}" in category "${category}" with dimensions`,
                 dims,
                 ":",
                 price
             );
+
             groupedTotals[category] = (groupedTotals[category] || 0) + price;
             overallTotal += price;
-        }
+        });
 
         // Include access door prices in the groupedTotals and overallTotal
         if (accessDoorPriceState > 0) {
@@ -440,25 +292,23 @@ export default function SchematicListContainer(props) {
             overallTotal += accessDoorPriceState;
         }
 
-        // IMPORTANT FIX: Do NOT include flexiDuctVentilationPrice in schematicItemsTotal
-        // This price is already being passed separately via onVentilationPriceChange
-
         console.log(
             "SchematicList -> computed grouped schematic items totals:",
             groupedTotals,
             "Overall total:",
             overallTotal
         );
+
         // Ensure we pass a consistent object (overall: number, breakdown: object)
         const result = { overall: overallTotal, breakdown: groupedTotals };
+
         // Call the parent's callback if provided.
         if (schematicTotalCallbackRef.current) {
             schematicTotalCallbackRef.current(result);
         }
-    }, [placedItems, groupDimensions, accessDoorPriceState]);
+    }, [placedItems, accessDoorPriceState]);
 
     // Calculate total ventilation price from all flexi-duct/hose selections
-    // IMPROVED: Prevent double counting and ensure proper updates
     useEffect(() => {
         // Skip if selections were already processed
         if (
@@ -505,14 +355,6 @@ export default function SchematicListContainer(props) {
         }
     }, [flexiDuctSelections, flexiDuctVentilationPrice, placedItems.length]);
 
-    const handleDimensionChange = (key, field, value) => {
-        setGroupDimensions((prev) => ({
-            ...prev,
-            [key]: { ...prev[key], [field]: value },
-        }));
-        console.log(`Changing dimension for key "${key}": ${field} = ${value}`);
-    };
-
     // Helper function to update access door price based on selections
     const updateAccessDoorPrice = useCallback(
         (selections) => {
@@ -541,169 +383,98 @@ export default function SchematicListContainer(props) {
         [accessDoorPriceState]
     );
 
-    // Enhanced to ensure door selections are properly saved and tracked - FIXED to address saving issues
+    // State and ref for handling door selections
+    const isUpdatingRef = useRef(false);
+
+    // Updated to ensure door selections are properly saved - modified to be simpler
     const handleAccessDoorSelect = useCallback(
         (itemId, selectedDoor) => {
-            if (!selectedDoor) {
-                console.warn(
-                    `[SchematicList] Ignoring null door selection for item ${itemId}`
-                );
-                return;
-            }
+            // Prevent duplicate/recursive updates
+            if (isUpdatingRef.current) return;
+            isUpdatingRef.current = true;
 
-            // Log the selection for debugging
-            console.log(
-                `[SchematicList] Processing door selection for item ${itemId}:`,
-                selectedDoor
-            );
-
-            // Extract MongoDB ID, ensuring we get a consistent ID
-            const mongoId =
-                selectedDoor._id ||
-                selectedDoor.mongoId ||
-                selectedDoor.id ||
-                "";
-
-            if (!mongoId) {
-                console.error(
-                    `[SchematicList] Door selection missing ID for item ${itemId}`
-                );
-                return;
-            }
-
-            // Get the price, prioritizing different possible sources
-            const doorPrice = Number(
-                selectedDoor.price || selectedDoor.accessDoorPrice || 0
-            );
-
-            // Format the door selection data consistently
-            const doorSelection = {
-                mongoId: mongoId, // Explicitly store MongoDB ID
-                id: mongoId, // For backward compatibility
-                name: selectedDoor.name || "",
-                type: selectedDoor.type || "",
-                dimensions: selectedDoor.dimensions || "",
-                price: doorPrice,
-            };
-
-            console.log(
-                `[SchematicList] Formatted door selection for ${itemId}:`,
-                doorSelection
-            );
-
-            // 1. Update local state for UI and price calculations - SINGLE SOURCE OF TRUTH PATTERN
-            const updatedLocalSelections = {
-                ...localAccessDoorSelections,
-                [itemId]: doorSelection,
-            };
-
-            setLocalAccessDoorSelections(updatedLocalSelections);
-            console.log(
-                "[SchematicList] Updated local selections. Total doors:",
-                Object.keys(updatedLocalSelections).length
-            );
-
-            // CRITICAL FIX: Prioritize direct prop update for parent state
-            if (typeof setAccessDoorSelections === "function") {
-                try {
-                    // Direct assignment for immediate effect - GUARANTEED UPDATE PATTERN
-                    const updatedParentSelections = {
-                        ...accessDoorSelections,
-                        [itemId]: doorSelection,
-                    };
-
-                    // Using function form to guarantee we get latest state
-                    setAccessDoorSelections(updatedParentSelections);
-
+            try {
+                if (!selectedDoor) {
                     console.log(
-                        "[SchematicList] Updated parent state directly with selections:",
-                        Object.keys(updatedParentSelections)
-                    );
-                } catch (error) {
-                    console.error(
-                        "[SchematicList] Error updating parent directly:",
-                        error
+                        `[SchematicList] Clearing door for item ${itemId}`
                     );
 
-                    // Fallback to ref method if direct update fails
-                    if (setAccessDoorSelectionsRef.current) {
-                        try {
-                            setAccessDoorSelectionsRef.current((prev) => ({
-                                ...prev,
-                                [itemId]: doorSelection,
-                            }));
-
-                            console.log(
-                                "[SchematicList] Used fallback method to update parent state"
-                            );
-                        } catch (innerError) {
-                            console.error(
-                                "[SchematicList] Both update methods failed:",
-                                innerError
-                            );
-                        }
+                    // Update parent state directly using setAccessDoorSelections
+                    if (setAccessDoorSelections) {
+                        setAccessDoorSelections((prev) => {
+                            const newSelections = { ...prev };
+                            delete newSelections[itemId];
+                            return newSelections;
+                        });
                     }
+                    return;
                 }
-            } else if (setAccessDoorSelectionsRef.current) {
-                // Try ref as backup if direct prop is not available
-                try {
-                    setAccessDoorSelectionsRef.current((prev) => ({
+
+                // Log the selection for debugging
+                console.log(
+                    `[SchematicList] Processing door selection for item ${itemId}:`,
+                    selectedDoor
+                );
+
+                // Extract MongoDB ID, ensuring we get a consistent ID
+                const mongoId =
+                    selectedDoor._id ||
+                    selectedDoor.mongoId ||
+                    selectedDoor.id ||
+                    "";
+
+                if (!mongoId) {
+                    console.error(
+                        `[SchematicList] Door selection missing ID for item ${itemId}`
+                    );
+                    return;
+                }
+
+                // Get the price, prioritizing different possible sources
+                const doorPrice = Number(
+                    selectedDoor.price || selectedDoor.accessDoorPrice || 0
+                );
+
+                // Format the door selection data consistently
+                const doorSelection = {
+                    mongoId: mongoId, // Explicitly store MongoDB ID
+                    id: mongoId, // For backward compatibility
+                    name: selectedDoor.name || "",
+                    type: selectedDoor.type || "",
+                    dimensions: selectedDoor.dimensions || "",
+                    price: doorPrice,
+                };
+
+                console.log(
+                    `[SchematicList] Formatted door selection for ${itemId}:`,
+                    doorSelection
+                );
+
+                // Update ONLY the parent state directly
+                if (setAccessDoorSelections) {
+                    setAccessDoorSelections((prev) => ({
                         ...prev,
                         [itemId]: doorSelection,
                     }));
-
-                    console.log(
-                        "[SchematicList] Used ref method to update parent state"
-                    );
-                } catch (error) {
-                    console.error(
-                        "[SchematicList] Error updating parent via ref:",
-                        error
-                    );
                 }
-            } else {
-                console.error(
-                    "[SchematicList] No method available to update parent state!"
-                );
+            } finally {
+                // Reset update flag after a short delay to allow React to process updates
+                setTimeout(() => {
+                    isUpdatingRef.current = false;
+                }, 0);
             }
-
-            // 3. Update access door price with the latest selections
-            updateAccessDoorPrice(updatedLocalSelections);
-
-            // 4. VERIFY STATE UPDATE
-            setTimeout(() => {
-                console.log(
-                    "[SchematicList] VERIFICATION CHECK - Current states:"
-                );
-                console.log(
-                    "- Local selections:",
-                    Object.keys(localAccessDoorSelections).length
-                );
-                console.log(
-                    "- Parent selections:",
-                    accessDoorSelections
-                        ? Object.keys(accessDoorSelections).length
-                        : 0
-                );
-            }, 100);
         },
-        [
-            setAccessDoorSelections,
-            accessDoorSelections, // Added dependency to ensure we use latest parent state
-            localAccessDoorSelections,
-            updateAccessDoorPrice,
-        ]
+        [setAccessDoorSelections]
     );
 
     return (
         <div className="schematic-list-container">
             <SchematicListGrid
                 combinedList={displayList}
-                groupDimensions={groupDimensions}
                 handleDimensionChange={handleDimensionChange}
                 placedItems={placedItems}
-                handleAccessDoorSelect={handleAccessDoorSelect} // Pass the local handler directly
-                accessDoorSelections={accessDoorSelections} // Use the properly destructured prop
+                handleAccessDoorSelect={handleAccessDoorSelect}
+                accessDoorSelections={accessDoorSelections}
                 onVentilationPriceChange={(price) => {
                     // Only update if there's a meaningful change to prevent infinite loops
                     if (Math.abs(flexiDuctVentilationPrice - price) > 0.001) {

@@ -1,19 +1,17 @@
 // components\kitchenSurvey\equipment\EquipmentForm.jsx
-"use client"; // Added because this component uses React hooks
-import React, { useState, useEffect, useRef } from "react";
-import { TabView, TabPanel } from "primereact/tabview"; // Import TabView components for subcategory tabs
-// Removed the Dropdown import since item selection is now handled via DataView grid layout
-import { InputText } from "primereact/inputtext"; // InputText component for numeric inputs
-import { Button } from "primereact/button"; // Button component
-import { DataView } from "primereact/dataview"; // DataView component for grid layout display
+"use client";
+import React, { useRef, useMemo } from "react";
+import { TabView, TabPanel } from "primereact/tabview";
+import { InputText } from "primereact/inputtext";
+import { Button } from "primereact/button";
+import { DataView } from "primereact/dataview";
 import "primeicons/primeicons.css";
 
 export default function EquipmentForm(props) {
     const {
         surveyForm,
-        uniqueSubcategories, // Array of unique subcategories
+        uniqueSubcategories,
         sortedFilteredItems,
-        gradeOptions,
         specialItems,
         isWalkIn,
         isVolumeItem,
@@ -21,155 +19,42 @@ export default function EquipmentForm(props) {
         handleNumberFocus,
         handleNumberBlur,
         handleAddSurvey,
-        // Single place for custom subcategory order
         subcategoryOrder,
-        // We receive the surveyList from Equipment so we can show the count
         surveyList = [],
     } = props;
 
-    const [activeTabIndex, setActiveTabIndex] = useState(0);
-    const [gradeSelections, setGradeSelections] = useState({});
-    const [dimensionInputs, setDimensionInputs] = useState({});
+    // Use React.useState with a factory function that runs once for initial value
+    // This eliminates unnecessary renders caused by frequent initializations
+    const [gradeSelections, setGradeSelections] = React.useState(() => ({}));
+    const [dimensionInputs, setDimensionInputs] = React.useState(() => ({}));
 
-    // Enhanced refs for preventing circular updates
-    const updatingTab = useRef(false);
-    const prevSubcategoryRef = useRef("");
-    const prevTabIndexRef = useRef(0);
-    const ignoreNextSubcategoryUpdateRef = useRef(false);
-    const ignoreNextTabChangeRef = useRef(false);
-    const isInitialRenderRef = useRef(true);
+    // Prevent additional renders by using refs to track state
+    const updatingTabRef = useRef(false);
 
-    // --------------------------------------------------------------------------------
-    // ==== Determine ordered subcategories based on a custom order ===================
-    // --------------------------------------------------------------------------------
-    const orderedSubcategories = React.useMemo(() => {
+    // Create the ordered subcategories using useMemo to prevent recreating on each render
+    const orderedSubcategories = useMemo(() => {
         const customOrder = Array.isArray(subcategoryOrder)
             ? subcategoryOrder
             : [];
-        // Trim the subcategory strings in uniqueSubcategories to avoid mismatch
         const trimmedUniqueSubs = uniqueSubcategories.map((s) => s.trim());
-        // Filter out duplicates to avoid re-adding them
         const remaining = trimmedUniqueSubs.filter(
             (sub) => !customOrder.includes(sub)
         );
-        // Concatenate customOrder with the remaining unique subcategories
         return [...customOrder, ...remaining];
     }, [uniqueSubcategories, subcategoryOrder]);
 
-    // Set initial active tab index based on surveyForm.subcategory
-    useEffect(() => {
-        if (isInitialRenderRef.current && surveyForm.subcategory) {
-            const index = orderedSubcategories.indexOf(surveyForm.subcategory);
-            if (index !== -1) {
-                setActiveTabIndex(index);
-                prevTabIndexRef.current = index;
-                prevSubcategoryRef.current = surveyForm.subcategory;
-            }
-            isInitialRenderRef.current = false;
-        }
-    }, [orderedSubcategories, surveyForm.subcategory]);
+    // Calculate the active tab index based on surveyForm.subcategory
+    // We don't store this in state to avoid circular updates
+    const activeTabIndex = useMemo(() => {
+        const index = orderedSubcategories.indexOf(surveyForm.subcategory);
+        return index >= 0 ? index : 0;
+    }, [surveyForm.subcategory, orderedSubcategories]);
 
-    // FIXED: Handle parent subcategory changes more robustly
-    useEffect(() => {
-        // Skip if we're in initial render or explicitly ignoring updates
-        if (
-            isInitialRenderRef.current ||
-            ignoreNextSubcategoryUpdateRef.current
-        ) {
-            ignoreNextSubcategoryUpdateRef.current = false;
-            return;
-        }
-
-        // Skip if we're already in an update cycle
-        if (updatingTab.current) {
-            return;
-        }
-
-        // Only update if subcategory has actually changed
-        if (
-            surveyForm.subcategory &&
-            surveyForm.subcategory !== prevSubcategoryRef.current
-        ) {
-            // Find the matching tab index
-            const index = orderedSubcategories.indexOf(surveyForm.subcategory);
-
-            // Only update if the index is valid and different from current
-            if (index !== -1 && index !== activeTabIndex) {
-                // Mark that we're handling this update
-                updatingTab.current = true;
-
-                // Update tracking refs
-                prevSubcategoryRef.current = surveyForm.subcategory;
-                prevTabIndexRef.current = index;
-
-                // Set flag to ignore next tab change since we're initiating this change
-                ignoreNextTabChangeRef.current = true;
-
-                // Update the active tab index directly
-                setActiveTabIndex(index);
-
-                // Reset the update flag after a delay
-                setTimeout(() => {
-                    updatingTab.current = false;
-                }, 50);
-            }
-        }
-    }, [surveyForm.subcategory, orderedSubcategories, activeTabIndex]);
-
-    // FIXED: Handle tab changes with simpler, more robust approach
-    const handleTabChange = (e) => {
-        // Skip if we're told to ignore this change or if already updating
-        if (ignoreNextTabChangeRef.current || updatingTab.current) {
-            ignoreNextTabChangeRef.current = false;
-            return;
-        }
-
-        const newIndex = e.index;
-
-        // Skip if the index hasn't actually changed
-        if (newIndex === activeTabIndex) {
-            return;
-        }
-
-        // Get the subcategory for the selected tab
-        const selectedSub = orderedSubcategories[newIndex] || "";
-
-        // Skip if the subcategory is the same as current subcategory
-        if (selectedSub === surveyForm.subcategory) {
-            // Just update the active index without changing subcategory
-            setActiveTabIndex(newIndex);
-            prevTabIndexRef.current = newIndex;
-            return;
-        }
-
-        // Mark that we're handling this update
-        updatingTab.current = true;
-
-        // Update tracking refs
-        prevTabIndexRef.current = newIndex;
-        prevSubcategoryRef.current = selectedSub;
-
-        // Update active tab index first for immediate UI feedback
-        setActiveTabIndex(newIndex);
-
-        // Tell subsequent subcategory effect to ignore the next update
-        ignoreNextSubcategoryUpdateRef.current = true;
-
-        // Call parent's handler to update subcategory
-        handleSurveyChange({
-            target: { name: "subcategory", value: selectedSub },
-        });
-
-        // Reset the update flag after a delay
-        setTimeout(() => {
-            updatingTab.current = false;
-        }, 50);
-    };
-
-    // Initialize default grade selection for items based on available grades
-    useEffect(() => {
+    // Initialize grade selections for items - only run when items change
+    React.useEffect(() => {
         setGradeSelections((prev) => {
-            let newState = { ...prev };
+            const newState = { ...prev };
+
             sortedFilteredItems.forEach((item) => {
                 if (!newState[item.item]) {
                     const availableGrades = item.prices
@@ -181,20 +66,46 @@ export default function EquipmentForm(props) {
                     newState[item.item] = defaultGrade;
                 }
             });
+
             return newState;
         });
     }, [sortedFilteredItems]);
 
-    // Reorder items: normal items first (alphabetically), then dimension items.
-    const reorderedItems = sortedFilteredItems
-        .filter(
+    // CRITICAL FIX: Simple tab change handler without state updates
+    const handleTabChange = (e) => {
+        if (updatingTabRef.current) return;
+
+        const newIndex = e.index;
+        if (newIndex === activeTabIndex) return;
+
+        const selectedSubcategory = orderedSubcategories[newIndex];
+        if (!selectedSubcategory) return;
+
+        updatingTabRef.current = true;
+
+        // Notify parent directly without updating local state
+        handleSurveyChange({
+            target: { name: "subcategory", value: selectedSubcategory },
+        });
+
+        // Reset flag after a short delay
+        setTimeout(() => {
+            updatingTabRef.current = false;
+        }, 0);
+    };
+
+    // Reorder items: normal items first, then dimension items
+    const reorderedItems = useMemo(() => {
+        const normalItems = sortedFilteredItems.filter(
             (item) => !(isVolumeItem(item.item) || specialItems.has(item.item))
-        )
-        .concat(
-            sortedFilteredItems.filter(
-                (item) => isVolumeItem(item.item) || specialItems.has(item.item)
-            )
         );
+
+        const dimensionItems = sortedFilteredItems.filter(
+            (item) => isVolumeItem(item.item) || specialItems.has(item.item)
+        );
+
+        return [...normalItems, ...dimensionItems];
+    }, [sortedFilteredItems, isVolumeItem, specialItems]);
 
     // Handle item template for DataView
     const itemTemplate = (item) => {
@@ -203,23 +114,28 @@ export default function EquipmentForm(props) {
         const isFridgeWalkInExt =
             item.item === "Fridge - Walk-In" &&
             item.subcategory.trim() === "Cold Equipment (ext)";
+
         if (isFridgeWalkInExt) {
             effectiveIsVolume = false;
             effectiveIsArea = false;
         }
+
         const isDimension = effectiveIsVolume || effectiveIsArea;
 
+        // Get available grades and current grade
         const availableGrades = item.prices ? Object.keys(item.prices) : ["B"];
         const currentGrade =
             gradeSelections[item.item] ||
             (availableGrades.includes("B") ? "B" : availableGrades[0]);
 
+        // Get dimensions
         const dims = dimensionInputs[item.item] || {
             length: "",
             width: "",
             height: "",
         };
 
+        // Calculate quantity based on dimensions
         let computedQuantity = 0;
         if (isDimension) {
             const length = parseFloat(dims.length) || 0;
@@ -230,6 +146,7 @@ export default function EquipmentForm(props) {
                 : length * width;
         }
 
+        // Handle dimension change
         const handleDimensionChange = (e, field) => {
             const { value } = e.target;
             setDimensionInputs((prev) => ({
@@ -238,6 +155,7 @@ export default function EquipmentForm(props) {
             }));
         };
 
+        // Handle grade cycling
         const cycleGrade = () => {
             const currentIndex = availableGrades.indexOf(currentGrade);
             const nextIndex = (currentIndex + 1) % availableGrades.length;
@@ -247,6 +165,7 @@ export default function EquipmentForm(props) {
             }));
         };
 
+        // Handle add button click
         const onAddClick = (e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -280,12 +199,15 @@ export default function EquipmentForm(props) {
                 }
             }
 
+            // Create new entry
             const newEntry = {
                 id: Date.now() + Math.random(),
                 item: item.item,
                 grade: currentGrade,
                 subcategory: surveyForm.subcategory,
             };
+
+            // Add dimensions if needed
             if (isDimension) {
                 newEntry.number = computedQuantity;
                 newEntry.length = dims.length;
@@ -296,9 +218,11 @@ export default function EquipmentForm(props) {
             } else {
                 newEntry.number = 1;
             }
+
+            // Add item to survey list
             handleAddSurvey(newEntry);
 
-            // Clear dimension inputs after adding item for better UX
+            // Clear dimension inputs after adding item
             if (isDimension) {
                 setDimensionInputs((prev) => ({
                     ...prev,
@@ -307,9 +231,8 @@ export default function EquipmentForm(props) {
             }
         };
 
-        // Calculate how many of this item (with matching subcategory & grade) are in the surveyList
+        // Calculate item count
         const itemCount = (surveyList || []).reduce((acc, entry) => {
-            // Must match item, subcategory, and grade
             if (
                 entry.item === item.item &&
                 entry.grade === currentGrade &&
@@ -320,6 +243,7 @@ export default function EquipmentForm(props) {
             return acc;
         }, 0);
 
+        // Render item template
         return (
             <div
                 style={{
@@ -339,7 +263,7 @@ export default function EquipmentForm(props) {
                         display: "flex",
                         flexDirection: "column",
                         justifyContent: "space-between",
-                        backgroundColor: itemCount > 0 ? "#f0f7ff" : "#fff", // Highlight cards that have items
+                        backgroundColor: itemCount > 0 ? "#f1f1f1" : "#fff",
                     }}
                 >
                     <div>
@@ -351,7 +275,6 @@ export default function EquipmentForm(props) {
                                 alignItems: "center",
                             }}
                         >
-                            {/* Item name on the left and count (if any) right aligned */}
                             <h4 style={{ margin: "0 0 0.2rem 0" }}>
                                 {item.item}
                             </h4>
@@ -359,7 +282,7 @@ export default function EquipmentForm(props) {
                                 <h4
                                     style={{
                                         margin: "0 0 0.2rem 0",
-                                        backgroundColor: "#007ad9",
+                                        backgroundColor: "#F9C400",
                                         color: "white",
                                         borderRadius: "50%",
                                         width: "24px",

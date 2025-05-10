@@ -119,6 +119,35 @@ export default function SiteOperationsAccordion({
         return value === "Yes";
     };
 
+    // Helper function to check if field has data
+    const fieldHasData = (field) => {
+        const value = safeOperations[field];
+        if (value === null || value === undefined) return false;
+        if (typeof value === "string") return value.trim() !== "";
+        return true; // For other types like dates, objects, etc.
+    };
+
+    // Helper function to check if time has data
+    const timeHasData = (timeObj) => {
+        return timeObj && (timeObj.start || timeObj.end);
+    };
+
+    // Custom CSS for highlighting fields with data
+    const customStyles = `
+        .p-calendar-has-data .p-inputtext {
+            border-color: var(--primary-color) !important;
+        }
+        .p-dropdown-has-data .p-dropdown-label {
+            border-color: var(--primary-color) !important;
+        }
+        .p-button-has-data {
+            border-color: var(--primary-color) !important;
+        }
+        .p-togglebutton-has-data {
+            border-color: var(--primary-color) !important;
+        }
+    `;
+
     // Toggle with input - USES PROPS DIRECTLY
     const renderToggleWithInput = (item) => {
         console.log(
@@ -146,7 +175,15 @@ export default function SiteOperationsAccordion({
                     }}
                     onLabel="Yes"
                     offLabel="No"
-                    style={{ width: "100%", height: "40px" }}
+                    style={{
+                        width: "100%",
+                        height: "40px",
+                    }}
+                    className={
+                        isToggleYes(item.toggleField)
+                            ? "p-togglebutton-has-data"
+                            : ""
+                    }
                 />
                 {isToggleYes(item.toggleField) && (
                     <div style={{ marginTop: "10px" }}>
@@ -164,6 +201,9 @@ export default function SiteOperationsAccordion({
                                 width: "100%",
                                 overflow: "hidden",
                                 minHeight: "40px",
+                                borderColor: fieldHasData(item.inputField)
+                                    ? "var(--primary-color)"
+                                    : "",
                             }}
                         />
                     </div>
@@ -206,7 +246,13 @@ export default function SiteOperationsAccordion({
                             });
                         }}
                         placeholder="Time"
-                        style={{ height: "40px", width: "auto" }}
+                        style={{
+                            height: "40px",
+                            width: "auto",
+                            border: fieldHasData("bestServiceTime")
+                                ? "1px solid var(--primary-color)"
+                                : "",
+                        }}
                     />
                     <Dropdown
                         value={safeOperations.bestServiceDay}
@@ -220,7 +266,13 @@ export default function SiteOperationsAccordion({
                             });
                         }}
                         placeholder="Day"
-                        style={{ height: "40px", width: "auto" }}
+                        style={{
+                            height: "40px",
+                            width: "auto",
+                            border: fieldHasData("bestServiceDay")
+                                ? "1px solid var(--primary-color)"
+                                : "",
+                        }}
                     />
                 </div>
             </div>
@@ -256,6 +308,11 @@ export default function SiteOperationsAccordion({
                             width: "140px",
                             gap: "0.5rem",
                         }}
+                        className={
+                            fieldHasData("serviceDue")
+                                ? "p-calendar-has-data"
+                                : ""
+                        }
                         touchUI
                         showIcon
                     />
@@ -375,7 +432,13 @@ export default function SiteOperationsAccordion({
                                 timeOnly
                                 hourFormat="24"
                                 placeholder="Start Time"
-                                style={{ height: "40px", width: "120px" }}
+                                style={{
+                                    height: "40px",
+                                    width: "120px",
+                                }}
+                                className={
+                                    weekdays.start ? "p-calendar-has-data" : ""
+                                }
                             />
                             <Calendar
                                 value={getTimeDate(weekdays.end)}
@@ -398,7 +461,13 @@ export default function SiteOperationsAccordion({
                                 timeOnly
                                 hourFormat="24"
                                 placeholder="End Time"
-                                style={{ height: "40px", width: "120px" }}
+                                style={{
+                                    height: "40px",
+                                    width: "120px",
+                                }}
+                                className={
+                                    weekdays.end ? "p-calendar-has-data" : ""
+                                }
                             />
                         </div>
                     </div>
@@ -441,7 +510,13 @@ export default function SiteOperationsAccordion({
                                 timeOnly
                                 hourFormat="24"
                                 placeholder="Start Time"
-                                style={{ height: "40px", width: "120px" }}
+                                style={{
+                                    height: "40px",
+                                    width: "120px",
+                                }}
+                                className={
+                                    weekend.start ? "p-calendar-has-data" : ""
+                                }
                             />
                             <Calendar
                                 value={getTimeDate(weekend.end)}
@@ -464,7 +539,13 @@ export default function SiteOperationsAccordion({
                                 timeOnly
                                 hourFormat="24"
                                 placeholder="End Time"
-                                style={{ height: "40px", width: "120px" }}
+                                style={{
+                                    height: "40px",
+                                    width: "120px",
+                                }}
+                                className={
+                                    weekend.end ? "p-calendar-has-data" : ""
+                                }
                             />
                         </div>
                     </div>
@@ -490,18 +571,23 @@ export default function SiteOperationsAccordion({
     };
 
     return (
-        <Accordion
-            multiple
-            activeIndex={isOpen ? [0] : null}
-            onTabChange={() => toggleAccordion && toggleAccordion("operations")}
-        >
-            <AccordionTab header="Site Operations">
-                <DataView
-                    value={fields}
-                    layout="grid"
-                    itemTemplate={renderField}
-                />
-            </AccordionTab>
-        </Accordion>
+        <>
+            <style>{customStyles}</style>
+            <Accordion
+                multiple
+                activeIndex={isOpen ? [0] : null}
+                onTabChange={() =>
+                    toggleAccordion && toggleAccordion("operations")
+                }
+            >
+                <AccordionTab header="Site Operations">
+                    <DataView
+                        value={fields}
+                        layout="grid"
+                        itemTemplate={renderField}
+                    />
+                </AccordionTab>
+            </Accordion>
+        </>
     );
 }

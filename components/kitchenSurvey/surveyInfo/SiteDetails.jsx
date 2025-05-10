@@ -6,13 +6,14 @@ import { Card } from "primereact/card";
 import { InputText } from "primereact/inputtext";
 import { Button } from "primereact/button";
 import { Toast } from "primereact/toast";
+import { TabView, TabPanel } from "primereact/tabview"; // Import PrimeReact TabView components
 import SiteSelect from "./SiteSelect"; // Adjust path if necessary
 
 export default function SiteDetails({ siteDetails, setSiteDetails }) {
     const [isEditing, setIsEditing] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
-    // CRITICAL FIX: Instead of using TabView, use a simple tab state
-    const [activeTab, setActiveTab] = useState("existing"); // "existing" or "new"
+    // Use PrimeReact's tabview index instead of custom tab state
+    const [activeTabIndex, setActiveTabIndex] = useState(0); // 0 for "existing", 1 for "new"
     const toast = useRef(null);
 
     // Ensure there's at least one address object in siteDetails.addresses.
@@ -329,47 +330,6 @@ export default function SiteDetails({ siteDetails, setSiteDetails }) {
         );
     };
 
-    // CRITICAL FIX: Custom tab header component that doesn't use TabView
-    const renderTabHeaders = () => {
-        return (
-            <div
-                style={{
-                    display: "flex",
-                    borderBottom: "1px solid #dee2e6",
-                    marginBottom: "1rem",
-                }}
-            >
-                <div
-                    onClick={() => setActiveTab("existing")}
-                    style={{
-                        padding: "1rem 1.5rem",
-                        cursor: "pointer",
-                        fontWeight:
-                            activeTab === "existing" ? "bold" : "normal",
-                        borderBottom:
-                            activeTab === "existing"
-                                ? "2px solid #3B82F6"
-                                : "none",
-                    }}
-                >
-                    Existing Site
-                </div>
-                <div
-                    onClick={() => setActiveTab("new")}
-                    style={{
-                        padding: "1rem 1.5rem",
-                        cursor: "pointer",
-                        fontWeight: activeTab === "new" ? "bold" : "normal",
-                        borderBottom:
-                            activeTab === "new" ? "2px solid #3B82F6" : "none",
-                    }}
-                >
-                    New Site
-                </div>
-            </div>
-        );
-    };
-
     return (
         <div
             style={{
@@ -385,23 +345,21 @@ export default function SiteDetails({ siteDetails, setSiteDetails }) {
             {siteDetails._id && !isEditing ? (
                 renderSiteDetailsCard()
             ) : (
-                // CRITICAL FIX: Replace TabView with custom tabs implementation
-                <>
-                    {renderTabHeaders()}
-
-                    {activeTab === "existing" && (
-                        <div>
-                            <SiteSelect
-                                onSiteSelect={(site) => {
-                                    setSiteDetails(site);
-                                    setIsEditing(false);
-                                }}
-                            />
-                        </div>
-                    )}
-
-                    {activeTab === "new" && renderSiteInputs()}
-                </>
+                // Replace custom tabs with PrimeReact TabView
+                <TabView
+                    activeIndex={activeTabIndex}
+                    onTabChange={(e) => setActiveTabIndex(e.index)}
+                >
+                    <TabPanel header="Existing Site">
+                        <SiteSelect
+                            onSiteSelect={(site) => {
+                                setSiteDetails(site);
+                                setIsEditing(false);
+                            }}
+                        />
+                    </TabPanel>
+                    <TabPanel header="New Site">{renderSiteInputs()}</TabPanel>
+                </TabView>
             )}
 
             {/* When editing an existing site */}

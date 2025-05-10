@@ -32,6 +32,18 @@ export default function PrimaryContactDetails({
     const [isSaving, setIsSaving] = useState(false);
     const toast = useRef(null);
 
+    // Custom CSS to fix ContactSelect dropdown display
+    const customStyles = `
+        .p-dropdown .p-dropdown-label.p-placeholder {
+            color: #6c757d;
+        }
+        .p-dropdown .p-dropdown-label:not(.p-dropdown-items-wrapper):not(.p-multiselect-items-wrapper) {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+    `;
+
     // Notify parent when contacts change
     useEffect(() => {
         if (onContactsChange) onContactsChange(contacts);
@@ -417,6 +429,7 @@ export default function PrimaryContactDetails({
                 padding: "1rem",
             }}
         >
+            <style>{customStyles}</style>
             <Toast ref={toast} />
             {(!siteDetails || !siteDetails._id) && (
                 <Message
@@ -484,6 +497,7 @@ export default function PrimaryContactDetails({
                         }
                     }}
                     siteDetails={siteDetails}
+                    placeholder="Select Contact"
                 />
             </div>
             <h4>Create new contact</h4>

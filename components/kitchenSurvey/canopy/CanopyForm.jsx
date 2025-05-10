@@ -2,6 +2,7 @@
 import { InputText } from "primereact/inputtext";
 import { Button } from "primereact/button";
 import DropItemGrade from "../DropItemGrade"; // Combined item/grade selector component
+import { useEffect, useState } from "react";
 
 export default function CanopyForm({
     form,
@@ -10,6 +11,15 @@ export default function CanopyForm({
     filterItems,
     handleAddEntry,
 }) {
+    // Helper function to check if a field has data
+    const fieldHasData = (section, field) => {
+        return (
+            form[section][field] !== null &&
+            form[section][field] !== undefined &&
+            form[section][field] !== ""
+        );
+    };
+
     return (
         <div className="canopy-entry-form" style={{ marginBottom: "2rem" }}>
             {/* Cards Container - Flex row on large screens, column on small */}
@@ -85,7 +95,13 @@ export default function CanopyForm({
                             }
                             placeholder="Length"
                             required
-                            style={{ width: "92px", height: "40px" }}
+                            style={{
+                                width: "92px",
+                                height: "40px",
+                                border: fieldHasData("canopy", "length")
+                                    ? "1px solid var(--primary-color)"
+                                    : "",
+                            }}
                         />
 
                         {/* Width */}
@@ -98,7 +114,13 @@ export default function CanopyForm({
                             }
                             placeholder="Width"
                             required
-                            style={{ width: "92px", height: "40px" }}
+                            style={{
+                                width: "92px",
+                                height: "40px",
+                                border: fieldHasData("canopy", "width")
+                                    ? "1px solid var(--primary-color)"
+                                    : "",
+                            }}
                         />
 
                         {/* Height */}
@@ -111,7 +133,13 @@ export default function CanopyForm({
                             }
                             placeholder="Height"
                             required
-                            style={{ width: "92px", height: "40px" }}
+                            style={{
+                                width: "92px",
+                                height: "40px",
+                                border: fieldHasData("canopy", "height")
+                                    ? "1px solid var(--primary-color)"
+                                    : "",
+                            }}
                         />
                     </div>
                 </div>
@@ -170,7 +198,13 @@ export default function CanopyForm({
                             }
                             placeholder="Number"
                             required
-                            style={{ width: "92px", height: "40px" }}
+                            style={{
+                                width: "92px",
+                                height: "40px",
+                                border: fieldHasData("filter", "number")
+                                    ? "1px solid var(--primary-color)"
+                                    : "",
+                            }}
                         />
                     </div>
 
@@ -193,7 +227,13 @@ export default function CanopyForm({
                             }
                             placeholder="Length"
                             required
-                            style={{ width: "92px", height: "40px" }}
+                            style={{
+                                width: "92px",
+                                height: "40px",
+                                border: fieldHasData("filter", "length")
+                                    ? "1px solid var(--primary-color)"
+                                    : "",
+                            }}
                         />
 
                         {/* Width */}
@@ -206,7 +246,13 @@ export default function CanopyForm({
                             }
                             placeholder="Width"
                             required
-                            style={{ width: "92px", height: "40px" }}
+                            style={{
+                                width: "92px",
+                                height: "40px",
+                                border: fieldHasData("filter", "width")
+                                    ? "1px solid var(--primary-color)"
+                                    : "",
+                            }}
                         />
 
                         {/* Height */}
@@ -219,7 +265,13 @@ export default function CanopyForm({
                             }
                             placeholder="Height"
                             required
-                            style={{ width: "92px", height: "40px" }}
+                            style={{
+                                width: "92px",
+                                height: "40px",
+                                border: fieldHasData("filter", "height")
+                                    ? "1px solid var(--primary-color)"
+                                    : "",
+                            }}
                         />
                     </div>
                 </div>

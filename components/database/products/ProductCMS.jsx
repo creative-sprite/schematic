@@ -7,6 +7,7 @@ import { Accordion, AccordionTab } from "primereact/accordion";
 import { Button } from "primereact/button";
 import { ConfirmDialog, confirmDialog } from "primereact/confirmdialog";
 import { Toast } from "primereact/toast";
+import { Message } from "primereact/message";
 
 // Import components
 import CustomFieldCreator from "./customFields/CustomFieldCreator";
@@ -26,6 +27,11 @@ const ProductCMS = () => {
     const [showFormsManager, setShowFormsManager] = useState(false);
     const [showFieldsManager, setShowFieldsManager] = useState(false);
     const [showReorderUtility, setShowReorderUtility] = useState(false);
+
+    // State for migration
+    const [isMigrating, setIsMigrating] = useState(false);
+    const [migrationResults, setMigrationResults] = useState(null);
+    const [migrationError, setMigrationError] = useState(null);
 
     // Toast reference for notifications
     const toast = useRef(null);
@@ -80,6 +86,57 @@ const ProductCMS = () => {
         if (showFieldsManager) setShowFieldsManager(false); // Close fields manager if open
     };
 
+    // Function to run the field migration
+    const runFieldMigration = async () => {
+        try {
+            setIsMigrating(true);
+            setMigrationResults(null);
+            setMigrationError(null);
+
+            // Call the API to run the migration
+            const res = await fetch("/api/database/products/migrate", {
+                method: "POST",
+            });
+
+            if (!res.ok) {
+                throw new Error(`Migration failed: ${res.statusText}`);
+            }
+
+            const data = await res.json();
+
+            if (!data.success) {
+                throw new Error(data.message || "Migration failed");
+            }
+
+            // Store the results
+            setMigrationResults(data.results);
+
+            // Refresh all data after migration
+            refreshAllData();
+
+            // Show success message
+            toast.current.show({
+                severity: "success",
+                summary: "Migration Complete",
+                detail: `Updated ${data.results.updatedCount} products, skipped ${data.results.skippedCount}`,
+                life: 5000,
+            });
+        } catch (error) {
+            console.error("Migration error:", error);
+            setMigrationError(error.message);
+
+            // Show error message
+            toast.current.show({
+                severity: "error",
+                summary: "Migration Failed",
+                detail: error.message,
+                life: 5000,
+            });
+        } finally {
+            setIsMigrating(false);
+        }
+    };
+
     // Check for any errors
     useEffect(() => {
         if (fieldsError) console.error("Custom fields error:", fieldsError);
@@ -99,6 +156,19 @@ const ProductCMS = () => {
                         gap: "0.5rem",
                     }}
                 >
+                    {/* Add the migration button here */}
+                    <Button
+                        label={isMigrating ? "Migrating..." : "Update Fields"}
+                        icon={
+                            isMigrating ? "pi pi-spin pi-spinner" : "pi pi-sync"
+                        }
+                        onClick={runFieldMigration}
+                        disabled={isMigrating}
+                        className="p-button-info"
+                        tooltip="Update all products with missing field metadata"
+                        tooltipOptions={{ position: "bottom" }}
+                    />
+
                     <Button
                         label={
                             showReorderUtility
@@ -136,6 +206,41 @@ const ProductCMS = () => {
                         }
                     />
                 </div>
+
+                {/* Display migration results if available */}
+                {migrationResults && (
+                    <div style={{ marginBottom: "1rem" }}>
+                        <Message
+                            severity="success"
+                            text={`Field update complete! Updated: ${migrationResults.updatedCount}, Skipped: ${migrationResults.skippedCount}, Errors: ${migrationResults.errors.length}`}
+                        />
+
+                        {migrationResults.errors.length > 0 && (
+                            <div style={{ marginTop: "0.5rem" }}>
+                                <h4>Errors:</h4>
+                                <ul>
+                                    {migrationResults.errors.map(
+                                        (err, index) => (
+                                            <li key={index}>
+                                                {err.productId}: {err.error}
+                                            </li>
+                                        )
+                                    )}
+                                </ul>
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* Display migration error if one occurred */}
+                {migrationError && (
+                    <div style={{ marginBottom: "1rem" }}>
+                        <Message
+                            severity="error"
+                            text={`Error: ${migrationError}`}
+                        />
+                    </div>
+                )}
 
                 {/* Display managers when opened */}
                 {showReorderUtility && (

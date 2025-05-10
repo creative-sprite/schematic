@@ -65,6 +65,44 @@ export default function SaveSurvey({
     // Store a reference to the latest surveyImages to avoid state dependency issues
     const surveyImagesRef = useRef(surveyImages);
 
+    // ADDED: Debug logging for structure data on mount
+    useEffect(() => {
+        console.log("[SaveSurvey] Initialized with structure data:", {
+            structureId,
+            structureTotal,
+            structureDimensions: structureDimensions
+                ? JSON.stringify(structureDimensions)
+                : "none",
+            selectionData: structureSelectionData
+                ? structureSelectionData
+                      .map((item) => `${item.type}:${item.item}:${item.grade}`)
+                      .join(", ")
+                : "none",
+        });
+    }, []);
+
+    // ADDED: Debug logging for notes and comments on mount
+    useEffect(() => {
+        console.log("[SaveSurvey] Initialized with equipment data:", {
+            equipmentNotes: equipment?.notes
+                ? `${equipment.notes.substring(0, 20)}${
+                      equipment.notes.length > 20 ? "..." : ""
+                  }`
+                : "none",
+            specialistNotes: equipment?.specialistNotes
+                ? `${equipment.specialistNotes.substring(0, 20)}${
+                      equipment.specialistNotes.length > 20 ? "..." : ""
+                  }`
+                : "none",
+            subcategoryCommentsKeys: Object.keys(
+                equipment?.subcategoryComments || {}
+            ),
+            categoryCommentsKeys: Object.keys(
+                equipment?.categoryComments || {}
+            ),
+        });
+    }, []);
+
     // Keep surveyImagesRef up to date, but without causing re-renders
     useEffect(() => {
         surveyImagesRef.current = surveyImages;
@@ -464,6 +502,15 @@ export default function SaveSurvey({
                         </table>
                         `
                                 : `<p>No specialist equipment items added</p>`
+                        }
+                        ${
+                            equipment?.specialistNotes
+                                ? `
+                        <div style="margin-top: 10px;">
+                            <p><strong>Specialist Equipment Notes:</strong> ${equipment.specialistNotes}</p>
+                        </div>
+                        `
+                                : ""
                         }
                     </div>
                     
@@ -1339,38 +1386,29 @@ export default function SaveSurvey({
             }
         }
 
-        // Extract and validate equipment data
-        // Make sure equipmentSubcategoryComments is always an object with deep clone
-        const equipmentSubcategoryComments = equipment?.subcategoryComments
-            ? JSON.parse(JSON.stringify(equipment.subcategoryComments))
-            : {};
-
-        // Make sure equipmentNotes is always a string
-        const equipmentNotes = equipment?.notes || "";
-
-        // Make sure specialistCategoryComments is always an object with deep clone
-        const specialistCategoryComments = equipment?.categoryComments
-            ? JSON.parse(JSON.stringify(equipment.categoryComments))
-            : {};
-
-        // Process and validate access door selections, ensuring they have consistent structure
-        const processedAccessDoorSelections = {};
-
-        // Process each access door selection to ensure proper structure
-        Object.entries(accessDoorSelections).forEach(([itemId, doorData]) => {
-            // Make sure each door has the expected properties
-            processedAccessDoorSelections[itemId] = {
-                // Ensure MongoDB ID is present and prioritized
-                mongoId: doorData.mongoId || doorData.id || "",
-                id: doorData.mongoId || doorData.id || "",
-                name: doorData.name || "Selected Door",
-                type: doorData.type || "",
-                dimensions: doorData.dimensions || "",
-                price: doorData.price || 0,
-            };
+        // CRITICAL FIX: Add debug logging for notes fields
+        console.log("[SaveSurvey] Preparing to save with notes fields:", {
+            equipmentNotes: equipment?.notes,
+            specialistNotes: equipment?.specialistNotes,
+            // Show the first 20 chars for debugging
+            equipmentNotesPreview: equipment?.notes
+                ? equipment.notes.substring(0, 20) +
+                  (equipment.notes.length > 20 ? "..." : "")
+                : "none",
+            specialistNotesPreview: equipment?.specialistNotes
+                ? equipment.specialistNotes.substring(0, 20) +
+                  (equipment.specialistNotes.length > 20 ? "..." : "")
+                : "none",
         });
 
-        // Process duplicated areas to ensure each includes the equipment notes and comments
+        // CRITICAL FIX: Extract equipment data with clear separation
+        // Make sure notes and comments fields are properly extracted and validated
+        const equipmentNotes = equipment?.notes || "";
+        const specialistNotes = equipment?.specialistNotes || "";
+        const subcategoryComments = equipment?.subcategoryComments || {};
+        const categoryComments = equipment?.categoryComments || {};
+
+        // CRITICAL FIX: Process duplicated areas to ensure each includes the equipment notes and comments properly separated
         const processedAreasState = areasState.map((area) => {
             return {
                 ...area,
@@ -1378,10 +1416,53 @@ export default function SaveSurvey({
                 equipmentNotes: area.equipmentNotes || "",
                 equipmentSubcategoryComments:
                     area.equipmentSubcategoryComments || {},
+                // Ensure specialist equipment notes and category comments are separate
+                specialistNotes: area.specialistNotes || "",
+                categoryComments: area.categoryComments || {},
             };
         });
 
-        // Create comprehensive survey payload with standardized top-level images
+        // ADDED: Validate and normalize structure selection data
+        const normalizedSelectionData = (structureSelectionData || []).map(
+            (item) => {
+                return {
+                    type: item.type || "",
+                    item: item.item || "", // Allow empty strings for MongoDB
+                    grade: item.grade || "",
+                };
+            }
+        );
+
+        console.log(
+            "[SaveSurvey] Normalized selection data:",
+            normalizedSelectionData
+        );
+
+        // ADDED: Validate and normalize structure dimensions with explicit number conversion
+        const normalizedDimensions = {
+            length:
+                structureDimensions?.length !== undefined &&
+                structureDimensions?.length !== null
+                    ? Number(structureDimensions.length)
+                    : null,
+            width:
+                structureDimensions?.width !== undefined &&
+                structureDimensions?.width !== null
+                    ? Number(structureDimensions.width)
+                    : null,
+            height:
+                structureDimensions?.height !== undefined &&
+                structureDimensions?.height !== null
+                    ? Number(structureDimensions.height)
+                    : null,
+        };
+
+        console.log(
+            "[SaveSurvey] Normalized dimensions:",
+            normalizedDimensions
+        );
+
+        // CRITICAL FIX: Create comprehensive survey payload with correct separation
         const surveyPayload = {
             // Basic info
             refValue: refValue,
@@ -1403,27 +1484,27 @@ export default function SaveSurvey({
             // Store all images in the top-level images field
             images: processedImages,
 
-            // Section data
+            // Section data with FIXED normalized structure dimensions and selection data
             structure: {
                 structureId,
                 structureTotal,
-                selectionData: structureSelectionData || [],
-                dimensions: structureDimensions || {},
+                selectionData: normalizedSelectionData,
+                dimensions: normalizedDimensions,
                 structureComments: structureComments || "",
             },
 
-            // Include subcategoryComments in the equipmentSurvey section
+            // CRITICAL FIX: Include subcategoryComments in the equipmentSurvey section with regular equipment notes
             equipmentSurvey: {
                 entries: surveyData,
-                subcategoryComments: equipmentSubcategoryComments,
-                notes: equipmentNotes,
+                subcategoryComments: subcategoryComments,
+                notes: equipmentNotes, // Use separate variable for regular equipment notes
             },
 
-            // Include categoryComments in the specialistEquipmentSurvey section
+            // CRITICAL FIX: Include categoryComments in the specialistEquipmentSurvey section with specialist notes
             specialistEquipmentSurvey: {
                 entries: specialistEquipmentData,
-                categoryComments: specialistCategoryComments,
-                notes: equipment?.notes || "",
+                categoryComments: categoryComments,
+                notes: specialistNotes, // Use separate variable for specialist equipment notes
             },
 
             canopySurvey: {
@@ -1449,7 +1530,7 @@ export default function SaveSurvey({
                 cellSize: cellSize,
 
                 // Save full collections of selections and dimensions
-                accessDoorSelections: processedAccessDoorSelections,
+                accessDoorSelections: accessDoorSelections,
                 flexiDuctSelections: flexiDuctSelections,
                 groupDimensions: groupDimensions,
                 fanGradeSelections: fanGradeSelections,
@@ -1459,134 +1540,196 @@ export default function SaveSurvey({
                     // Clone the item to avoid modifying the original
                     const updatedItem = { ...item };
 
-                    // Get item key - using same approach as SchematicList.jsx for consistency
-                    const getItemKey = (item) => item.id || item._id || "";
-                    const itemKey = getItemKey(item);
+                    // CRITICAL FIX: Match the exact key generation logic from SchematicList.jsx
 
-                    // Only process dimensions for items that potentially need them
-                    if (
-                        item.requiresDimensions ||
-                        item.category === "Air" ||
-                        item.category === "Grease"
-                    ) {
-                        // IMPROVED: Extract dimensions with more robust handling
-                        // Get existing dimensions from item with null/undefined checks
-                        const existingItemDims = {
-                            length:
+                    // Basic key generation
+                    const getItemKey = (item) => {
+                        return item.id || item._id || "";
+                    };
+
+                    // For aggregated entries, we need to match the exact key format used in SchematicList
+                    const getDisplayAggregationKey = (item) => {
+                        if (item.aggregateEntry) {
+                            const keyPart = item.item ? item.item : item.name;
+                            if (keyPart) {
+                                return (
+                                    keyPart.trim().toLowerCase() +
+                                    "-" +
+                                    item.originalId
+                                );
+                            }
+                            return getItemKey(item);
+                        }
+                        return null;
+                    };
+
+                    // First try the aggregation key for items with aggregateEntry=true
+                    const aggregationKey = getDisplayAggregationKey(item);
+                    const itemKey = aggregationKey || getItemKey(item);
+
+                    console.log(
+                        `Using key "${itemKey}" for item "${
+                            item.name || "unknown"
+                        }" (id: ${item.id}, originalId: ${item.originalId})`
+                    );
+
+                    // Improved ventilation/grease item detection - match the function in SchematicList.jsx
+                    const isVentilationOrGreaseItem = (item) => {
+                        if (!item) return false;
+
+                        // Check category
+                        if (item.category) {
+                            const category = item.category.toLowerCase();
+                            if (
+                                category.includes("grease") ||
+                                category.includes("ventilation") ||
+                                category.includes("air intake") ||
+                                category.includes("extract") ||
+                                category === "air"
+                            ) {
+                                return true;
+                            }
+                        }
+
+                        // Check subcategory
+                        if (item.subcategory) {
+                            const subcategory = item.subcategory.toLowerCase();
+                            if (
+                                subcategory.includes("grease") ||
+                                subcategory.includes("ventilation") ||
+                                subcategory.includes("air intake") ||
+                                subcategory.includes("extract")
+                            ) {
+                                return true;
+                            }
+                        }
+
+                        // Check item name
+                        if (item.name || item.item) {
+                            const name = (item.name || item.item).toLowerCase();
+                            if (
+                                name.includes("grease") ||
+                                name.includes("vent") ||
+                                name.includes("air intake") ||
+                                name.includes("extract") ||
+                                name.includes("duct") ||
+                                name.includes("flexi")
+                            ) {
+                                return true;
+                            }
+                        }
+
+                        // Also check for requiresDimensions flag
+                        return !!item.requiresDimensions;
+                    };
+
+                    // Process dimensions for items that need them
+                    if (isVentilationOrGreaseItem(item)) {
+                        // CRITICAL FIX: Check dimensions under BOTH key formats
+                        // SchematicList uses direct ID as key, but we've been using composite key
+
+                        // Generate BOTH key formats
+                        const aggregationKey = getDisplayAggregationKey(item);
+                        const directIDKey = item.id || ""; // Direct item ID without composition
+
+                        // Try to find dimensions using either key format
+                        let dimensionsFound = false;
+                        let dims = null;
+
+                        // First check the aggregation key (composite key format)
+                        if (
+                            groupDimensions &&
+                            aggregationKey &&
+                            groupDimensions[aggregationKey]
+                        ) {
+                            dims = groupDimensions[aggregationKey];
+                            dimensionsFound = true;
+                            console.log(
+                                `Found dimensions using aggregation key "${aggregationKey}" for "${
+                                    item.name || "unknown"
+                                }"`
+                            );
+                        }
+                        // If not found, try the direct ID format (which SchematicListGrid.jsx uses)
+                        else if (
+                            groupDimensions &&
+                            directIDKey &&
+                            groupDimensions[directIDKey]
+                        ) {
+                            dims = groupDimensions[directIDKey];
+                            dimensionsFound = true;
+                            console.log(
+                                `Found dimensions using direct ID key "${directIDKey}" for "${
+                                    item.name || "unknown"
+                                }"`
+                            );
+                        }
+                        // As a last resort, use the original item's dimensions if any
+                        else if (item.length || item.width || item.height) {
+                            dims = {
+                                length: item.length,
+                                width: item.width,
+                                height: item.height,
+                            };
+                            dimensionsFound = true;
+                            console.log(
+                                `Using item's own dimensions for "${
+                                    item.name || "unknown"
+                                }"`
+                            );
+                        } else {
+                            console.log(
+                                `No dimensions found for "${
+                                    item.name || "unknown"
+                                }" under any key format`
+                            );
+                        }
+
+                        // Apply dimensions if found
+                        if (dimensionsFound && dims) {
+                            // Assign with explicit string conversion for consistency
+                            updatedItem.length =
+                                dims.length !== undefined &&
+                                dims.length !== null
+                                    ? String(dims.length)
+                                    : "";
+                            updatedItem.width =
+                                dims.width !== undefined && dims.width !== null
+                                    ? String(dims.width)
+                                    : "";
+                            updatedItem.height =
+                                dims.height !== undefined &&
+                                dims.height !== null
+                                    ? String(dims.height)
+                                    : "";
+
+                            console.log(
+                                `Applied dimensions to item "${
+                                    item.name || "unknown"
+                                }":`,
+                                {
+                                    length: updatedItem.length,
+                                    width: updatedItem.width,
+                                    height: updatedItem.height,
+                                }
+                            );
+                        } else {
+                            // No dimensions in groupDimensions, preserve any existing dimensions on the item
+                            updatedItem.length =
                                 item.length !== undefined &&
                                 item.length !== null
-                                    ? item.length
-                                    : "",
-                            width:
+                                    ? String(item.length)
+                                    : "";
+                            updatedItem.width =
                                 item.width !== undefined && item.width !== null
-                                    ? item.width
-                                    : "",
-                            height:
+                                    ? String(item.width)
+                                    : "";
+                            updatedItem.height =
                                 item.height !== undefined &&
                                 item.height !== null
-                                    ? item.height
-                                    : "",
-                        };
-
-                        // Get dimensions from groupDimensions with safer access
-                        // Check for dimensions using both the direct key and aggregated keys
-                        const findItemDimensions = (item, groupDimensions) => {
-                            // First try direct key lookup
-                            const directKey = getItemKey(item);
-                            if (groupDimensions && groupDimensions[directKey]) {
-                                return groupDimensions[directKey];
-                            }
-
-                            // If item has a name, try lowercase name-based lookup
-                            if (item.name) {
-                                const nameLower = item.name
-                                    .trim()
-                                    .toLowerCase();
-
-                                // Check if any key in groupDimensions contains the item name
-                                for (const key in groupDimensions) {
-                                    if (key.includes(nameLower)) {
-                                        return groupDimensions[key];
-                                    }
-                                }
-                            }
-
-                            // If we get here, no dimensions were found
-                            return { length: "", width: "", height: "" };
-                        };
-
-                        // Get dimensions using the improved lookup function
-                        const groupDims = findItemDimensions(
-                            item,
-                            groupDimensions
-                        );
-
-                        // Initialize dimensions - use group dimensions as priority source
-                        let finalLength =
-                            groupDims.length !== ""
-                                ? String(groupDims.length)
-                                : "";
-                        let finalWidth =
-                            groupDims.width !== ""
-                                ? String(groupDims.width)
-                                : "";
-                        let finalHeight =
-                            groupDims.height !== ""
-                                ? String(groupDims.height)
-                                : "";
-
-                        // Fall back to existing item dimensions if needed
-                        if (
-                            finalLength === "" &&
-                            existingItemDims.length !== ""
-                        ) {
-                            finalLength = String(existingItemDims.length);
+                                    ? String(item.height)
+                                    : "";
                         }
-                        if (
-                            finalWidth === "" &&
-                            existingItemDims.width !== ""
-                        ) {
-                            finalWidth = String(existingItemDims.width);
-                        }
-                        if (
-                            finalHeight === "" &&
-                            existingItemDims.height !== ""
-                        ) {
-                            finalHeight = String(existingItemDims.height);
-                        }
-
-                        // Check if dimensions exist in groupDimensions object first
-                        if (groupDimensions && groupDimensions[itemKey]) {
-                            // If any dimensions are explicitly set in groupDimensions, use them
-                            finalLength = groupDimensions[itemKey].length
-                                ? String(groupDimensions[itemKey].length)
-                                : finalLength;
-                            finalWidth = groupDimensions[itemKey].width
-                                ? String(groupDimensions[itemKey].width)
-                                : finalWidth;
-                            finalHeight = groupDimensions[itemKey].height
-                                ? String(groupDimensions[itemKey].height)
-                                : finalHeight;
-                        }
-
-                        // Only as a last resort for Air and Grease items, default to "1" if still empty
-                        if (
-                            (item.category === "Air" ||
-                                item.category === "Grease") &&
-                            (finalLength === "" ||
-                                finalWidth === "" ||
-                                finalHeight === "")
-                        ) {
-                            finalLength = finalLength || "1";
-                            finalWidth = finalWidth || "1";
-                            finalHeight = finalHeight || "1";
-                        }
-
-                        // DIRECT ASSIGNMENT: Set dimensions directly on updatedItem
-                        // Using direct assignment with explicit string conversion
-                        updatedItem.length = String(finalLength);
-                        updatedItem.width = String(finalWidth);
-                        updatedItem.height = String(finalHeight);
                     } else {
                         // For items that don't need dimensions, ensure they have empty strings
                         updatedItem.length = "";
@@ -1600,8 +1743,8 @@ export default function SaveSurvey({
                         item.category.toLowerCase() === "access doors"
                     ) {
                         const doorSelection =
-                            processedAccessDoorSelections &&
-                            processedAccessDoorSelections[itemKey];
+                            accessDoorSelections &&
+                            accessDoorSelections[itemKey];
                         if (doorSelection) {
                             updatedItem.selectedDoorId =
                                 doorSelection.mongoId || doorSelection.id || "";
@@ -1624,10 +1767,9 @@ export default function SaveSurvey({
             },
             access: access,
 
-            // Keep this for backward compatibility
+            // CRITICAL FIX: Use separate fields for specialistEquipment section
             specialistEquipment: {
-                ...equipment,
-                // Explicitly copy these fields to maintain backward compatibility
+                // Include basic toggle fields
                 acroPropsToggle: equipment?.acroPropsToggle || "No",
                 loftBoardsToggle: equipment?.loftBoardsToggle || "No",
                 scaffBoardsToggle: equipment?.scaffBoardsToggle || "No",
@@ -1637,20 +1779,24 @@ export default function SaveSurvey({
                 flexiHoseCircumference: equipment?.flexiHoseCircumference || "",
                 flexiHoseLength: equipment?.flexiHoseLength || "",
                 mewp: equipment?.mewp || "No",
-                notes: equipment?.notes || "",
+                // Use the specialist notes, not regular equipment notes
+                notes: specialistNotes,
+                // Include category comments
+                categoryComments: categoryComments,
             },
 
-            operations: operations, // operations no longer contains parking
+            operations: processedOperations, // operations no longer contains parking
             notes: notes, // The notes object should already have obstructions as an array
 
-            // Areas and totals - include updated area state with equipment notes
+            // CRITICAL FIX: Updated areas state with proper equipment data separation
+            // Areas and totals - include updated area state with correctly separated fields
             totals: {
                 mainArea: mainAreaTotals,
-                duplicatedAreas: processedAreasState, // Use processed areas that include equipment notes
+                duplicatedAreas: processedAreasState, // Use processed areas with proper field separation
                 grandTotal: computedGrandTotals(), // Grand total for all areas
                 modify: modify,
             },
-            duplicatedAreas: processedAreasState, // Use processed areas that include equipment notes
+            duplicatedAreas: processedAreasState, // Use processed areas with proper field separation
         };
 
         // Fix the type issues with schematicItemsTotal without logging the large payloads
@@ -1695,6 +1841,12 @@ export default function SaveSurvey({
                 }
             }
         }
+
+        // ADDED: Log the final structure data being saved
+        console.log("[SaveSurvey] Final structure data being saved:", {
+            selectionData: surveyPayload.structure.selectionData,
+            dimensions: surveyPayload.structure.dimensions,
+        });
 
         try {
             let res;

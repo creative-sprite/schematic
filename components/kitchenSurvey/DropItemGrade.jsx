@@ -1,6 +1,6 @@
 // components\kitchenSurvey\DropItemGrade.jsx
 "use client";
-import React, { useRef } from "react";
+import React, { useRef, useEffect } from "react";
 import { Button } from "primereact/button";
 import { OverlayPanel } from "primereact/overlaypanel";
 
@@ -12,8 +12,25 @@ export default function DropItemGrade({
 }) {
     const op = useRef(null);
 
+    // ADDED: Debug logging only to diagnose the Floor selection issue
+    useEffect(() => {
+        // Only log when this might be the Floor row
+        if (value && value.type === "Floor") {
+            console.log("DropItemGrade for Floor:", {
+                currentValue: value,
+                availableItems: items ? items.length : 0,
+            });
+        }
+    }, [value, items]);
+
     // When a grade is selected, update the parent with both item and grade, then hide the overlay.
     const handleGradeSelect = (item, grade) => {
+        // ADDED: Log selection events for debugging
+        console.log("DropItemGrade: Grade selected", {
+            item: item.item,
+            grade: grade,
+        });
+
         if (onChange) {
             onChange({ item: item.item, grade });
         }

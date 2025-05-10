@@ -1,12 +1,10 @@
 // components/kitchenSurvey/equipment/EquipmentNotes.jsx
-import React, { useState, useEffect, useRef, memo } from "react";
+import React, { useRef, memo } from "react";
+import { InputTextarea } from "primereact/inputtextarea"; // Import PrimeReact InputTextarea
 
 // Use memo to prevent unnecessary re-renders
-const EquipmentNotes = memo(({ initialNotes = "", onNotesChange }) => {
-    const [notes, setNotes] = useState(initialNotes);
+const EquipmentNotes = memo(({ notes = "", onNotesChange }) => {
     const textareaRef = useRef(null);
-    const prevNotesRef = useRef("");
-    const isInternalUpdateRef = useRef(false);
 
     // Function to adjust textarea height based on content
     const adjustHeight = () => {
@@ -19,28 +17,12 @@ const EquipmentNotes = memo(({ initialNotes = "", onNotesChange }) => {
         }
     };
 
-    // Adjust height on notes change
-    useEffect(() => {
+    // Adjust height when component mounts or notes change
+    React.useEffect(() => {
         adjustHeight();
     }, [notes]);
 
-    // Update local state when initialNotes changes (for loading saved data)
-    useEffect(() => {
-        // Skip if we initiated the update ourselves
-        if (isInternalUpdateRef.current) {
-            isInternalUpdateRef.current = false;
-            return;
-        }
-
-        // Only update if there's an actual change
-        if (initialNotes !== prevNotesRef.current) {
-            console.log("[EquipmentNotes] External notes update detected");
-            setNotes(initialNotes);
-            prevNotesRef.current = initialNotes;
-        }
-    }, [initialNotes]);
-
-    // Handle input change with debouncing
+    // Handle input change
     const handleChange = (e) => {
         const value = e.target.value;
 
@@ -49,14 +31,7 @@ const EquipmentNotes = memo(({ initialNotes = "", onNotesChange }) => {
             return;
         }
 
-        // Mark that we're making an internal update
-        isInternalUpdateRef.current = true;
-
-        // Update local state
-        setNotes(value);
-        prevNotesRef.current = value;
-
-        // Notify parent component if callback exists
+        // Notify parent component directly
         if (typeof onNotesChange === "function") {
             onNotesChange(value);
         }
@@ -64,23 +39,24 @@ const EquipmentNotes = memo(({ initialNotes = "", onNotesChange }) => {
 
     return (
         <div className="notes-container" style={{ marginTop: "1.5rem" }}>
-            <textarea
+            <label htmlFor="equipment-notes" className="block">
+                Equipment Notes
+            </label>
+            <InputTextarea
                 ref={textareaRef}
+                id="equipment-notes"
+                name="equipment-notes"
                 value={notes}
                 onChange={handleChange}
                 placeholder="Equipment other notes"
                 className="notes-textarea"
+                rows={3}
+                autoResize
                 style={{
                     width: "100%",
-                    minHeight: "80px",
-                    padding: "10px",
-                    border: "1px solid #ccc",
-                    borderRadius: "4px",
-                    resize: "none", // Disable manual resizing since we'll handle it
-                    fontFamily: "inherit",
-                    fontSize: "1rem",
-                    lineHeight: "1.5",
+                    marginTop: "1rem",
                 }}
+                aria-label="Equipment notes"
             />
         </div>
     );

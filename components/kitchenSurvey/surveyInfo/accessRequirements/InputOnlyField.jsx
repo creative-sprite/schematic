@@ -12,6 +12,15 @@ export default function InputOnlyField({ item, access, setAccess }) {
         });
     };
 
+    // Check if the input field has data
+    const inputHasData = () => {
+        return (
+            access[item.inputField] !== undefined &&
+            access[item.inputField] !== null &&
+            access[item.inputField] !== ""
+        );
+    };
+
     return (
         <CardWrapper>
             <label
@@ -34,6 +43,9 @@ export default function InputOnlyField({ item, access, setAccess }) {
                         width: "100%",
                         overflow: "hidden",
                         minHeight: "40px",
+                        border: inputHasData()
+                            ? "1px solid var(--primary-color)"
+                            : "",
                     }}
                 />
             ) : (
@@ -42,7 +54,13 @@ export default function InputOnlyField({ item, access, setAccess }) {
                     value={access[item.inputField] ?? ""}
                     onChange={handleChange}
                     placeholder={item.inputPlaceholder}
-                    style={{ height: "40px", width: "100%" }}
+                    style={{
+                        height: "40px",
+                        width: "100%",
+                        border: inputHasData()
+                            ? "1px solid var(--primary-color)"
+                            : "",
+                    }}
                 />
             )}
         </CardWrapper>

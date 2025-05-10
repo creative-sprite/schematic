@@ -11,6 +11,11 @@ export default function ToggleOnlyField({ item, access, setAccess }) {
         });
     };
 
+    // Check if toggle is set to "Yes"
+    const isToggleEnabled = () => {
+        return access[item.toggleField] === "Yes";
+    };
+
     return (
         <CardWrapper>
             <label
@@ -23,11 +28,17 @@ export default function ToggleOnlyField({ item, access, setAccess }) {
                 {item.label}
             </label>
             <ToggleButton
-                checked={access[item.toggleField] === "Yes"}
+                checked={isToggleEnabled()}
                 onChange={handleToggleChange}
                 onLabel="Yes"
                 offLabel="No"
-                style={{ width: "100%", height: "40px" }}
+                style={{
+                    width: "100%",
+                    height: "40px",
+                    border: isToggleEnabled()
+                        ? "1px solid var(--primary-color)"
+                        : "",
+                }}
             />
         </CardWrapper>
     );

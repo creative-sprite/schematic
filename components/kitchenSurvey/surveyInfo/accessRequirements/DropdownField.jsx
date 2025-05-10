@@ -11,6 +11,15 @@ export default function DropdownField({ item, access, setAccess }) {
         });
     };
 
+    // Check if dropdown has a selection
+    const dropdownHasData = () => {
+        return (
+            access[item.field] !== undefined &&
+            access[item.field] !== null &&
+            access[item.field] !== ""
+        );
+    };
+
     return (
         <CardWrapper>
             <label
@@ -27,7 +36,13 @@ export default function DropdownField({ item, access, setAccess }) {
                 options={item.options}
                 onChange={handleChange}
                 placeholder={item.placeholder}
-                style={{ height: "40px", width: "100%" }}
+                style={{
+                    height: "40px",
+                    width: "100%",
+                    border: dropdownHasData()
+                        ? "1px solid var(--primary-color)"
+                        : "",
+                }}
             />
         </CardWrapper>
     );

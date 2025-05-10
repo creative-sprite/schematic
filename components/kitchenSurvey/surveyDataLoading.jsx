@@ -137,12 +137,24 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
     const [areasState, setAreasState] = useState([]); // array of totals
     const [areas, setAreas] = useState([]);
 
-    // Ventilation Information state
+    // FIXED: Initialize Ventilation Information state with proper options arrays
     const [ventilation, setVentilation] = useState({
         obstructionsToggle: "No",
+        obstructionsText: "",
+        obstructionsManualText: "",
+        obstructionsOptions: [], // Ensure options array is initialized
         damageToggle: "No",
+        damageText: "",
+        damageManualText: "",
+        damageOptions: [], // Ensure options array is initialized
         inaccessibleAreasToggle: "No",
+        inaccessibleAreasText: "",
+        inaccessibleAreasManualText: "",
+        inaccessibleAreasOptions: [], // Ensure options array is initialized
         clientActionsToggle: "No",
+        clientActionsText: "",
+        clientActionsManualText: "",
+        clientActionsOptions: [], // Ensure options array is initialized
         description: "",
         accessLocations: [],
     });
@@ -168,6 +180,7 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
         frequencyOfService: "",
     });
 
+    // CRITICAL FIX: Updated equipment state with separate notes fields
     // Specialist Equipment state with proper initialization
     const [equipment, setEquipment] = useState({
         acroPropsToggle: "No",
@@ -179,9 +192,10 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
         flexiHoseCircumference: "",
         flexiHoseLength: "",
         mewp: "No",
-        notes: "",
-        subcategoryComments: {},
-        categoryComments: {},
+        notes: "", // Regular equipment notes
+        specialistNotes: "", // Specialist equipment notes (separate field)
+        subcategoryComments: {}, // Equipment subcategory comments
+        categoryComments: {}, // Specialist equipment category comments
     });
 
     // Site operations state
@@ -391,30 +405,38 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
                     setSurveyImages(survey.images);
                 }
 
-                // Set equipment data with comments and notes
+                // CRITICAL FIX: Set equipment data with comments and notes
+                // Start with a clean merged equipment object
+                let updatedEquipment = { ...equipment };
+
+                // Process regular equipment survey data
                 if (survey.equipmentSurvey) {
                     // Set equipment entries
                     if (survey.equipmentSurvey.entries) {
                         setSurveyData(survey.equipmentSurvey.entries);
                     }
 
-                    // Process equipment comments and notes
-                    const equipmentComments =
-                        survey.equipmentSurvey.subcategoryComments || {};
+                    // Process equipment subcategory comments
+                    if (survey.equipmentSurvey.subcategoryComments) {
+                        console.log(
+                            "Loading equipment subcategoryComments:",
+                            survey.equipmentSurvey.subcategoryComments
+                        );
+                        updatedEquipment.subcategoryComments =
+                            survey.equipmentSurvey.subcategoryComments;
+                    }
 
-                    const updatedEquipment = {
-                        ...equipment, // Start with existing equipment state
-                        // Add subcategory comments from equipmentSurvey section
-                        subcategoryComments: equipmentComments,
-                        // Add notes from equipmentSurvey section
-                        notes: survey.equipmentSurvey.notes || "",
-                    };
-
-                    // Update the equipment state with the enhanced data
-                    setEquipment(updatedEquipment);
+                    // Process equipment notes
+                    if (survey.equipmentSurvey.notes) {
+                        console.log(
+                            "Loading equipment notes:",
+                            survey.equipmentSurvey.notes
+                        );
+                        updatedEquipment.notes = survey.equipmentSurvey.notes;
+                    }
                 }
 
-                // Set specialist equipment data
+                // Process specialist equipment data
                 if (survey.specialistEquipmentSurvey) {
                     // Set specialist equipment entries if they exist
                     if (survey.specialistEquipmentSurvey.entries) {
@@ -423,32 +445,41 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
                         );
                     }
 
-                    // Process specialist equipment notes and comments
-                    // Get latest state for safety
-                    const currentEquipment = { ...equipment };
+                    // CRITICAL FIX: Process specialist equipment notes as specialistNotes
+                    if (survey.specialistEquipmentSurvey.notes) {
+                        console.log(
+                            "Loading specialist equipment notes:",
+                            survey.specialistEquipmentSurvey.notes
+                        );
+                        updatedEquipment.specialistNotes =
+                            survey.specialistEquipmentSurvey.notes;
+                    }
 
-                    // Create updated equipment object with all specialist equipment related data
-                    const updatedEquipment = {
-                        ...currentEquipment,
-                        // Add category comments if they exist
-                        categoryComments:
-                            survey.specialistEquipmentSurvey.categoryComments ||
-                            currentEquipment.categoryComments ||
-                            {},
-                        // Add notes from specialistEquipmentSurvey
-                        notes:
-                            survey.specialistEquipmentSurvey.notes ||
-                            currentEquipment.notes ||
-                            "",
-                    };
-
-                    // Update equipment with both notes and category comments
-                    console.log(
-                        "Setting equipment with specialist equipment data:",
-                        updatedEquipment
-                    );
-                    setEquipment(updatedEquipment);
+                    // Process category comments
+                    if (survey.specialistEquipmentSurvey.categoryComments) {
+                        console.log(
+                            "Loading specialist equipment categoryComments:",
+                            survey.specialistEquipmentSurvey.categoryComments
+                        );
+                        updatedEquipment.categoryComments =
+                            survey.specialistEquipmentSurvey.categoryComments;
+                    }
                 }
+
+                // ADDED: Additional debugging for equipment fields
+                console.log("Final equipment object:", {
+                    notes: updatedEquipment.notes,
+                    specialistNotes: updatedEquipment.specialistNotes,
+                    subcategoryCommentsKeys: Object.keys(
+                        updatedEquipment.subcategoryComments || {}
+                    ),
+                    categoryCommentsKeys: Object.keys(
+                        updatedEquipment.categoryComments || {}
+                    ),
+                });
+
+                // Update equipment with ALL data
+                setEquipment(updatedEquipment);
 
                 // Set canopy data
                 if (survey.canopySurvey?.entries) {
@@ -694,9 +725,41 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
                     }
                 }
 
-                // Set ventilation info
+                // FIXED: Set ventilation info with proper options arrays
                 if (survey.ventilationInfo) {
-                    setVentilation(survey.ventilationInfo);
+                    // Make a normalized copy of ventilation info
+                    const normalizedVentilation = {
+                        ...survey.ventilationInfo,
+                        // Ensure all options arrays exist with proper defaults
+                        obstructionsOptions: Array.isArray(
+                            survey.ventilationInfo.obstructionsOptions
+                        )
+                            ? survey.ventilationInfo.obstructionsOptions
+                            : [],
+                        damageOptions: Array.isArray(
+                            survey.ventilationInfo.damageOptions
+                        )
+                            ? survey.ventilationInfo.damageOptions
+                            : [],
+                        inaccessibleAreasOptions: Array.isArray(
+                            survey.ventilationInfo.inaccessibleAreasOptions
+                        )
+                            ? survey.ventilationInfo.inaccessibleAreasOptions
+                            : [],
+                        clientActionsOptions: Array.isArray(
+                            survey.ventilationInfo.clientActionsOptions
+                        )
+                            ? survey.ventilationInfo.clientActionsOptions
+                            : [],
+                    };
+
+                    // Add debugging to verify normalized ventilation data
+                    console.log("Setting normalized ventilation data:", {
+                        original: survey.ventilationInfo,
+                        normalized: normalizedVentilation,
+                    });
+
+                    setVentilation(normalizedVentilation);
                 }
 
                 // Set access requirements

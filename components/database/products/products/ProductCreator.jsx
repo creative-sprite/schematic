@@ -609,6 +609,10 @@ const ProductCreator = ({
                 if (productValues[fieldLabel] !== undefined) {
                     customData.push({
                         fieldId: formField._id,
+                        fieldName: formField.label, // Add field name
+                        fieldType: formField.fieldType, // Add field type
+                        prefix: formField.prefix || "", // Add prefix if applicable
+                        suffix: formField.suffix || "", // Add suffix if applicable
                         value: productValues[fieldLabel],
                     });
                 }

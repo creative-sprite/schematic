@@ -38,6 +38,19 @@ export default function SpecialistEquipmentList(props) {
     const fetchErrorRef = useRef(false);
     const isMountedRef = useRef(true);
 
+    // ADDED: Ref to track category comments update status
+    const updatingCommentsRef = useRef(false);
+    const prevCommentsRef = useRef({});
+
+    // Helper function to check if a comment field has data
+    const commentHasData = (category) => {
+        return (
+            comments[category] !== undefined &&
+            comments[category] !== null &&
+            comments[category] !== ""
+        );
+    };
+
     // Cleanup on unmount
     useEffect(() => {
         return () => {
@@ -47,14 +60,22 @@ export default function SpecialistEquipmentList(props) {
 
     // Initialize comments from saved data if provided
     useEffect(() => {
+        // FIXED: Skip if already updating to prevent circular updates
+        if (updatingCommentsRef.current) return;
+
+        // Only update if there's an actual change
         if (
             initialCategoryComments &&
-            Object.keys(initialCategoryComments).length > 0
+            Object.keys(initialCategoryComments).length > 0 &&
+            JSON.stringify(initialCategoryComments) !==
+                JSON.stringify(prevCommentsRef.current)
         ) {
             console.log(
                 "Loading category comments in SpecialistEquipmentList:",
                 initialCategoryComments
             );
+            // Update tracking refs
+            prevCommentsRef.current = { ...initialCategoryComments };
             setComments(initialCategoryComments);
         }
     }, [initialCategoryComments]);
@@ -120,20 +141,6 @@ export default function SpecialistEquipmentList(props) {
 
         fetchCustomFields();
     }, []); // Empty dependency array ensures this only runs once
-
-    // Filter entries by type - NOT using useCallback
-    const getEntriesByType = (entries, type) => {
-        if (type === "volume") {
-            return entries.filter((entry) => isVolumeItem(entry.item));
-        } else if (type === "area") {
-            return entries.filter((entry) => specialItems.has(entry.item));
-        } else {
-            return entries.filter(
-                (entry) =>
-                    !isVolumeItem(entry.item) && !specialItems.has(entry.item)
-            );
-        }
-    };
 
     // Improved helper function for fieldId extraction
     const getFieldIdString = (fieldId) => {
@@ -351,9 +358,18 @@ export default function SpecialistEquipmentList(props) {
         );
     };
 
-    // Section rendering function - NOT using useCallback
+    // FIXED: Updated section rendering function with better debugging
     const renderSection = (entries, type) => {
         const grouped = groupByCategory(entries);
+
+        // ADDED: Better debug logging for categories and comments
+        console.log(
+            "Rendering sections with categories:",
+            Object.keys(grouped),
+            "Comments available:",
+            Object.keys(comments)
+        );
+
         return Object.keys(grouped).map((category) => (
             <div key={category} style={{ marginBottom: "2rem" }}>
                 <h2
@@ -377,6 +393,10 @@ export default function SpecialistEquipmentList(props) {
                     >
                         Comments for {category}
                     </label>
+                    {/* ADDED: Debug value display to check what's coming from state */}
+                    {/* <div style={{fontSize: '10px', color: 'gray'}}>
+                        Debug: Comments value: "{comments[category] || ""}"
+                    </div> */}
                     <InputTextarea
                         id={`category-comment-${category
                             .replace(/\s+/g, "-")
@@ -388,14 +408,25 @@ export default function SpecialistEquipmentList(props) {
                         onChange={(e) => {
                             const newValue = e.target.value;
 
+                            // ADDED: Skip if no actual change
+                            if (newValue === comments[category]) {
+                                return;
+                            }
+
                             // Create new comments object with the updated value
                             const newComments = {
                                 ...comments,
                                 [category]: newValue,
                             };
 
+                            // ADDED: Set update flag to prevent circular updates
+                            updatingCommentsRef.current = true;
+
                             // Update local state
                             setComments(newComments);
+
+                            // Update tracking reference
+                            prevCommentsRef.current = newComments;
 
                             // Notify parent component
                             if (
@@ -409,10 +440,21 @@ export default function SpecialistEquipmentList(props) {
                                 );
                                 onCategoryCommentsChange(newComments);
                             }
+
+                            // Reset flag after a short delay
+                            setTimeout(() => {
+                                updatingCommentsRef.current = false;
+                            }, 0);
                         }}
                         autoResize
                         rows={3}
-                        style={{ width: "100%", marginTop: "0.5rem" }}
+                        style={{
+                            width: "100%",
+                            marginTop: "0.5rem",
+                            border: commentHasData(category)
+                                ? "1px solid var(--primary-color)"
+                                : "",
+                        }}
                         placeholder={`Add comment for ${category}...`}
                         aria-label={`Comments for ${category}`}
                     />
@@ -426,9 +468,27 @@ export default function SpecialistEquipmentList(props) {
     const areaEntries = getEntriesByType(surveyList, "area");
     const normalEntries = getEntriesByType(surveyList, "normal");
 
+    // Filter entries by type - NOT using useCallback
+    function getEntriesByType(entries, type) {
+        if (type === "volume") {
+            return entries.filter((entry) => isVolumeItem(entry.item));
+        } else if (type === "area") {
+            return entries.filter((entry) => specialItems.has(entry.item));
+        } else {
+            return entries.filter(
+                (entry) =>
+                    !isVolumeItem(entry.item) && !specialItems.has(entry.item)
+            );
+        }
+    }
+
     return (
         <div className="mt-4">
             <h2 id="selected-items-heading">Selected Items</h2>
+            {/* ADDED: Better debug info for comments */}
+            {/* <div style={{fontSize: '10px', color: 'gray', marginBottom: '10px'}}>
+                Debug: Loaded comments: {JSON.stringify(comments)}
+            </div> */}
             {volumeEntries.length > 0 && renderSection(volumeEntries, "volume")}
             {areaEntries.length > 0 && renderSection(areaEntries, "area")}
             {normalEntries.length > 0 && renderSection(normalEntries, "normal")}

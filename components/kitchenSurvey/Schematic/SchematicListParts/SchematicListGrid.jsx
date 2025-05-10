@@ -8,22 +8,9 @@ import { Button } from "primereact/button";
 import DimensionInputs from "./DimensionInputs";
 import AccessDoorTreeSelect from "../AccessDoorTreeSelect";
 
-// Helper function to generate a consistent key for an item
-function getItemKey(item) {
-    if (item.aggregateEntry) {
-        if (item.item && item.item.trim() !== "") {
-            return item.item.trim().toLowerCase();
-        } else {
-            return item.id || item._id || "";
-        }
-    }
-    return item.id || item._id || "";
-}
-
 export default function SchematicListGrid(props) {
     const {
         combinedList,
-        groupDimensions,
         handleDimensionChange,
         placedItems,
         onAccessDoorPriceChange,
@@ -35,42 +22,6 @@ export default function SchematicListGrid(props) {
         setFlexiDuctSelections,
         accessDoorSelections = {}, // Add accessDoorSelections prop
     } = props;
-
-    // NEW: State to track which access doors have been selected
-    const [selectedAccessDoors, setSelectedAccessDoors] = useState({});
-
-    // Enhanced initialization of selectedAccessDoors from accessDoorSelections prop
-    useEffect(() => {
-        // Always process the accessDoorSelections, regardless of selectedAccessDoors state
-        if (Object.keys(accessDoorSelections).length > 0) {
-            console.log(
-                "Processing saved access door selections:",
-                accessDoorSelections
-            );
-
-            // Convert accessDoorSelections format to selectedAccessDoors format
-            const formattedSelections = {};
-
-            Object.entries(accessDoorSelections).forEach(
-                ([itemId, doorData]) => {
-                    formattedSelections[itemId] = {
-                        mongoId: doorData.mongoId || doorData.id,
-                        id: doorData.mongoId || doorData.id,
-                        name: doorData.name || "Selected Door",
-                        type: doorData.type || "",
-                        dimensions: doorData.dimensions || "",
-                        price: doorData.price || 0,
-                    };
-                }
-            );
-
-            console.log(
-                "Setting formatted door selections:",
-                formattedSelections
-            );
-            setSelectedAccessDoors(formattedSelections);
-        }
-    }, [accessDoorSelections]); // Only depend on accessDoorSelections
 
     // NEW: State to track which flexi-ducts are in edit mode
     const [flexiDuctEditMode, setFlexiDuctEditMode] = useState({});
@@ -206,58 +157,15 @@ export default function SchematicListGrid(props) {
         }));
     };
 
-    // Modified handler for access door selection with explicit MongoDB ID storage
+    // SIMPLIFIED: Local handler just passes through to parent handler
     const handleLocalAccessDoorSelect = (itemId, selectedDoor) => {
-        if (!selectedDoor) return;
-
-        // Extract dimensions string
-        const dimensions = getDoorDimensionsString(selectedDoor);
-
-        // Ensure we have the MongoDB ID (prioritize _id field)
-        const mongoId = selectedDoor._id || selectedDoor.id;
-
-        // Get the price, prioritizing different possible sources
-        const doorPrice =
-            selectedDoor.price || selectedDoor.accessDoorPrice || 0;
-
-        // Log the selected door data with explicit MongoDB ID
-        console.log(`Selected door for item ${itemId}:`, {
-            mongoId: mongoId,
-            id: mongoId,
-            name: selectedDoor.name || "",
-            type: selectedDoor.type || "",
-            dimensions,
-            price: doorPrice,
-        });
-
-        // Store the selected door details with explicit MongoDB ID in local state
-        setSelectedAccessDoors((prev) => ({
-            ...prev,
-            [itemId]: {
-                mongoId: mongoId, // Explicitly store the MongoDB ID
-                id: mongoId, // Also keep id for backward compatibility
-                name: selectedDoor.name || "",
-                type: selectedDoor.type || "",
-                dimensions: dimensions,
-                price: doorPrice,
-            },
-        }));
-
-        // Call the original handler with explicit MongoDB ID and price
+        // Just forward to the parent handler directly
         if (handleAccessDoorSelect) {
-            handleAccessDoorSelect(itemId, {
-                ...selectedDoor,
-                mongoId: mongoId, // Ensure mongoId is passed to parent
-                id: mongoId, // Ensure id is consistent
-                price: doorPrice,
-                dimensions: dimensions,
-                // Add this to ensure the parent component recognizes this is a door selection
-                accessDoorPrice: doorPrice,
-            });
+            handleAccessDoorSelect(itemId, selectedDoor);
         }
     };
 
-    // NEW: Helper to format door dimensions string
+    // Helper to format door dimensions string
     const getDoorDimensionsString = (door) => {
         const dimensions = [];
 
@@ -561,12 +469,6 @@ export default function SchematicListGrid(props) {
 
         // 2) If it's a panel item
         if (item.type === "panel") {
-            const panelKey = `panel-${item.id}`;
-            const dims = groupDimensions[panelKey] || {
-                length: "",
-                width: "",
-                height: "",
-            };
             return (
                 <div
                     style={{
@@ -605,21 +507,19 @@ export default function SchematicListGrid(props) {
                             </div>
                         </div>
 
-                        {/* Dimension inputs if required */}
+                        {/* UPDATED: Dimension inputs with direct item instead of key */}
                         {item.requiresDimensions && (
                             <DimensionInputs
-                                dimensionKey={panelKey}
-                                dims={dims}
+                                item={item}
                                 handleDimensionChange={handleDimensionChange}
                             />
                         )}
 
-                        {/* IMPROVED: Access Door TreeSelect for Access Door panels, with better handling of saved data */}
+                        {/* MODIFIED: Access Door TreeSelect - using parent state directly */}
                         {isAccessDoor &&
                             !isExistingAccessDoor &&
-                            // Check both local state AND accessDoorSelections prop
-                            (selectedAccessDoors[item.id] ? (
-                                // Show selected door info as text
+                            (accessDoorSelections[item.id] ? (
+                                // Show selected door info as text using parent state
                                 <div
                                     style={{
                                         marginTop: "10px",
@@ -639,10 +539,11 @@ export default function SchematicListGrid(props) {
                                         <div>
                                             <div style={{ fontWeight: "bold" }}>
                                                 {
-                                                    selectedAccessDoors[item.id]
-                                                        .name
+                                                    accessDoorSelections[
+                                                        item.id
+                                                    ].name
                                                 }
-                                                {selectedAccessDoors[item.id]
+                                                {accessDoorSelections[item.id]
                                                     .type && (
                                                     <span
                                                         style={{
@@ -653,14 +554,14 @@ export default function SchematicListGrid(props) {
                                                         {" "}
                                                         -{" "}
                                                         {
-                                                            selectedAccessDoors[
+                                                            accessDoorSelections[
                                                                 item.id
                                                             ].type
                                                         }
                                                     </span>
                                                 )}
                                             </div>
-                                            {selectedAccessDoors[item.id]
+                                            {accessDoorSelections[item.id]
                                                 .dimensions && (
                                                 <div
                                                     style={{
@@ -670,7 +571,7 @@ export default function SchematicListGrid(props) {
                                                     }}
                                                 >
                                                     {
-                                                        selectedAccessDoors[
+                                                        accessDoorSelections[
                                                             item.id
                                                         ].dimensions
                                                     }
@@ -681,17 +582,10 @@ export default function SchematicListGrid(props) {
                                             label="Change"
                                             size="small"
                                             onClick={() => {
-                                                // Remove the selection to show dropdown again
-                                                setSelectedAccessDoors(
-                                                    (prev) => {
-                                                        const newState = {
-                                                            ...prev,
-                                                        };
-                                                        delete newState[
-                                                            item.id
-                                                        ];
-                                                        return newState;
-                                                    }
+                                                // Clear the selection by passing null to parent handler
+                                                handleAccessDoorSelect(
+                                                    item.id,
+                                                    null
                                                 );
                                             }}
                                             className="p-button-text p-button-sm"
@@ -735,12 +629,6 @@ export default function SchematicListGrid(props) {
         }
 
         // 3) Otherwise, it's a piece/fixture item
-        const itemKey = getItemKey(item);
-        const dims = groupDimensions[itemKey] || {
-            length: "",
-            width: "",
-            height: "",
-        };
         const showDimensions = Boolean(item.requiresDimensions);
 
         return (
@@ -772,21 +660,19 @@ export default function SchematicListGrid(props) {
                         <span style={{ fontSize: "16px" }}>{item.name}</span>
                     </div>
 
-                    {/* Dimension inputs if required */}
+                    {/* UPDATED: Dimension inputs with direct item instead of key */}
                     {showDimensions && (
                         <DimensionInputs
-                            dimensionKey={itemKey}
-                            dims={dims}
+                            item={item}
                             handleDimensionChange={handleDimensionChange}
                         />
                     )}
 
-                    {/* IMPROVED: Access Door TreeSelect for Access Door items, with better handling of saved data */}
+                    {/* MODIFIED: Access Door section using parent state */}
                     {isAccessDoor &&
                         !isExistingAccessDoor &&
-                        // Check both local state AND accessDoorSelections prop
-                        (selectedAccessDoors[item.id] ? (
-                            // Show selected door info as text
+                        (accessDoorSelections[item.id] ? (
+                            // Show selected door info as text using parent state
                             <div
                                 style={{
                                     marginTop: "10px",
@@ -805,8 +691,8 @@ export default function SchematicListGrid(props) {
                                 >
                                     <div>
                                         <div style={{ fontWeight: "bold" }}>
-                                            {selectedAccessDoors[item.id].name}
-                                            {selectedAccessDoors[item.id]
+                                            {accessDoorSelections[item.id].name}
+                                            {accessDoorSelections[item.id]
                                                 .type && (
                                                 <span
                                                     style={{
@@ -816,14 +702,14 @@ export default function SchematicListGrid(props) {
                                                     {" "}
                                                     -{" "}
                                                     {
-                                                        selectedAccessDoors[
+                                                        accessDoorSelections[
                                                             item.id
                                                         ].type
                                                     }
                                                 </span>
                                             )}
                                         </div>
-                                        {selectedAccessDoors[item.id]
+                                        {accessDoorSelections[item.id]
                                             .dimensions && (
                                             <div
                                                 style={{
@@ -833,8 +719,9 @@ export default function SchematicListGrid(props) {
                                                 }}
                                             >
                                                 {
-                                                    selectedAccessDoors[item.id]
-                                                        .dimensions
+                                                    accessDoorSelections[
+                                                        item.id
+                                                    ].dimensions
                                                 }
                                             </div>
                                         )}
@@ -843,12 +730,11 @@ export default function SchematicListGrid(props) {
                                         label="Change"
                                         size="small"
                                         onClick={() => {
-                                            // Remove the selection to show dropdown again
-                                            setSelectedAccessDoors((prev) => {
-                                                const newState = { ...prev };
-                                                delete newState[item.id];
-                                                return newState;
-                                            });
+                                            // Clear the selection by passing null to parent handler
+                                            handleAccessDoorSelect(
+                                                item.id,
+                                                null
+                                            );
                                         }}
                                         className="p-button-text p-button-sm"
                                     />

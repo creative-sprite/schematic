@@ -1,7 +1,7 @@
 // components\kitchenSurvey\Equipment.jsx
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useEffect, useRef } from "react";
 import { InputText } from "primereact/inputtext";
 import { Button } from "primereact/button";
 import "../../styles/surveyForm.css";
@@ -23,12 +23,22 @@ export default function Equipment({
     onEquipmentChange,
     initialSubcategoryComments = {},
 }) {
-    // State for equipment items fetched from the API
-    const [equipmentItems, setEquipmentItems] = useState([]);
+    // Debug: Log received props on mount to verify what data is coming in
+    useEffect(() => {
+        console.log("Equipment component received props:", {
+            initialSubcategoryComments,
+            equipmentSubcategoryComments: equipment?.subcategoryComments,
+            initialNotes,
+            equipmentNotes: equipment?.notes,
+        });
+    }, []);
 
-    // Survey form state
-    const [surveyForm, setSurveyForm] = useState({
-        subcategory: "",
+    // State for equipment items fetched from the API
+    const [equipmentItems, setEquipmentItems] = React.useState([]);
+
+    // Survey form state - Set initial subcategory to "Hot"
+    const [surveyForm, setSurveyForm] = React.useState({
+        subcategory: "Hot",
         item: "",
         number: 1,
         length: 0,
@@ -38,7 +48,7 @@ export default function Equipment({
     });
 
     // Survey list state
-    const [surveyList, setSurveyList] = useState(initialSurveyData || []);
+    const [surveyList, setSurveyList] = React.useState(initialSurveyData || []);
 
     // Special items set
     const specialItems = new Set([
@@ -48,54 +58,41 @@ export default function Equipment({
     ]);
 
     // Initialization tracking
-    const [initialized, setInitialized] = useState(false);
-
-    // State for subcategory comments - initialize properly
-    const [subcategoryComments, setSubcategoryComments] = useState(
-        initialSubcategoryComments || {}
-    );
-
-    // State for notes - initialize properly
-    const [notes, setNotes] = useState(initialNotes || "");
+    const [initialized, setInitialized] = React.useState(false);
 
     // Enhanced refs for update tracking and prevention
-    const updatingSubcategoryRef = useRef(false);
-    const prevSubcategoryValueRef = useRef("");
     const isInternalStateUpdateRef = useRef(false);
     const initialRenderCompletedRef = useRef(false);
+    const isHandlingNotesChangeRef = useRef(false);
+    const isHandlingSubcategoryCommentsChangeRef = useRef(false);
 
-    // One-time initialization for notes and comments
+    // Track previous values for deep comparison
+    const prevNotesRef = useRef(initialNotes || "");
+    const prevSubcategoryCommentsRef = useRef(initialSubcategoryComments || {});
+
+    // One-time initialization to log what we got from props
     useEffect(() => {
         if (!initialized) {
-            // Initialize notes
-            if (initialNotes) {
-                setNotes(initialNotes);
-            } else if (equipment?.notes) {
-                setNotes(equipment.notes);
-            }
-
-            // Initialize subcategory comments
-            if (
-                initialSubcategoryComments &&
-                Object.keys(initialSubcategoryComments).length > 0
-            ) {
-                setSubcategoryComments(initialSubcategoryComments);
-            } else if (
-                equipment?.subcategoryComments &&
-                Object.keys(equipment.subcategoryComments).length > 0
-            ) {
-                setSubcategoryComments(equipment.subcategoryComments);
-            }
+            console.log("Equipment component initialization:");
+            console.log("- Initial notes:", initialNotes);
+            console.log("- Equipment object notes:", equipment?.notes);
+            console.log(
+                "- Initial subcategory comments:",
+                initialSubcategoryComments
+            );
+            console.log(
+                "- Equipment subcategory comments:",
+                equipment?.subcategoryComments
+            );
+            console.log(
+                "- Using subcategory comments:",
+                equipment?.subcategoryComments || initialSubcategoryComments
+            );
+            console.log("- Using notes:", equipment?.notes || initialNotes);
 
             setInitialized(true);
         }
-    }, [
-        initialized,
-        initialNotes,
-        equipment?.notes,
-        initialSubcategoryComments,
-        equipment?.subcategoryComments,
-    ]);
+    }, [initialized, initialNotes, equipment, initialSubcategoryComments]);
 
     // Helper functions
     function isWalkIn(subcategory, item) {
@@ -121,6 +118,10 @@ export default function Equipment({
     // Initialize with saved data if provided
     useEffect(() => {
         if (initialSurveyData && initialSurveyData.length > 0 && !initialized) {
+            console.log(
+                "Initializing from saved survey data:",
+                initialSurveyData
+            );
             setSurveyList(initialSurveyData);
 
             // Even though we've removed the UI selector, we still need to pass the ID to parent
@@ -140,10 +141,6 @@ export default function Equipment({
             ) {
                 // Mark we're in internal update
                 isInternalStateUpdateRef.current = true;
-
-                // Set the subcategory value reference
-                prevSubcategoryValueRef.current =
-                    initialSurveyData[0].subcategory;
 
                 // Update form state
                 setSurveyForm((prev) => ({
@@ -202,7 +199,7 @@ export default function Equipment({
                         });
                     setEquipmentItems(equipment);
 
-                    // FIXED: Initialize subcategory with guards
+                    // MODIFIED: Only set subcategory if current value is empty
                     if (
                         !surveyForm.subcategory &&
                         equipment.length > 0 &&
@@ -215,14 +212,10 @@ export default function Equipment({
                         // Track that initial render has completed
                         initialRenderCompletedRef.current = true;
 
-                        // Store the new value
-                        const newSubcategory = equipment[0].subcategory.trim();
-                        prevSubcategoryValueRef.current = newSubcategory;
-
                         // Set the initial subcategory to the first available one
                         setSurveyForm((prev) => ({
                             ...prev,
-                            subcategory: newSubcategory,
+                            subcategory: equipment[0].subcategory.trim(),
                         }));
 
                         // Reset flag after state update
@@ -321,18 +314,9 @@ export default function Equipment({
             return;
         }
 
-        // Check if subcategory has actually changed
-        if (
-            name === "subcategory" &&
-            value === prevSubcategoryValueRef.current
-        ) {
-            return; // Skip if value hasn't actually changed
-        }
-
         // Set flag if this is a subcategory change
         if (name === "subcategory") {
             isInternalStateUpdateRef.current = true;
-            prevSubcategoryValueRef.current = value;
         }
 
         // Handle different field types
@@ -409,80 +393,73 @@ export default function Equipment({
         );
     };
 
-    // FIXED: Refs to prevent update loops in comments and notes
-    const updatingCommentsRef = useRef(false);
-    const updatingNotesRef = useRef(false);
-    const prevCommentsRef = useRef({});
-    const prevNotesRef = useRef("");
-
-    // Handler for subcategory comments changes - ENHANCED
+    // FIXED: Handler for subcategory comments changes with proper circular update protection
     const handleSubcategoryCommentsChange = (comments) => {
-        // Skip if already updating to prevent circular calls
-        if (updatingCommentsRef.current) return;
-
-        // Skip if no actual change (deep comparison)
-        const currentStr = JSON.stringify(comments);
-        const prevStr = JSON.stringify(prevCommentsRef.current);
-        if (currentStr === prevStr) return;
-
-        // Set flag to prevent circular updates
-        updatingCommentsRef.current = true;
-        prevCommentsRef.current = JSON.parse(currentStr);
-
-        // Update local state
-        setSubcategoryComments(comments);
-
-        // Update equipment data with new comments
-        if (typeof onEquipmentChange === "function") {
-            const updatedEquipment = {
-                ...(equipment || {}), // Ensure we have an object
-                subcategoryComments: comments,
-                notes: notes || "", // Include notes for completeness
-            };
-
-            // Call the parent's callback with the updated equipment object
-            onEquipmentChange(updatedEquipment);
+        // Skip if we're already handling an update
+        if (isHandlingSubcategoryCommentsChangeRef.current) {
+            return;
         }
 
-        // Reset flag with slight delay
+        // Skip if no actual change
+        const commentsStr = JSON.stringify(comments);
+        const prevCommentsStr = JSON.stringify(
+            prevSubcategoryCommentsRef.current
+        );
+        if (commentsStr === prevCommentsStr) {
+            return;
+        }
+
+        console.log("Equipment: Subcategory comments changed:", comments);
+
+        // Set flag to prevent circular updates
+        isHandlingSubcategoryCommentsChangeRef.current = true;
+
+        // Update reference
+        prevSubcategoryCommentsRef.current = JSON.parse(commentsStr);
+
+        // Update parent component with the new comments
+        if (typeof onEquipmentChange === "function") {
+            // Create a new equipment object with updated subcategoryComments
+            onEquipmentChange({
+                ...equipment,
+                subcategoryComments: comments,
+            });
+        }
+
+        // Reset flag after a short delay
         setTimeout(() => {
-            updatingCommentsRef.current = false;
+            isHandlingSubcategoryCommentsChangeRef.current = false;
         }, 0);
     };
 
-    // Handler for notes changes - ENHANCED
+    // FIXED: Handler for equipment notes changes with proper circular update protection
     const handleNotesChange = (newNotes) => {
-        // Skip if already updating or no change
-        if (updatingNotesRef.current || newNotes === prevNotesRef.current)
+        // Skip if we're already handling an update
+        if (isHandlingNotesChangeRef.current) {
             return;
+        }
+
+        // Skip if no actual change
+        if (newNotes === prevNotesRef.current) {
+            return;
+        }
+
+        console.log("Equipment: Notes changed:", newNotes);
 
         // Set flag to prevent circular updates
-        updatingNotesRef.current = true;
+        isHandlingNotesChangeRef.current = true;
+
+        // Update reference
         prevNotesRef.current = newNotes;
 
-        // Update local state
-        setNotes(newNotes);
-
-        // Update parent component if callback exists
+        // Update parent component directly
         if (typeof onNotesChange === "function") {
             onNotesChange(newNotes);
         }
 
-        // If equipment change handler exists, update the notes in the equipment object
-        if (typeof onEquipmentChange === "function") {
-            const updatedEquipment = {
-                ...(equipment || {}), // Ensure we have an object
-                notes: newNotes,
-                subcategoryComments: subcategoryComments || {}, // Include comments for completeness
-            };
-
-            // Call the parent's callback with the updated equipment object
-            onEquipmentChange(updatedEquipment);
-        }
-
-        // Reset flag with slight delay
+        // Reset flag after a short delay
         setTimeout(() => {
-            updatingNotesRef.current = false;
+            isHandlingNotesChangeRef.current = false;
         }, 0);
     };
 
@@ -527,11 +504,13 @@ export default function Equipment({
                 specialItems={specialItems}
                 isVolumeItem={isVolumeItem}
                 handleRemoveEntry={handleRemoveEntry}
-                initialSubcategoryComments={subcategoryComments}
+                subcategoryComments={
+                    equipment?.subcategoryComments || initialSubcategoryComments
+                }
                 onSubcategoryCommentsChange={handleSubcategoryCommentsChange}
             />
             <EquipmentNotes
-                initialNotes={notes}
+                notes={equipment?.notes || initialNotes}
                 onNotesChange={handleNotesChange}
             />
             <datalist id="subcategorySuggestions">

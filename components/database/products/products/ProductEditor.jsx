@@ -149,6 +149,10 @@ const ProductEditor = ({
             ...(product.customData || []),
             {
                 fieldId: fieldToAdd._id,
+                fieldName: fieldToAdd.label, // Add field name
+                fieldType: fieldToAdd.fieldType, // Add field type
+                prefix: fieldToAdd.prefix || "", // Add prefix if available
+                suffix: fieldToAdd.suffix || "", // Add suffix if available
                 value: defaultValue,
             },
         ];
@@ -270,6 +274,10 @@ const ProductEditor = ({
                     // Use the uniqueKey to get the value
                     return {
                         ...data,
+                        fieldName: fieldInProduct.label || data.fieldName, // Ensure fieldName
+                        fieldType: fieldInProduct.fieldType || data.fieldType, // Ensure fieldType
+                        prefix: fieldInProduct.prefix || data.prefix || "", // Ensure prefix
+                        suffix: fieldInProduct.suffix || data.suffix || "", // Ensure suffix
                         value: editedValues[fieldInProduct.uniqueKey],
                     };
                 }

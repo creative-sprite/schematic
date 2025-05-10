@@ -126,6 +126,27 @@ export default function GeneralInformation({
     const [isGeneratingId, setIsGeneratingId] = useState(false);
     const [isLoadingLastRef, setIsLoadingLastRef] = useState(false);
 
+    // Custom CSS for highlighting fields with data
+    const customStyles = `
+        .p-calendar-has-data .p-inputtext {
+            border-color: var(--primary-color) !important;
+        }
+        .p-dropdown-has-data .p-dropdown {
+            border-color: var(--primary-color) !important;
+        }
+        .p-inputtext-has-data {
+            border-color: var(--primary-color) !important;
+        }
+    `;
+
+    // Helper function to check if field has data
+    const fieldHasData = (value) => {
+        if (value === null || value === undefined) return false;
+        if (typeof value === "string") return value.trim() !== "";
+        if (value instanceof Date) return true;
+        return true; // For other types
+    };
+
     // Parse existing refValue if present
     useEffect(() => {
         if (refValue) {
@@ -363,125 +384,176 @@ export default function GeneralInformation({
     };
 
     return (
-        <div
-            style={{
-                marginBottom: "3rem",
-                border: "3px solid #ddd",
-                padding: "1rem",
-            }}
-        >
-            <h2>General</h2>
+        <>
+            <style>{customStyles}</style>
             <div
                 style={{
-                    display: "flex",
-                    flexWrap: "wrap",
-                    gap: "0.5rem",
-                    marginBottom: "1rem",
+                    marginBottom: "3rem",
+                    border: "3px solid #ddd",
+                    padding: "1rem",
                 }}
             >
+                <h2>General</h2>
                 <div
                     style={{
                         display: "flex",
                         flexWrap: "wrap",
                         gap: "0.5rem",
-                        alignItems: "center",
+                        marginBottom: "1rem",
                     }}
                 >
-                    <label>REF:</label>
-                    <InputText
-                        value={refPart1}
-                        onChange={handlePart1Change}
-                        placeholder="AA"
-                        style={{ width: "60px", height: "40px" }}
-                        maxLength={2}
-                        readOnly={isEditingMode} // Make read-only when editing
-                    />
-                    <span>/</span>
-                    <InputText
-                        value={refPart2}
-                        onChange={handlePart2Change}
-                        placeholder="BB"
-                        style={{ width: "60px", height: "40px" }}
-                        maxLength={2}
-                        readOnly={isEditingMode} // Make read-only when editing
-                    />
-                    <span>/</span>
-                    <InputText
-                        value={uniqueId}
-                        readOnly
+                    <div
                         style={{
-                            width: "100px",
-                            height: "40px",
-                            backgroundColor: "#f5f5f5",
+                            display: "flex",
+                            flexWrap: "wrap",
+                            gap: "0.5rem",
+                            alignItems: "center",
                         }}
-                        tooltip="Automatically generated unique ID"
-                    />
-                    <span>/</span>
-                    <InputText
-                        value={refPart4}
-                        onChange={handlePart4Change}
-                        placeholder="XYZ"
-                        style={{ width: "70px", height: "40px" }}
-                        maxLength={3}
-                        readOnly={isEditingMode} // Make read-only when editing
+                    >
+                        <label>REF:</label>
+                        <InputText
+                            value={refPart1}
+                            onChange={handlePart1Change}
+                            placeholder="AA"
+                            style={{
+                                width: "60px",
+                                height: "40px",
+                                borderColor: fieldHasData(refPart1)
+                                    ? "var(--primary-color)"
+                                    : "",
+                            }}
+                            maxLength={2}
+                            readOnly={isEditingMode} // Make read-only when editing
+                        />
+                        <span>/</span>
+                        <InputText
+                            value={refPart2}
+                            onChange={handlePart2Change}
+                            placeholder="BB"
+                            style={{
+                                width: "60px",
+                                height: "40px",
+                                borderColor: fieldHasData(refPart2)
+                                    ? "var(--primary-color)"
+                                    : "",
+                            }}
+                            maxLength={2}
+                            readOnly={isEditingMode} // Make read-only when editing
+                        />
+                        <span>/</span>
+                        <InputText
+                            value={uniqueId}
+                            readOnly
+                            style={{
+                                width: "100px",
+                                height: "40px",
+                                backgroundColor: "#f5f5f5",
+                                borderColor: fieldHasData(uniqueId)
+                                    ? "var(--primary-color)"
+                                    : "",
+                            }}
+                            tooltip="Automatically generated unique ID"
+                        />
+                        <span>/</span>
+                        <InputText
+                            value={refPart4}
+                            onChange={handlePart4Change}
+                            placeholder="XYZ"
+                            style={{
+                                width: "70px",
+                                height: "40px",
+                                borderColor: fieldHasData(refPart4)
+                                    ? "var(--primary-color)"
+                                    : "",
+                            }}
+                            maxLength={3}
+                            readOnly={isEditingMode} // Make read-only when editing
+                        />
+                    </div>
+                </div>
+                <div
+                    style={{
+                        display: "flex",
+                        flexWrap: "wrap",
+                        gap: "0.5rem",
+                    }}
+                >
+                    <div
+                        className={
+                            fieldHasData(surveyDate)
+                                ? "p-calendar-has-data"
+                                : ""
+                        }
+                    >
+                        <Calendar
+                            value={surveyDate}
+                            onChange={handleSurveyDateChange} // UPDATED: Use safer handler
+                            dateFormat="dd-mm-yy"
+                            placeholder="Date"
+                            touchUI
+                            showIcon
+                            prevIcon={
+                                <i
+                                    className="pi pi-angle-left"
+                                    style={{ fill: "white" }}
+                                />
+                            }
+                            nextIcon={
+                                <i
+                                    className="pi pi-angle-right"
+                                    style={{ fill: "white" }}
+                                />
+                            }
+                            icon={
+                                <i
+                                    className="pi pi-calendar"
+                                    style={{
+                                        fill: "white",
+                                    }}
+                                />
+                            }
+                            style={{
+                                width: "150px",
+                                height: "40px",
+                                gap: "0.5rem",
+                            }}
+                        />
+                    </div>
+                    <div
+                        className={
+                            fieldHasData(surveyType)
+                                ? "p-dropdown-has-data"
+                                : ""
+                        }
+                    >
+                        <Dropdown
+                            value={surveyType}
+                            options={surveyTypeOptions}
+                            onChange={handleSurveyTypeChange} // UPDATED: Use safer handler
+                            placeholder="Survey Type"
+                            style={{
+                                flex: 1,
+                                minWidth: "250px",
+                                height: "40px",
+                            }}
+                        />
+                    </div>
+                    <InputTextarea
+                        value={parking}
+                        placeholder="Parking"
+                        onChange={handleParkingChange} // UPDATED: Use safer handler
+                        autoResize
+                        style={{
+                            minWidth: "100%",
+                            flex: "1",
+                            height: "40px",
+                            borderColor: fieldHasData(parking)
+                                ? "var(--primary-color)"
+                                : "",
+                        }}
                     />
                 </div>
             </div>
-            <div
-                style={{
-                    display: "flex",
-                    flexWrap: "wrap",
-                    gap: "0.5rem",
-                }}
-            >
-                <Calendar
-                    value={surveyDate}
-                    onChange={handleSurveyDateChange} // UPDATED: Use safer handler
-                    dateFormat="dd-mm-yy"
-                    placeholder="Date"
-                    touchUI
-                    showIcon
-                    prevIcon={
-                        <i
-                            className="pi pi-angle-left"
-                            style={{ fill: "white" }}
-                        />
-                    }
-                    nextIcon={
-                        <i
-                            className="pi pi-angle-right"
-                            style={{ fill: "white" }}
-                        />
-                    }
-                    icon={
-                        <i
-                            className="pi pi-calendar"
-                            style={{
-                                fill: "white",
-                            }}
-                        />
-                    }
-                    style={{ width: "150px", height: "40px", gap: "0.5rem" }}
-                />
-                <Dropdown
-                    value={surveyType}
-                    options={surveyTypeOptions}
-                    onChange={handleSurveyTypeChange} // UPDATED: Use safer handler
-                    placeholder="Survey Type"
-                    style={{ flex: 1, minWidth: "250px", height: "40px" }}
-                />
-                <InputTextarea
-                    value={parking}
-                    placeholder="Parking"
-                    onChange={handleParkingChange} // UPDATED: Use safer handler
-                    autoResize
-                    style={{
-                        minWidth: "100%",
-                        flex: "1",
-                        height: "40px",
-                    }}
-                />
-            </div>
-        </div>
+        </>
     );
 }

@@ -38,8 +38,87 @@ export default function Images({
         Ventilation: false,
     });
 
-    // Load initial images if provided
+    // ADDED: State tracking for initialization completion
+    const [initialized, setInitialized] = useState(false);
+
+    // ADDED: Enhanced refs for update tracking and prevention
+    const isHandlingImagesUpdateRef = useRef(false);
+    const isProcessingInitialImagesRef = useRef(false);
+
+    // ADDED: Track previous values for deep comparison
+    const prevImagesHashRef = useRef("");
+
+    // ADDED: Store a reference to the latest images to avoid state dependency issues
+    const imagesRef = useRef(images);
+
+    // ADDED: Debounce timer for parent notifications
+    const updateTimerRef = useRef(null);
+
+    // ADDED: Helper function for deep image comparison by hashing objects
+    const getImagesHash = (imagesObj) => {
+        if (!imagesObj) return "";
+
+        try {
+            // Create a simpler representation for comparison
+            const simplified = {};
+
+            Object.keys(imagesObj).forEach((category) => {
+                simplified[category] = imagesObj[category].map((img) => ({
+                    publicId: img.publicId || "",
+                    url: img.url ? true : false, // Just check existence, not full URL
+                    pendingUpload: img.metadata?.pendingUpload || false,
+                    file: img.file ? true : false, // Just check existence, not actual file
+                }));
+            });
+
+            return JSON.stringify(simplified);
+        } catch (err) {
+            console.error("[Images] Error generating images hash:", err);
+            return JSON.stringify(
+                Object.keys(imagesObj).map((k) => `${k}:${imagesObj[k].length}`)
+            );
+        }
+    };
+
+    // ADDED: One-time initialization logging
     useEffect(() => {
+        if (!initialized) {
+            console.log("[Images] Initialization started");
+            console.log("- Has initialImages:", !!initialImages);
+            if (initialImages) {
+                console.log("- Categories:", Object.keys(initialImages));
+                console.log(
+                    "- Total images:",
+                    Object.values(initialImages).flat().length
+                );
+            }
+            console.log("- Survey ref:", surveyRef);
+            console.log("- Site name:", siteName);
+
+            setInitialized(true);
+        }
+    }, [initialized, initialImages, surveyRef, siteName]);
+
+    // IMPROVED: Load initial images with better change detection
+    useEffect(() => {
+        // Skip if already processing initial images
+        if (isProcessingInitialImagesRef.current) return;
+
+        // Skip if there are no initial images
+        if (!initialImages || typeof initialImages !== "object") return;
+
+        // Compute hash for change detection
+        const currentHash = getImagesHash(initialImages);
+
+        // Skip if hash hasn't changed
+        if (currentHash === prevImagesHashRef.current) return;
+
+        // Set processing flag
+        isProcessingInitialImagesRef.current = true;
+
+        // Update hash reference
+        prevImagesHashRef.current = currentHash;
+
         // Log when this effect runs for debugging
         console.log("[Images] initialImages effect triggered", {
             hasData: !!initialImages,
@@ -47,166 +126,202 @@ export default function Images({
             categoriesIfPresent: initialImages
                 ? Object.keys(initialImages)
                 : "none",
+            hash: currentHash.substring(0, 50) + "...",
         });
 
-        if (initialImages && typeof initialImages === "object") {
-            // Initialize with provided images or empty arrays for each category
-            const loadedImages = {
-                Structure: initialImages.Structure || [],
-                Equipment: initialImages.Equipment || [],
-                Canopy: initialImages.Canopy || [],
-                Ventilation: initialImages.Ventilation || [],
-            };
+        // Initialize with provided images or empty arrays for each category
+        const loadedImages = {
+            Structure: initialImages.Structure || [],
+            Equipment: initialImages.Equipment || [],
+            Canopy: initialImages.Canopy || [],
+            Ventilation: initialImages.Ventilation || [],
+        };
 
-            // Process each image to ensure URLs are correctly formatted for display
-            Object.keys(loadedImages).forEach((category) => {
-                loadedImages[category] = loadedImages[category].map((img) => {
-                    // If this is a Cloudinary image (has publicId)
-                    if (img.publicId) {
-                        console.log(
-                            `[Images] Processing Cloudinary image in ${category}:`,
-                            {
-                                publicId: img.publicId,
-                                hasSecureUrl: !!img.secureUrl,
-                                hasUrl: !!img.url,
-                            }
+        // Process each image to ensure URLs are correctly formatted for display
+        Object.keys(loadedImages).forEach((category) => {
+            loadedImages[category] = loadedImages[category].map((img) => {
+                // If this is a Cloudinary image (has publicId)
+                if (img.publicId) {
+                    console.log(
+                        `[Images] Processing Cloudinary image in ${category}:`,
+                        {
+                            publicId: img.publicId,
+                            hasSecureUrl: !!img.secureUrl,
+                            hasUrl: !!img.url,
+                        }
+                    );
+
+                    // Make sure we have a valid URL for display
+                    const displayUrl = img.secureUrl || img.url;
+
+                    if (!displayUrl) {
+                        console.warn(
+                            `[Images] Cloudinary image missing URL:`,
+                            img
                         );
 
-                        // Make sure we have a valid URL for display
-                        const displayUrl = img.secureUrl || img.url;
-
-                        if (!displayUrl) {
-                            console.warn(
-                                `[Images] Cloudinary image missing URL:`,
-                                img
+                        // If we have a publicId but no URL, construct one
+                        if (img.publicId) {
+                            // Construct a Cloudinary URL from the publicId
+                            const cloudinaryUrl = `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/image/upload/${img.publicId}`;
+                            console.log(
+                                `[Images] Constructed Cloudinary URL: ${cloudinaryUrl}`
                             );
 
-                            // If we have a publicId but no URL, construct one
-                            if (img.publicId) {
-                                // Construct a Cloudinary URL from the publicId
-                                const cloudinaryUrl = `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/image/upload/${img.publicId}`;
-                                console.log(
-                                    `[Images] Constructed Cloudinary URL: ${cloudinaryUrl}`
-                                );
-
-                                return {
-                                    ...img,
-                                    url: cloudinaryUrl,
-                                    isCloudinary: true,
-                                };
-                            }
+                            return {
+                                ...img,
+                                url: cloudinaryUrl,
+                                isCloudinary: true,
+                            };
                         }
-
-                        // Return with valid URL and Cloudinary flag
-                        return {
-                            ...img,
-                            url: displayUrl,
-                            isCloudinary: true,
-                        };
                     }
 
-                    // For non-Cloudinary images or if publicId is missing, return as is
-                    return img;
-                });
-            });
+                    // Return with valid URL and Cloudinary flag
+                    return {
+                        ...img,
+                        url: displayUrl,
+                        isCloudinary: true,
+                    };
+                }
 
-            // Log what we're loading for debugging
-            console.log("[Images] Loading initial images:", {
-                Structure: `${loadedImages.Structure.length} images`,
-                Equipment: `${loadedImages.Equipment.length} images`,
-                Canopy: `${loadedImages.Canopy.length} images`,
-                Ventilation: `${loadedImages.Ventilation.length} images`,
+                // For non-Cloudinary images or if publicId is missing, return as is
+                return img;
             });
+        });
 
-            // If we have any images, automatically show the first gallery with images
-            if (!Object.values(visibleGalleries).some((v) => v)) {
-                const firstCategoryWithImages = Object.keys(loadedImages).find(
-                    (cat) => loadedImages[cat].length > 0
+        // Log what we're loading for debugging
+        console.log("[Images] Loading initial images:", {
+            Structure: `${loadedImages.Structure.length} images`,
+            Equipment: `${loadedImages.Equipment.length} images`,
+            Canopy: `${loadedImages.Canopy.length} images`,
+            Ventilation: `${loadedImages.Ventilation.length} images`,
+        });
+
+        // If we have any images, automatically show the first gallery with images
+        if (!Object.values(visibleGalleries).some((v) => v)) {
+            const firstCategoryWithImages = Object.keys(loadedImages).find(
+                (cat) => loadedImages[cat].length > 0
+            );
+
+            if (firstCategoryWithImages) {
+                console.log(
+                    `[Images] Auto-showing gallery for ${firstCategoryWithImages} with ${loadedImages[firstCategoryWithImages].length} images`
                 );
+                // Show this gallery
+                setTimeout(() => {
+                    setVisibleGalleries((prev) => ({
+                        ...prev,
+                        [firstCategoryWithImages]: true,
+                    }));
+                }, 500);
+            }
+        }
 
-                if (firstCategoryWithImages) {
+        // Count Cloudinary vs local images for debugging
+        let cloudinaryCount = 0;
+        let pendingCount = 0;
+        let urlMissingCount = 0;
+        let totalCount = 0;
+
+        Object.values(loadedImages)
+            .flat()
+            .forEach((img) => {
+                totalCount++;
+                if (img.publicId) cloudinaryCount++;
+                if (img.metadata?.pendingUpload) pendingCount++;
+                if (img.publicId && !img.url) urlMissingCount++;
+            });
+
+        // If we have images, log a clear message indicating the image count
+        if (totalCount > 0) {
+            console.log(
+                `[Images] ✅ LOADED ${totalCount} IMAGES - ${cloudinaryCount} from Cloudinary, ${pendingCount} pending upload`
+            );
+
+            // When receiving delayed images, show a success toast
+            if (totalCount > 0) {
+                toast.current?.show({
+                    severity: "success",
+                    summary: "Images Loaded",
+                    detail: `Successfully loaded ${totalCount} images`,
+                    life: 3000,
+                });
+            }
+
+            // Refresh visible galleries to ensure images display properly
+            Object.keys(visibleGalleries).forEach((category) => {
+                if (
+                    visibleGalleries[category] &&
+                    loadedImages[category].length > 0
+                ) {
+                    // Force a refresh of the gallery by toggling it off and on again
                     console.log(
-                        `[Images] Auto-showing gallery for ${firstCategoryWithImages} with ${loadedImages[firstCategoryWithImages].length} images`
+                        `[Images] Refreshing gallery display for ${category}`
                     );
-                    // Show this gallery
+                    setVisibleGalleries((prev) => ({
+                        ...prev,
+                        [category]: false,
+                    }));
+
                     setTimeout(() => {
                         setVisibleGalleries((prev) => ({
                             ...prev,
-                            [firstCategoryWithImages]: true,
+                            [category]: true,
                         }));
-                    }, 500);
+                    }, 100);
                 }
-            }
-
-            // Count Cloudinary vs local images for debugging
-            let cloudinaryCount = 0;
-            let pendingCount = 0;
-            let urlMissingCount = 0;
-            let totalCount = 0;
-
-            Object.values(loadedImages)
-                .flat()
-                .forEach((img) => {
-                    totalCount++;
-                    if (img.publicId) cloudinaryCount++;
-                    if (img.metadata?.pendingUpload) pendingCount++;
-                    if (img.publicId && !img.url) urlMissingCount++;
-                });
-
-            // If we have images, log a clear message indicating the image count
-            if (totalCount > 0) {
-                console.log(
-                    `[Images] ✅ LOADED ${totalCount} IMAGES - ${cloudinaryCount} from Cloudinary, ${pendingCount} pending upload`
-                );
-
-                // When receiving delayed images, show a success toast
-                if (totalCount > 0) {
-                    toast.current?.show({
-                        severity: "success",
-                        summary: "Images Loaded",
-                        detail: `Successfully loaded ${totalCount} images`,
-                        life: 3000,
-                    });
-                }
-
-                // Refresh visible galleries to ensure images display properly
-                Object.keys(visibleGalleries).forEach((category) => {
-                    if (
-                        visibleGalleries[category] &&
-                        loadedImages[category].length > 0
-                    ) {
-                        // Force a refresh of the gallery by toggling it off and on again
-                        console.log(
-                            `[Images] Refreshing gallery display for ${category}`
-                        );
-                        setVisibleGalleries((prev) => ({
-                            ...prev,
-                            [category]: false,
-                        }));
-
-                        setTimeout(() => {
-                            setVisibleGalleries((prev) => ({
-                                ...prev,
-                                [category]: true,
-                            }));
-                        }, 100);
-                    }
-                });
-            } else {
-                console.log(
-                    "[Images] ⚠️ No images found in initialImages object"
-                );
-            }
-
-            setImages(loadedImages);
+            });
+        } else {
+            console.log("[Images] ⚠️ No images found in initialImages object");
         }
-    }, [initialImages, siteName, surveyRef]);
 
-    // Notify parent component when images change
+        // Set flag to prevent circular updates
+        isHandlingImagesUpdateRef.current = true;
+
+        // Update images state
+        setImages(loadedImages);
+
+        // Update images ref
+        imagesRef.current = loadedImages;
+
+        // Reset flags after state update with slight delay
+        setTimeout(() => {
+            isHandlingImagesUpdateRef.current = false;
+            isProcessingInitialImagesRef.current = false;
+        }, 50);
+    }, [initialImages, visibleGalleries]);
+
+    // IMPROVED: Notify parent component when images change with better debouncing
     useEffect(() => {
-        if (onImagesChange && typeof onImagesChange === "function") {
-            console.log("[Images] Images changed - preparing to notify parent");
+        // Skip if not initialized, no callback function, or already handling update
+        if (
+            !initialized ||
+            !onImagesChange ||
+            isHandlingImagesUpdateRef.current
+        )
+            return;
 
+        // Update images ref to avoid dependency issues
+        imagesRef.current = images;
+
+        // Compute hash for change detection
+        const currentHash = getImagesHash(images);
+
+        // Skip if hash hasn't changed
+        if (currentHash === prevImagesHashRef.current) return;
+
+        // Update hash reference
+        prevImagesHashRef.current = currentHash;
+
+        console.log("[Images] Images changed - preparing to notify parent");
+
+        // Clear any existing timer
+        if (updateTimerRef.current) {
+            clearTimeout(updateTimerRef.current);
+        }
+
+        // Debounce the update
+        updateTimerRef.current = setTimeout(() => {
             const serializableImages = getSerializableImages();
 
             // Log details about what we're passing to parent
@@ -232,42 +347,67 @@ export default function Images({
 
             // Pass the serializable version to parent that includes file references
             onImagesChange(serializableImages);
-        }
-    }, [images, onImagesChange]);
+        }, 150); // Debounce parent updates slightly longer
+    }, [images, onImagesChange, initialized]);
 
-    // Cleanup object URLs when component unmounts
+    // IMPROVED: Cleanup with reference-safe access
     useEffect(() => {
         return () => {
-            Object.values(images).forEach((categoryImages) => {
-                categoryImages.forEach((image) => {
-                    if (
-                        image &&
-                        image.url &&
-                        typeof image.url === "string" &&
-                        image.url.startsWith("blob:")
-                    ) {
-                        try {
-                            URL.revokeObjectURL(image.url);
-                        } catch (e) {
-                            console.error("Error revoking URL on unmount:", e);
+            // Clean up any pending timers
+            if (updateTimerRef.current) {
+                clearTimeout(updateTimerRef.current);
+            }
+
+            // Always use the ref to get latest state to avoid stale closures
+            const currentImages = imagesRef.current;
+
+            // Revoke object URLs to prevent memory leaks
+            if (currentImages) {
+                Object.values(currentImages).forEach((categoryImages) => {
+                    if (!categoryImages) return;
+
+                    categoryImages.forEach((image) => {
+                        if (
+                            image &&
+                            image.url &&
+                            typeof image.url === "string" &&
+                            image.url.startsWith("blob:")
+                        ) {
+                            try {
+                                URL.revokeObjectURL(image.url);
+                                console.log(
+                                    "[Images] Revoked URL:",
+                                    image.url.substring(0, 30) + "..."
+                                );
+                            } catch (e) {
+                                console.error(
+                                    "[Images] Error revoking URL on unmount:",
+                                    e
+                                );
+                            }
                         }
-                    }
+                    });
                 });
-            });
+            }
+
+            console.log("[Images] Component unmounted, cleanup complete");
         };
-    }, [images]);
+    }, []);
 
     // Helper to create serializable image objects for saving
     const getSerializableImages = () => {
         // Create a deep copy of images that can be serialized
         const serializableImages = {};
 
-        Object.keys(images).forEach((category) => {
+        // Always use the ref to get latest state to avoid stale closures
+        const currentImages = imagesRef.current;
+
+        Object.keys(currentImages).forEach((category) => {
             // Initialize with empty array to prevent undefined errors
             serializableImages[category] = [];
 
             // Process each image in the category
-            images[category].forEach((img, index) => {
+            currentImages[category].forEach((img, index) => {
                 // Log what we're processing for debugging
                 console.log(`[Images] Processing ${category} image ${index}:`, {
                     hasFile: !!img.file,
@@ -329,7 +469,7 @@ export default function Images({
         return serializableImages;
     };
 
-    // Handler for file input change (from gallery or camera) with immediate upload
+    // IMPROVED: Handler for file input change with circular update protection
     const handleFileChange = async (e, category) => {
         const files = Array.from(e.target.files);
         if (files.length === 0) return;
@@ -345,6 +485,9 @@ export default function Images({
                 size: f.size,
             }))
         );
+
+        // Set flag to prevent circular updates while processing files
+        isHandlingImagesUpdateRef.current = true;
 
         try {
             // Show upload in progress toast
@@ -471,26 +614,15 @@ export default function Images({
             // Update state with new images (which now have Cloudinary URLs if upload succeeded)
             setImages((prev) => {
                 const updatedCategory = [...prev[category], ...newImages];
+                const updatedImages = { ...prev, [category]: updatedCategory };
 
-                // Important: Notify parent component of changes right away
-                if (onImagesChange && typeof onImagesChange === "function") {
-                    const allImages = { ...prev, [category]: updatedCategory };
-                    console.log(
-                        `[Images] Calling onImagesChange with updated images:`,
-                        {
-                            categories: Object.keys(allImages),
-                            totalImagesCount:
-                                Object.values(allImages).flat().length,
-                            uploadedToCloudinary: uploadedCount,
-                        }
-                    );
-                    onImagesChange(allImages);
-                }
+                // Update images ref
+                imagesRef.current = updatedImages;
 
-                return {
-                    ...prev,
-                    [category]: updatedCategory,
-                };
+                // Update hash reference
+                prevImagesHashRef.current = getImagesHash(updatedImages);
+
+                return updatedImages;
             });
 
             // Show appropriate success message
@@ -526,10 +658,15 @@ export default function Images({
                 detail: "Failed to process images",
                 life: 3000,
             });
-        }
+        } finally {
+            // Reset flag after state update
+            setTimeout(() => {
+                isHandlingImagesUpdateRef.current = false;
+            }, 50);
 
-        // Clear the input value to allow selecting the same file again
-        e.target.value = null;
+            // Clear the input value to allow selecting the same file again
+            e.target.value = null;
+        }
     };
 
     // Test direct upload to Cloudinary via server API
@@ -620,11 +757,17 @@ export default function Images({
         }));
     };
 
-    // Function to remove image directly (no confirmation dialog)
+    // IMPROVED: Function to remove image with circular update protection
     const removeImage = (categoryName, imageIndex) => {
         try {
+            // Skip if already processing an update
+            if (isHandlingImagesUpdateRef.current) return;
+
+            // Set flag to prevent circular updates
+            isHandlingImagesUpdateRef.current = true;
+
             // Create a copy of the current images
-            const newImages = { ...images };
+            const newImages = { ...imagesRef.current };
 
             // Verify the category and index are valid
             if (
@@ -635,6 +778,8 @@ export default function Images({
                 console.log(
                     `Invalid category or index: ${categoryName}, ${imageIndex}`
                 );
+                // Reset flag and return
+                isHandlingImagesUpdateRef.current = false;
                 return;
             }
 
@@ -661,12 +806,11 @@ export default function Images({
             // Update the state with the new images
             setImages(newImages);
 
-            // Notify parent immediately after removing image
-            if (onImagesChange && typeof onImagesChange === "function") {
-                const serializableImages = getSerializableImages();
-                console.log("[Images] Notifying parent after image removal");
-                onImagesChange(serializableImages);
-            }
+            // Update images ref
+            imagesRef.current = newImages;
+
+            // Update hash reference
+            prevImagesHashRef.current = getImagesHash(newImages);
 
             // Show success message
             if (toast.current) {
@@ -677,6 +821,11 @@ export default function Images({
                     life: 3000,
                 });
             }
+
+            // Reset flag after state update
+            setTimeout(() => {
+                isHandlingImagesUpdateRef.current = false;
+            }, 50);
         } catch (error) {
             console.error("Error removing image:", error);
 
@@ -689,6 +838,9 @@ export default function Images({
                     life: 3000,
                 });
             }
+
+            // Ensure flag is reset even on error
+            isHandlingImagesUpdateRef.current = false;
         }
     };
 

@@ -30,6 +30,20 @@ export default function SpecialistEquipment({
     onEquipmentChange,
     initialCategoryComments = {},
 }) {
+    // Debug logging for initial props
+    useEffect(() => {
+        console.log("SPECIALIST: Component received props:", {
+            initialNotesLength: initialNotes ? initialNotes.length : 0,
+            equipmentNotesLength: equipment?.notes ? equipment.notes.length : 0,
+            initialCategoryCommentsKeys: Object.keys(
+                initialCategoryComments || {}
+            ),
+            equipmentCategoryCommentsKeys: Object.keys(
+                equipment?.categoryComments || {}
+            ),
+        });
+    }, []);
+
     // State for holding product items fetched from the API.
     const [productItems, setProductItems] = useState([]);
 
@@ -64,35 +78,84 @@ export default function SpecialistEquipment({
     // Add a ref to track fetch status to prevent multiple fetches
     const didFetchRef = useRef(false);
 
-    // State for category comments - ensure proper initialization from saved data
-    const [categoryComments, setCategoryComments] = useState(
-        initialCategoryComments || {}
-    );
+    // Refs to prevent update loops
+    const updatingCommentsRef = useRef(false);
+    const updatingNotesRef = useRef(false);
+    const prevCommentsRef = useRef({});
+    const prevNotesRef = useRef("");
 
-    // State for notes - properly initialized
-    const [notes, setNotes] = useState(initialNotes || "");
-
-    // Debug log the initial data on mount
-    useEffect(() => {
-        console.log("SpecialistEquipment mounted with initialData:", {
-            initialSpecialistEquipmentData:
-                initialSpecialistEquipmentData?.length || 0,
-            initialNotes: initialNotes?.length || 0,
-            initialCategoryComments:
-                Object.keys(initialCategoryComments || {}).length || 0,
-        });
-    }, []);
-
-    // Update category comments when initialCategoryComments changes
-    useEffect(() => {
+    // FIXED: Better initialize category comments with strict source priority and debug logging
+    const [categoryComments, setCategoryComments] = useState(() => {
+        // First priority: initialCategoryComments prop
         if (
             initialCategoryComments &&
+            typeof initialCategoryComments === "object" &&
             Object.keys(initialCategoryComments).length > 0
         ) {
-            console.log("Loading category comments:", initialCategoryComments);
-            setCategoryComments(initialCategoryComments);
+            console.log(
+                "SPECIALIST: Using initialCategoryComments:",
+                initialCategoryComments
+            );
+            return { ...initialCategoryComments };
         }
-    }, [initialCategoryComments]);
+
+        // Second priority: equipment.categoryComments
+        if (
+            equipment?.categoryComments &&
+            typeof equipment.categoryComments === "object" &&
+            Object.keys(equipment.categoryComments).length > 0
+        ) {
+            console.log(
+                "SPECIALIST: Using equipment.categoryComments:",
+                equipment.categoryComments
+            );
+            return { ...equipment.categoryComments };
+        }
+
+        // Fall back to empty object
+        console.log(
+            "SPECIALIST: No category comments found, using empty object"
+        );
+        return {};
+    });
+
+    // FIXED: Better notes initialization with strict source priority and debug logging
+    const [notes, setNotes] = useState(() => {
+        // First priority: initialNotes prop
+        if (initialNotes && typeof initialNotes === "string") {
+            console.log("SPECIALIST: Using initialNotes:", initialNotes);
+            return initialNotes;
+        }
+
+        // Second priority: equipment.notes
+        if (equipment?.notes && typeof equipment.notes === "string") {
+            console.log("SPECIALIST: Using equipment.notes:", equipment.notes);
+            return equipment.notes;
+        }
+
+        // Fall back to empty string
+        console.log("SPECIALIST: No notes found, using empty string");
+        return "";
+    });
+
+    // Initialize tracking refs with initial values
+    useEffect(() => {
+        if (!initialized) {
+            prevCommentsRef.current = { ...categoryComments };
+            prevNotesRef.current = notes;
+        }
+    }, [initialized, categoryComments, notes]);
+
+    // Log state values on initialization or major changes
+    useEffect(() => {
+        if (!initialized) {
+            console.log("SPECIALIST: Initializing with state:", {
+                notes,
+                categoryCommentsKeys: Object.keys(categoryComments),
+            });
+            setInitialized(true);
+        }
+    }, [initialized, notes, categoryComments]);
 
     // Initialize from saved data
     useEffect(() => {
@@ -102,37 +165,13 @@ export default function SpecialistEquipment({
             !initialized
         ) {
             console.log(
-                "Loading initial specialist equipment data:",
-                initialSpecialistEquipmentData
+                "SPECIALIST: Loading initial data:",
+                initialSpecialistEquipmentData.length
             );
             setSurveyList(initialSpecialistEquipmentData);
             setInitialized(true);
         }
     }, [initialSpecialistEquipmentData, initialized]);
-
-    // Initialize notes state when equipment changes
-    useEffect(() => {
-        // Only update if equipment has notes property
-        if (
-            equipment &&
-            equipment.hasOwnProperty("notes") &&
-            equipment.notes !== undefined
-        ) {
-            console.log(
-                "Loading notes from equipment object:",
-                equipment.notes
-            );
-            setNotes(equipment.notes);
-        }
-    }, [equipment]);
-
-    // Update notes when initialNotes changes
-    useEffect(() => {
-        if (initialNotes !== notes && initialNotes) {
-            console.log("Loading notes:", initialNotes);
-            setNotes(initialNotes);
-        }
-    }, [initialNotes, notes]);
 
     // Fetch product items on mount with improved error handling
     useEffect(() => {
@@ -144,7 +183,7 @@ export default function SpecialistEquipment({
                 setLoading(true);
                 didFetchRef.current = true; // Mark as fetched to prevent duplicates
 
-                console.log("Fetching product items...");
+                console.log("SPECIALIST: Fetching product items...");
                 const res = await fetch("/api/database/products");
 
                 if (!res.ok) {
@@ -160,30 +199,8 @@ export default function SpecialistEquipment({
                     );
 
                     console.log(
-                        `Fetched ${filteredProducts.length} products in predefined categories`
+                        `SPECIALIST: Fetched ${filteredProducts.length} products in predefined categories`
                     );
-
-                    // Debug log if any products have customData
-                    const productsWithCustomData = filteredProducts.filter(
-                        (p) => p.customData && p.customData.length > 0
-                    );
-
-                    console.log(
-                        `Found ${productsWithCustomData.length} products with customData`
-                    );
-
-                    if (productsWithCustomData.length > 0) {
-                        // Log the first product with customData for debugging
-                        console.log(
-                            "Sample product with customData:",
-                            productsWithCustomData[0].name,
-                            JSON.stringify(
-                                productsWithCustomData[0].customData,
-                                null,
-                                2
-                            )
-                        );
-                    }
 
                     setProductItems(filteredProducts);
                 } else {
@@ -222,7 +239,7 @@ export default function SpecialistEquipment({
     // For normal items, if an entry exists, increment its count by 1 per click.
     const handleAddSurvey = (newEntry) => {
         // Debug log the entry being added
-        console.log("Adding specialist equipment entry:", newEntry);
+        console.log("SPECIALIST: Adding entry:", newEntry);
 
         setSurveyList((prev) => {
             const isDimension =
@@ -306,7 +323,7 @@ export default function SpecialistEquipment({
 
     // Remove one unit at a time for normal items; remove entire entry for dimension items.
     const handleRemoveEntry = (id) => {
-        console.log("Removing entry with ID:", id);
+        console.log("SPECIALIST: Removing entry with ID:", id);
 
         setSurveyList((prev) =>
             prev
@@ -329,81 +346,85 @@ export default function SpecialistEquipment({
         );
     };
 
-    // Handle equipment toggle changes - CHANGED TO REGULAR FUNCTION
-    const handleEquipmentChange = (updatedEquipment) => {
-        console.log(
-            "Equipment updated in SpecialistEquipment:",
-            updatedEquipment
-        );
-
-        // Combine the existing notes with the updated equipment fields
-        const combinedEquipment = {
-            ...updatedEquipment,
-            notes:
-                updatedEquipment.notes ||
-                equipment?.notes ||
-                initialNotes ||
-                "",
-            categoryComments: categoryComments,
-        };
-
-        console.log("Combined equipment to save:", combinedEquipment);
-
-        // Notify parent component
-        if (typeof onEquipmentChange === "function") {
-            onEquipmentChange(combinedEquipment);
-        }
-
-        // Also update notes if notes change handler exists
-        if (
-            typeof onNotesChange === "function" &&
-            combinedEquipment.notes !== initialNotes
-        ) {
-            onNotesChange(combinedEquipment.notes);
-        }
-    };
-
-    // Handler for category comments changes - CHANGED TO REGULAR FUNCTION
+    // CRITICAL FIX: Handler for category comments changes that ensures proper update to specialistEquipmentSurvey
     const handleCategoryCommentsChange = (comments) => {
-        console.log("Category comments updated:", comments);
+        // Skip if already updating
+        if (updatingCommentsRef.current) return;
+
+        // Skip if nothing changed
+        const commentsJSON = JSON.stringify(comments);
+        const prevCommentsJSON = JSON.stringify(prevCommentsRef.current);
+        if (commentsJSON === prevCommentsJSON) return;
+
+        console.log("SPECIALIST: Category comments changed:", comments);
+
+        // Set flag to prevent loops
+        updatingCommentsRef.current = true;
+        prevCommentsRef.current = JSON.parse(commentsJSON);
+
+        // Update local state
         setCategoryComments(comments);
 
-        // Update equipment data with new comments
+        // Update the equipment object with ONLY categoryComments
         if (typeof onEquipmentChange === "function") {
-            const updatedEquipment = {
-                ...(equipment || {}), // Ensure we have an object
+            // Create partial update with ONLY categoryComments
+            const partialUpdate = {
                 categoryComments: comments,
             };
+
             console.log(
-                "Sending equipment with updated category comments:",
-                updatedEquipment
+                "SPECIALIST: Updating equipment with categoryComments:",
+                partialUpdate
             );
-            onEquipmentChange(updatedEquipment);
+            onEquipmentChange(partialUpdate);
         }
+
+        // Reset flag after delay
+        setTimeout(() => {
+            updatingCommentsRef.current = false;
+        }, 0);
     };
 
-    // Handler for notes changes - CHANGED TO REGULAR FUNCTION
-    const handleNotesChange = (notes) => {
-        console.log("Specialist equipment notes updated:", notes);
-        setNotes(notes);
+    // CRITICAL FIX: Handler for specialist equipment notes changes that ensures proper update to specialistEquipmentSurvey
+    const handleNotesChange = (newNotes) => {
+        // Skip if already updating or no change
+        if (updatingNotesRef.current || newNotes === prevNotesRef.current)
+            return;
 
-        // Update parent component if callback exists
+        console.log("SPECIALIST: Notes changed:", newNotes);
+
+        // Set flag to prevent loops
+        updatingNotesRef.current = true;
+        prevNotesRef.current = newNotes;
+
+        // Update local state
+        setNotes(newNotes);
+
+        // First priority: Use direct callback if available
         if (typeof onNotesChange === "function") {
-            onNotesChange(notes);
+            console.log("SPECIALIST: Calling onNotesChange with:", newNotes);
+            onNotesChange(newNotes);
         }
 
-        // If equipment change handler exists, update the notes in the equipment object
+        // Second priority: Send partial update with ONLY notes
         if (typeof onEquipmentChange === "function") {
-            const updatedEquipment = {
-                ...(equipment || {}), // Ensure we have an object
-                notes: notes,
+            // CRITICAL FIX: Create partial update with ONLY specialistNotes property to avoid conflicts
+            const partialUpdate = {
+                // Use a separate specialistNotes property to clearly separate from regular equipment notes
+                specialistNotes: newNotes,
             };
+
             console.log(
-                "Sending equipment with updated notes:",
-                updatedEquipment
+                "SPECIALIST: Updating equipment with specialistNotes:",
+                partialUpdate
             );
-            onEquipmentChange(updatedEquipment);
+            onEquipmentChange(partialUpdate);
         }
+
+        // Reset flag after delay
+        setTimeout(() => {
+            updatingNotesRef.current = false;
+        }, 0);
     };
 
     // Helper function matching Equipment.jsx pattern
@@ -448,7 +469,7 @@ export default function SpecialistEquipment({
                         specialItems={specialItems}
                         isVolumeItem={isVolumeItem}
                         handleRemoveEntry={handleRemoveEntry}
-                        initialCategoryComments={initialCategoryComments}
+                        initialCategoryComments={categoryComments}
                         onCategoryCommentsChange={handleCategoryCommentsChange}
                     />
 

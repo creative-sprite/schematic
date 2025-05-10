@@ -5,10 +5,15 @@ import React, { useState, useEffect } from "react";
 import { MultiSelect } from "primereact/multiselect";
 import { Button } from "primereact/button";
 
-export default function ContactSelect({ onContactSelect, siteDetails }) {
+export default function ContactSelect({
+    onContactSelect,
+    siteDetails,
+    placeholder,
+}) {
     const [selectedContacts, setSelectedContacts] = useState([]);
     const [availableContacts, setAvailableContacts] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
+    const [addedContactIds, setAddedContactIds] = useState(new Set());
 
     // Function to fetch contacts from API based on the filter
     const searchContacts = async (event) => {
@@ -43,14 +48,28 @@ export default function ContactSelect({ onContactSelect, siteDetails }) {
                 const siteContactsData = await siteContactsRes.json();
 
                 if (siteContactsData.success && siteContactsData.data) {
-                    const existingContactIds = siteContactsData.data.map(
-                        (contact) => contact._id
+                    // Get existing contact IDs from the site
+                    const existingContactIds = new Set(
+                        siteContactsData.data.map((contact) => contact._id)
                     );
+
+                    // Update our tracking of site contacts
+                    setAddedContactIds(
+                        new Set([...existingContactIds, ...addedContactIds])
+                    );
+
                     // Filter out contacts already associated with this site
                     contacts = contacts.filter(
                         (contact) =>
                             contact._id &&
-                            !existingContactIds.includes(contact._id)
+                            !existingContactIds.has(contact._id) &&
+                            !addedContactIds.has(contact._id)
+                    );
+                } else {
+                    // If we couldn't fetch site contacts, still filter out ones we know we've added
+                    contacts = contacts.filter(
+                        (contact) =>
+                            contact._id && !addedContactIds.has(contact._id)
                     );
                 }
 
@@ -97,10 +116,14 @@ export default function ContactSelect({ onContactSelect, siteDetails }) {
             return;
 
         let successCount = 0;
+        const newAddedContactIds = new Set(addedContactIds);
 
         for (const contact of selectedContacts) {
             try {
                 if (!contact || !contact._id) continue;
+
+                // Skip if already added (redundant check)
+                if (newAddedContactIds.has(contact._id)) continue;
 
                 // Format the contact to match the expected structure
                 const formattedContact = {
@@ -145,6 +168,10 @@ export default function ContactSelect({ onContactSelect, siteDetails }) {
 
                 // Update the site with this contact
                 await onContactSelect(formattedContact);
+
+                // Track that this contact has been added
+                newAddedContactIds.add(contact._id);
+
                 successCount++;
             } catch (error) {
                 console.error(
@@ -154,16 +181,24 @@ export default function ContactSelect({ onContactSelect, siteDetails }) {
             }
         }
 
-        // Clear selection and refresh available contacts
+        // Update our tracking of added contacts
+        setAddedContactIds(newAddedContactIds);
+
+        // Clear selection
         setSelectedContacts([]);
-        searchContacts({ filter: "" });
+
+        // Update available contacts list to filter out newly added contacts
+        const filteredContacts = availableContacts.filter(
+            (contact) => !newAddedContactIds.has(contact._id)
+        );
+        setAvailableContacts(filteredContacts);
 
         return successCount;
     };
 
     const itemTemplate = (option) => {
-        // Check if option exists and has necessary properties
-        if (!option) return <div>Invalid contact</div>;
+        // Return empty div instead of "Invalid contact" text
+        if (!option) return <div></div>;
 
         const firstName = option.contactFirstName || "";
         const lastName = option.contactLastName || "";
@@ -187,20 +222,6 @@ export default function ContactSelect({ onContactSelect, siteDetails }) {
         );
     };
 
-    const selectedItemTemplate = (option) => {
-        // Check if option exists and has necessary properties
-        if (!option) return <div>Invalid contact</div>;
-
-        const firstName = option.contactFirstName || "";
-        const lastName = option.contactLastName || "";
-
-        return (
-            <div className="p-multiselect-contact-token">
-                {`${firstName} ${lastName}`}
-            </div>
-        );
-    };
-
     return (
         <div className="contact-select">
             <div style={{ display: "flex", gap: "1rem", marginBottom: "1rem" }}>
@@ -215,12 +236,10 @@ export default function ContactSelect({ onContactSelect, siteDetails }) {
                               }`
                             : "Unnamed contact"
                     }
-                    placeholder="Search for existing contacts..."
+                    placeholder={placeholder || "Select Contact"}
                     filter
                     filterPlaceholder="Search contacts..."
                     itemTemplate={itemTemplate}
-                    selectedItemTemplate={selectedItemTemplate}
-                    display="chip"
                     disabled={!siteDetails || !siteDetails._id}
                     style={{ flexGrow: 1 }}
                     loading={isLoading}

@@ -36,6 +36,16 @@ export default function SpecialistEquipmentForm(props) {
     const ignoreNextCategoryUpdateRef = useRef(false);
     const prevCategoryRef = useRef("");
 
+    // Helper function to check if dimension field has data
+    const dimensionHasData = (itemName, field) => {
+        return (
+            dimensionInputs[itemName] &&
+            dimensionInputs[itemName][field] !== undefined &&
+            dimensionInputs[itemName][field] !== null &&
+            dimensionInputs[itemName][field] !== ""
+        );
+    };
+
     // Debug logging for products with customData
     useEffect(() => {
         if (sortedFilteredItems && sortedFilteredItems.length > 0) {
@@ -580,6 +590,12 @@ export default function SpecialistEquipmentForm(props) {
                                             width: "100%",
                                             height: "40px",
                                             marginBottom: "0.2rem",
+                                            border: dimensionHasData(
+                                                item.name,
+                                                "length"
+                                            )
+                                                ? "1px solid var(--primary-color)"
+                                                : "",
                                         }}
                                     />
                                 </div>
@@ -604,6 +620,12 @@ export default function SpecialistEquipmentForm(props) {
                                             width: "100%",
                                             height: "40px",
                                             marginBottom: "0.2rem",
+                                            border: dimensionHasData(
+                                                item.name,
+                                                "width"
+                                            )
+                                                ? "1px solid var(--primary-color)"
+                                                : "",
                                         }}
                                     />
                                 </div>
@@ -632,6 +654,12 @@ export default function SpecialistEquipmentForm(props) {
                                                 width: "100%",
                                                 height: "40px",
                                                 marginBottom: "0.2rem",
+                                                border: dimensionHasData(
+                                                    item.name,
+                                                    "height"
+                                                )
+                                                    ? "1px solid var(--primary-color)"
+                                                    : "",
                                             }}
                                         />
                                     </div>

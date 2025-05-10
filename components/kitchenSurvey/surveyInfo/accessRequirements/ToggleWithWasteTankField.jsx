@@ -27,6 +27,29 @@ export default function ToggleWithWasteTankField({ item, access, setAccess }) {
         });
     };
 
+    // Check if toggle is set to "Yes"
+    const isToggleEnabled = () => {
+        return access[item.toggleField] === "Yes";
+    };
+
+    // Check if dropdown has a selection
+    const dropdownHasData = () => {
+        return (
+            access[item.dropdownField] !== undefined &&
+            access[item.dropdownField] !== null &&
+            access[item.dropdownField] !== ""
+        );
+    };
+
+    // Check if input field has data
+    const inputHasData = () => {
+        return (
+            access[item.inputField] !== undefined &&
+            access[item.inputField] !== null &&
+            access[item.inputField] !== ""
+        );
+    };
+
     return (
         <CardWrapper>
             <label
@@ -39,20 +62,32 @@ export default function ToggleWithWasteTankField({ item, access, setAccess }) {
                 {item.label}
             </label>
             <ToggleButton
-                checked={access[item.toggleField] === "Yes"}
+                checked={isToggleEnabled()}
                 onChange={handleToggleChange}
                 onLabel="Yes"
                 offLabel="No"
-                style={{ width: "100%", height: "40px" }}
+                style={{
+                    width: "100%",
+                    height: "40px",
+                    border: isToggleEnabled()
+                        ? "1px solid var(--primary-color)"
+                        : "",
+                }}
             />
-            {access[item.toggleField] === "Yes" && (
+            {isToggleEnabled() && (
                 <div style={{ marginTop: "10px" }}>
                     <Dropdown
                         value={access[item.dropdownField] ?? null}
                         options={item.options}
                         onChange={handleDropdownChange}
                         placeholder={item.dropdownPlaceholder}
-                        style={{ height: "40px", width: "100%" }}
+                        style={{
+                            height: "40px",
+                            width: "100%",
+                            border: dropdownHasData()
+                                ? "1px solid var(--primary-color)"
+                                : "",
+                        }}
                     />
                     <InputText
                         value={access[item.inputField] ?? ""}
@@ -62,6 +97,9 @@ export default function ToggleWithWasteTankField({ item, access, setAccess }) {
                             height: "40px",
                             width: "100%",
                             marginTop: "10px",
+                            border: inputHasData()
+                                ? "1px solid var(--primary-color)"
+                                : "",
                         }}
                     />
                 </div>

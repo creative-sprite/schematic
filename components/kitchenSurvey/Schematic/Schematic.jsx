@@ -2,7 +2,7 @@
 
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import SchematicCanvas from "./SchematicCanvas";
 import SchematicList from "./SchematicList";
 import { Button } from "primereact/button";
@@ -67,15 +67,33 @@ function Schematic({
     const [isDeleting, setIsDeleting] = useState(false);
     const [specialStartCell, setSpecialStartCell] = useState(null);
     const [specialRotation, setSpecialRotation] = useState(0);
-    // Using shared groupDimensions instead of local state
-    // const [localGroupDimensions, setLocalGroupDimensions] = useState({});
     const [panMode, setPanMode] = useState(false); // State for pan mode
     const [resetSelection, setResetSelection] = useState(false);
 
     // Flag to track initialization from saved data
     const [initialized, setInitialized] = useState(false);
-    // Ref to track when prices have been sent to parent
-    const pricesSentRef = useRef(false);
+
+    // ADDED: Refs to track update status and prevent circular updates
+    const updatingStateRef = useRef(false);
+    const pricesSentRef = useRef({
+        accessDoor: false,
+        ventilation: false,
+        air: false,
+        fanParts: false,
+        airInEx: false,
+        schematic: false,
+    });
+
+    // ADDED: Track previous values for deep comparison
+    const prevValuesRef = useRef({
+        accessDoorPrice: initialAccessDoorPrice || 0,
+        ventilationPrice: initialVentilationPrice || 0,
+        airPrice: initialAirPrice || 0,
+        fanPartsPrice: initialFanPartsPrice || 0,
+        airInExTotal: initialAirInExTotal || 0,
+        schematicItemsTotal: initialSchematicItemsTotal || 0,
+        accessDoorSelections: {},
+    });
 
     // Store local ventilation price from Flexi-Duct/Flexi Hose items
     const [flexiDuctVentilationPrice, setFlexiDuctVentilationPrice] = useState(
@@ -98,23 +116,68 @@ function Schematic({
         initialSchematicItemsTotal || 0
     );
 
-    // Using shared accessDoorSelections instead of local state
-    // const [localAccessDoorSelections, setLocalAccessDoorSelections] = useState({});
-
     // Pan mode handling states and refs
     const containerRef = useRef(null);
     const [isPanning, setIsPanning] = useState(false);
     const panStart = useRef({ x: 0, y: 0 });
     const scrollStart = useRef({ left: 0, top: 0 });
 
+    // ADDED: Debounce timers for price updates
+    const debounceTimersRef = useRef({
+        accessDoor: null,
+        ventilation: null,
+        air: null,
+        fanParts: null,
+        airInEx: null,
+        schematic: null,
+    });
+
     // Use refs to store callbacks to avoid dependency issues
-    const ventilationPriceChangeRef = useRef(onVentilationPriceChange);
+    const callbackRefsRef = useRef({
+        onAccessDoorPriceChange,
+        onVentilationPriceChange,
+        onAirPriceChange,
+        onFanPartsPriceChange,
+        onAirInExPriceChange,
+        onSchematicItemsTotalChange,
+        onGroupIdChange,
+    });
+
+    // Update callback refs when props change
     useEffect(() => {
-        ventilationPriceChangeRef.current = onVentilationPriceChange;
-    }, [onVentilationPriceChange]);
+        callbackRefsRef.current = {
+            onAccessDoorPriceChange,
+            onVentilationPriceChange,
+            onAirPriceChange,
+            onFanPartsPriceChange,
+            onAirInExPriceChange,
+            onSchematicItemsTotalChange,
+            onGroupIdChange,
+        };
+    }, [
+        onAccessDoorPriceChange,
+        onVentilationPriceChange,
+        onAirPriceChange,
+        onFanPartsPriceChange,
+        onAirInExPriceChange,
+        onSchematicItemsTotalChange,
+        onGroupIdChange,
+    ]);
 
     // NEW: Use a ref for selectedGroupId to avoid dependency issues
     const selectedGroupIdRef = useRef(initialSelectedGroupId);
+
+    // Initialize accessDoorSelections deep copy
+    useEffect(() => {
+        if (
+            Object.keys(accessDoorSelections).length > 0 &&
+            Object.keys(prevValuesRef.current.accessDoorSelections).length === 0
+        ) {
+            prevValuesRef.current.accessDoorSelections = JSON.parse(
+                JSON.stringify(accessDoorSelections)
+            );
+        }
+    }, [accessDoorSelections]);
 
     // FIXED: Initialize only once and preserve existing state
     useEffect(() => {
@@ -164,27 +227,34 @@ function Schematic({
         // Set prices only if they're not already set
         if (accessDoorPrice === 0 && initialAccessDoorPrice > 0) {
             setAccessDoorPrice(initialAccessDoorPrice);
+            prevValuesRef.current.accessDoorPrice = initialAccessDoorPrice;
         }
 
         if (ventilationPrice === 0 && initialVentilationPrice > 0) {
             setVentilationPrice(initialVentilationPrice);
             setFlexiDuctVentilationPrice(initialVentilationPrice);
+            prevValuesRef.current.ventilationPrice = initialVentilationPrice;
         }
 
         if (airPrice === 0 && initialAirPrice > 0) {
             setAirPrice(initialAirPrice);
+            prevValuesRef.current.airPrice = initialAirPrice;
         }
 
         if (fanPartsPrice === 0 && initialFanPartsPrice > 0) {
             setFanPartsPrice(initialFanPartsPrice);
+            prevValuesRef.current.fanPartsPrice = initialFanPartsPrice;
         }
 
         if (airInExTotal === 0 && initialAirInExTotal > 0) {
             setAirInExTotal(initialAirInExTotal);
+            prevValuesRef.current.airInExTotal = initialAirInExTotal;
         }
 
         if (schematicItemsTotal === 0 && initialSchematicItemsTotal > 0) {
             setSchematicItemsTotal(initialSchematicItemsTotal);
+            prevValuesRef.current.schematicItemsTotal =
+                initialSchematicItemsTotal;
         }
 
         // Initialize flexi-duct selections
@@ -198,8 +268,8 @@ function Schematic({
         // Initialize selected group ID
         if (initialSelectedGroupId && !selectedGroupIdRef.current) {
             selectedGroupIdRef.current = initialSelectedGroupId;
-            if (typeof onGroupIdChange === "function") {
-                onGroupIdChange(initialSelectedGroupId);
+            if (typeof callbackRefsRef.current.onGroupIdChange === "function") {
+                callbackRefsRef.current.onGroupIdChange(initialSelectedGroupId);
             }
         }
 
@@ -215,90 +285,416 @@ function Schematic({
             (!selectedGroupIdRef.current ||
                 selectedGroupIdRef.current === "") &&
             structureIds.length > 0 &&
-            typeof onGroupIdChange === "function"
+            typeof callbackRefsRef.current.onGroupIdChange === "function"
         ) {
             selectedGroupIdRef.current = structureIds[0];
-            onGroupIdChange(structureIds[0]);
+            callbackRefsRef.current.onGroupIdChange(structureIds[0]);
         }
-    }, [structureIds, onGroupIdChange]);
+    }, [structureIds]);
+
+    // IMPROVED: Memoized safe handler for access door price changes
+    const safeUpdateAccessDoorPrice = useCallback((newPrice) => {
+        // Skip if already updating
+        if (updatingStateRef.current) return;
+
+        // Skip if no actual change
+        if (Math.abs(prevValuesRef.current.accessDoorPrice - newPrice) < 0.001)
+            return;
+
+        // Clear any existing debounce timer
+        if (debounceTimersRef.current.accessDoor) {
+            clearTimeout(debounceTimersRef.current.accessDoor);
+        }
+
+        // Debounce the update
+        debounceTimersRef.current.accessDoor = setTimeout(() => {
+            // Set flag to prevent circular updates
+            updatingStateRef.current = true;
+
+            console.log(`[Schematic] Updating access door price: ${newPrice}`);
+
+            // Update local state
+            setAccessDoorPrice(newPrice);
+
+            // Update reference value
+            prevValuesRef.current.accessDoorPrice = newPrice;
+
+            // Notify parent component
+            if (callbackRefsRef.current.onAccessDoorPriceChange) {
+                callbackRefsRef.current.onAccessDoorPriceChange(newPrice);
+            }
+
+            // Reset flag
+            pricesSentRef.current.accessDoor = true;
+
+            // Reset update flag after a short delay
+            setTimeout(() => {
+                updatingStateRef.current = false;
+            }, 10);
+        }, 50);
+    }, []);
 
     // FIXED: Pass prices to parent component without causing re-renders
     // Handle access door price updates
     useEffect(() => {
-        if (
-            onAccessDoorPriceChange &&
-            accessDoorPrice !== initialAccessDoorPrice
-        ) {
-            onAccessDoorPriceChange(accessDoorPrice);
-        }
-    }, [accessDoorPrice, initialAccessDoorPrice, onAccessDoorPriceChange]);
+        if (pricesSentRef.current.accessDoor) return;
 
-    // Handle ventilation price updates - critical fix
-    useEffect(() => {
-        // Only update if there's a meaningful change AND there's at least one placed item
         if (
-            ventilationPriceChangeRef.current &&
-            Math.abs(ventilationPrice - initialVentilationPrice) > 0.001 &&
-            !pricesSentRef.current
+            Math.abs(accessDoorPrice - prevValuesRef.current.accessDoorPrice) >
+            0.001
         ) {
-            console.log(`Updating ventilation price: ${ventilationPrice}`);
-            ventilationPriceChangeRef.current(ventilationPrice);
-            pricesSentRef.current = true;
+            safeUpdateAccessDoorPrice(accessDoorPrice);
         }
-    }, [ventilationPrice, initialVentilationPrice]);
+    }, [accessDoorPrice, safeUpdateAccessDoorPrice]);
 
-    // Reset price sent flag when ventilation price changes significantly
-    useEffect(() => {
-        if (Math.abs(ventilationPrice - initialVentilationPrice) > 5) {
-            pricesSentRef.current = false;
+    // IMPROVED: Memoized safe handler for ventilation price changes
+    const safeUpdateVentilationPrice = useCallback((newPrice) => {
+        // Skip if already updating
+        if (updatingStateRef.current) return;
+
+        // Skip if no actual change
+        if (Math.abs(prevValuesRef.current.ventilationPrice - newPrice) < 0.001)
+            return;
+
+        // Clear any existing debounce timer
+        if (debounceTimersRef.current.ventilation) {
+            clearTimeout(debounceTimersRef.current.ventilation);
         }
-    }, [ventilationPrice, initialVentilationPrice]);
+
+        // Debounce the update
+        debounceTimersRef.current.ventilation = setTimeout(() => {
+            // Set flag to prevent circular updates
+            updatingStateRef.current = true;
+
+            console.log(`[Schematic] Updating ventilation price: ${newPrice}`);
+
+            // Update local state
+            setVentilationPrice(newPrice);
+
+            // Update reference value
+            prevValuesRef.current.ventilationPrice = newPrice;
+
+            // Notify parent component
+            if (callbackRefsRef.current.onVentilationPriceChange) {
+                callbackRefsRef.current.onVentilationPriceChange(newPrice);
+            }
+
+            // Reset flag
+            pricesSentRef.current.ventilation = true;
+
+            // Reset update flag after a short delay
+            setTimeout(() => {
+                updatingStateRef.current = false;
+            }, 10);
+        }, 50);
+    }, []);
+
+    // Handle ventilation price updates
+    useEffect(() => {
+        if (pricesSentRef.current.ventilation) return;
+
+        if (
+            Math.abs(
+                ventilationPrice - prevValuesRef.current.ventilationPrice
+            ) > 0.001
+        ) {
+            safeUpdateVentilationPrice(ventilationPrice);
+        }
+    }, [ventilationPrice, safeUpdateVentilationPrice]);
+
+    // Reset price sent flags when prices change significantly
+    useEffect(() => {
+        // For access door price
+        if (
+            Math.abs(accessDoorPrice - prevValuesRef.current.accessDoorPrice) >
+            1
+        ) {
+            pricesSentRef.current.accessDoor = false;
+        }
+
+        // For ventilation price
+        if (
+            Math.abs(
+                ventilationPrice - prevValuesRef.current.ventilationPrice
+            ) > 1
+        ) {
+            pricesSentRef.current.ventilation = false;
+        }
+    }, [accessDoorPrice, ventilationPrice]);
+
+    // IMPROVED: Memoized safe handlers for other price changes
+    const safeUpdateAirPrice = useCallback((newPrice) => {
+        // Skip if already updating or no change
+        if (
+            updatingStateRef.current ||
+            Math.abs(prevValuesRef.current.airPrice - newPrice) < 0.001
+        )
+            return;
+
+        // Clear any existing timer
+        if (debounceTimersRef.current.air) {
+            clearTimeout(debounceTimersRef.current.air);
+        }
+
+        // Debounce the update
+        debounceTimersRef.current.air = setTimeout(() => {
+            updatingStateRef.current = true;
+
+            setAirPrice(newPrice);
+            prevValuesRef.current.airPrice = newPrice;
+
+            if (callbackRefsRef.current.onAirPriceChange) {
+                callbackRefsRef.current.onAirPriceChange(newPrice);
+            }
+
+            setTimeout(() => {
+                updatingStateRef.current = false;
+            }, 10);
+        }, 50);
+    }, []);
+
+    const safeUpdateFanPartsPrice = useCallback((newPrice) => {
+        // Skip if already updating or no change
+        if (
+            updatingStateRef.current ||
+            Math.abs(prevValuesRef.current.fanPartsPrice - newPrice) < 0.001
+        )
+            return;
+
+        // Clear any existing timer
+        if (debounceTimersRef.current.fanParts) {
+            clearTimeout(debounceTimersRef.current.fanParts);
+        }
+
+        // Debounce the update
+        debounceTimersRef.current.fanParts = setTimeout(() => {
+            updatingStateRef.current = true;
+
+            setFanPartsPrice(newPrice);
+            prevValuesRef.current.fanPartsPrice = newPrice;
+
+            if (callbackRefsRef.current.onFanPartsPriceChange) {
+                callbackRefsRef.current.onFanPartsPriceChange(newPrice);
+            }
+
+            setTimeout(() => {
+                updatingStateRef.current = false;
+            }, 10);
+        }, 50);
+    }, []);
+
+    const safeUpdateAirInExTotal = useCallback((newPrice) => {
+        // Skip if already updating or no change
+        if (
+            updatingStateRef.current ||
+            Math.abs(prevValuesRef.current.airInExTotal - newPrice) < 0.001
+        )
+            return;
+
+        // Clear any existing timer
+        if (debounceTimersRef.current.airInEx) {
+            clearTimeout(debounceTimersRef.current.airInEx);
+        }
+
+        // Debounce the update
+        debounceTimersRef.current.airInEx = setTimeout(() => {
+            updatingStateRef.current = true;
+
+            setAirInExTotal(newPrice);
+            prevValuesRef.current.airInExTotal = newPrice;
+
+            if (callbackRefsRef.current.onAirInExPriceChange) {
+                callbackRefsRef.current.onAirInExPriceChange(newPrice);
+            }
+
+            setTimeout(() => {
+                updatingStateRef.current = false;
+            }, 10);
+        }, 50);
+    }, []);
+
+    const safeUpdateSchematicItemsTotal = useCallback((newTotal) => {
+        // Skip if already updating or no change
+        if (updatingStateRef.current) return;
+
+        let totalToCompare;
+        if (typeof newTotal === "object" && newTotal !== null) {
+            totalToCompare = newTotal.overall || 0;
+        } else {
+            totalToCompare = Number(newTotal) || 0;
+        }
+
+        // If no meaningful change, skip update
+        if (
+            Math.abs(
+                prevValuesRef.current.schematicItemsTotal - totalToCompare
+            ) < 0.001
+        )
+            return;
+
+        // Clear any existing timer
+        if (debounceTimersRef.current.schematic) {
+            clearTimeout(debounceTimersRef.current.schematic);
+        }
+
+        // Debounce the update
+        debounceTimersRef.current.schematic = setTimeout(() => {
+            updatingStateRef.current = true;
+
+            setSchematicItemsTotal(newTotal);
+            prevValuesRef.current.schematicItemsTotal = totalToCompare;
+
+            if (callbackRefsRef.current.onSchematicItemsTotalChange) {
+                callbackRefsRef.current.onSchematicItemsTotalChange(newTotal);
+            }
+
+            setTimeout(() => {
+                updatingStateRef.current = false;
+            }, 10);
+        }, 50);
+    }, []);
 
     // Handle other price updates
     useEffect(() => {
-        if (onAirPriceChange && airPrice !== initialAirPrice) {
-            onAirPriceChange(airPrice);
+        if (airPrice !== prevValuesRef.current.airPrice) {
+            safeUpdateAirPrice(airPrice);
         }
-    }, [airPrice, initialAirPrice, onAirPriceChange]);
+    }, [airPrice, safeUpdateAirPrice]);
 
     useEffect(() => {
-        if (onFanPartsPriceChange && fanPartsPrice !== initialFanPartsPrice) {
-            onFanPartsPriceChange(fanPartsPrice);
+        if (fanPartsPrice !== prevValuesRef.current.fanPartsPrice) {
+            safeUpdateFanPartsPrice(fanPartsPrice);
         }
-    }, [fanPartsPrice, initialFanPartsPrice, onFanPartsPriceChange]);
+    }, [fanPartsPrice, safeUpdateFanPartsPrice]);
 
     useEffect(() => {
-        if (onAirInExPriceChange && airInExTotal !== initialAirInExTotal) {
-            onAirInExPriceChange(airInExTotal);
+        if (airInExTotal !== prevValuesRef.current.airInExTotal) {
+            safeUpdateAirInExTotal(airInExTotal);
         }
-    }, [airInExTotal, initialAirInExTotal, onAirInExPriceChange]);
+    }, [airInExTotal, safeUpdateAirInExTotal]);
 
     useEffect(() => {
-        if (
-            onSchematicItemsTotalChange &&
-            schematicItemsTotal !== initialSchematicItemsTotal
-        ) {
-            onSchematicItemsTotalChange(schematicItemsTotal);
+        if (schematicItemsTotal !== prevValuesRef.current.schematicItemsTotal) {
+            safeUpdateSchematicItemsTotal(schematicItemsTotal);
         }
-    }, [
-        schematicItemsTotal,
-        initialSchematicItemsTotal,
-        onSchematicItemsTotalChange,
-    ]);
+    }, [schematicItemsTotal, safeUpdateSchematicItemsTotal]);
 
     // Make sure we have a structure ID selected if we have placed items
     useEffect(() => {
-        if (placedItems.length > 0 && typeof onGroupIdChange === "function") {
+        if (
+            placedItems.length > 0 &&
+            typeof callbackRefsRef.current.onGroupIdChange === "function"
+        ) {
             // If we have structure IDs available, ensure one is selected
             if (structureIds.length > 0 && !groupingId) {
                 selectedGroupIdRef.current = structureIds[0];
-                onGroupIdChange(structureIds[0]);
+                callbackRefsRef.current.onGroupIdChange(structureIds[0]);
             }
         }
-    }, [placedItems, structureIds, groupingId, onGroupIdChange]);
+    }, [placedItems, structureIds, groupingId]);
+
+    // IMPROVED: Safe memoized handler for access door selection changes
+    const safeUpdateAccessDoorSelections = useCallback(
+        (itemId, selectedDoor) => {
+            // Skip if already updating
+            if (updatingStateRef.current) return;
+
+            // Set flag to prevent circular updates
+            updatingStateRef.current = true;
+
+            try {
+                // Make deep copies for comparison
+                const currentSelections = JSON.parse(
+                    JSON.stringify(accessDoorSelections || {})
+                );
+                const prevSelections = JSON.parse(
+                    JSON.stringify(
+                        prevValuesRef.current.accessDoorSelections || {}
+                    )
+                );
+
+                // Check if this is removing a selection
+                if (!selectedDoor) {
+                    // Skip if not actually present
+                    if (!currentSelections[itemId]) {
+                        return;
+                    }
+
+                    // Create a new object without the deleted selection
+                    const newSelections = { ...currentSelections };
+                    delete newSelections[itemId];
+
+                    // Update parent state
+                    setAccessDoorSelections(newSelections);
+
+                    // Update reference
+                    prevValuesRef.current.accessDoorSelections = newSelections;
+
+                    console.log(
+                        `[Schematic] Removed door selection for item ${itemId}`
+                    );
+                    return;
+                }
+
+                // Format the door selection data consistently
+                const doorSelection = {
+                    mongoId:
+                        selectedDoor._id ||
+                        selectedDoor.mongoId ||
+                        selectedDoor.id ||
+                        "",
+                    id:
+                        selectedDoor._id ||
+                        selectedDoor.mongoId ||
+                        selectedDoor.id ||
+                        "",
+                    name: selectedDoor.name || "",
+                    type: selectedDoor.type || "",
+                    dimensions: selectedDoor.dimensions || "",
+                    price: Number(
+                        selectedDoor.price || selectedDoor.accessDoorPrice || 0
+                    ),
+                };
+
+                // Check if there's an actual change
+                const currentDoor = currentSelections[itemId];
+                if (
+                    currentDoor &&
+                    currentDoor.id === doorSelection.id &&
+                    currentDoor.price === doorSelection.price
+                ) {
+                    return;
+                }
+
+                // Update door selections
+                const newSelections = {
+                    ...currentSelections,
+                    [itemId]: doorSelection,
+                };
+
+                // Update parent state
+                setAccessDoorSelections(newSelections);
+
+                // Update reference
+                prevValuesRef.current.accessDoorSelections = newSelections;
+
+                console.log(
+                    `[Schematic] Updated door selection for item ${itemId}:`,
+                    doorSelection
+                );
+            } finally {
+                // Reset update flag after a short delay
+                setTimeout(() => {
+                    updatingStateRef.current = false;
+                }, 10);
+            }
+        },
+        [accessDoorSelections]
+    );
 
     // NEW: Effect to calculate access door price from selections
     useEffect(() => {
+        if (updatingStateRef.current) return;
         if (Object.keys(accessDoorSelections).length === 0) return;
 
         // Calculate total price of all selected access doors
@@ -309,15 +705,13 @@ function Schematic({
             }
         });
 
-        // Update local state and propagate to parent
+        // Update local state if there's a change
         if (Math.abs(accessDoorPrice - totalAccessDoorPrice) > 0.001) {
             setAccessDoorPrice(totalAccessDoorPrice);
-
-            if (onAccessDoorPriceChange) {
-                onAccessDoorPriceChange(totalAccessDoorPrice);
-            }
+            prevValuesRef.current.accessDoorPrice = totalAccessDoorPrice;
+            pricesSentRef.current.accessDoor = false; // Reset flag to trigger parent update
         }
-    }, [accessDoorSelections, accessDoorPrice, onAccessDoorPriceChange]);
+    }, [accessDoorSelections, accessDoorPrice]);
 
     const handlePanPointerDown = (e) => {
         if (!panMode) return;
@@ -358,66 +752,69 @@ function Schematic({
 
     // Add effect to track dimension changes for debugging
     useEffect(() => {
+        if (!initialized) return;
+
         console.log(
             "[Schematic] Current groupDimensions state:",
-            groupDimensions
+            Object.keys(groupDimensions).length
         );
-    }, [groupDimensions]);
+    }, [groupDimensions, initialized]);
 
-    const handleDimensionChange = (groupKey, field, rawValue) => {
+    // IMPROVED: Safe memoized handler for dimension changes
+    const handleDimensionChange = useCallback((groupKey, field, rawValue) => {
+        // Skip if already updating
+        if (updatingStateRef.current) return;
+
         console.log(
             `[Schematic] Dimension change for ${groupKey}.${field} = ${rawValue}`
         );
 
-        setGroupDimensions((prev) => {
-            const newDims = { ...prev };
-            if (!newDims[groupKey]) {
-                newDims[groupKey] = {};
-            }
+        // Set flag to prevent circular updates
+        updatingStateRef.current = true;
 
-            // Ensure we're handling the value correctly
-            let valueToStore;
-            if (rawValue === "") {
-                valueToStore = "";
-            } else {
-                const parsed = parseInt(rawValue, 10);
-                valueToStore = Number.isNaN(parsed) ? "" : parsed;
-            }
+        try {
+            setGroupDimensions((prev) => {
+                const newDims = { ...prev };
+                if (!newDims[groupKey]) {
+                    newDims[groupKey] = {};
+                }
 
-            newDims[groupKey][field] = valueToStore;
+                // Ensure we're handling the value correctly
+                let valueToStore;
+                if (rawValue === "") {
+                    valueToStore = "";
+                } else {
+                    const parsed = parseInt(rawValue, 10);
+                    valueToStore = Number.isNaN(parsed) ? "" : parsed;
+                }
 
-            // Log the updated dimensions for this item for debugging
-            console.log(
-                `[Schematic] Updated dimensions for ${groupKey}:`,
-                newDims[groupKey]
-            );
-
-            return newDims;
-        });
-    };
-
-    // Handle full access door selection object updates
-    const handleAccessDoorSelect = (itemId, selectedDoor) => {
-        if (!selectedDoor) return;
-
-        // Store selected door for this item
-        setAccessDoorSelections((prev) => ({
-            ...prev,
-            [itemId]: selectedDoor,
-        }));
-    };
-
-    // IMPROVED: Handler for ventilation price changes from Flexi-Duct/Flexi Hose items
-    const handleVentilationPriceChange = (price) => {
-        // Only update if there's a real change in price to prevent update loops
-        if (Math.abs(flexiDuctVentilationPrice - price) > 0.001) {
-            console.log(`Schematic -> handleVentilationPriceChange: ${price}`);
-            setFlexiDuctVentilationPrice(price);
-            setVentilationPrice(price);
-            // Reset the flag so the price can be sent to parent
-            pricesSentRef.current = false;
+                newDims[groupKey][field] = valueToStore;
+                return newDims;
+            });
+        } finally {
+            // Reset update flag after a short delay
+            setTimeout(() => {
+                updatingStateRef.current = false;
+            }, 10);
         }
-    };
+    }, []);
+
+    // IMPROVED: Memoized ventilation price change handler
+    const handleVentilationPriceChange = useCallback(
+        (price) => {
+            // Skip if already updating
+            if (updatingStateRef.current) return;
+
+            // Only update if there's a real change in price to prevent update loops
+            if (Math.abs(flexiDuctVentilationPrice - price) > 0.001) {
+                setFlexiDuctVentilationPrice(price);
+                setVentilationPrice(price);
+                prevValuesRef.current.ventilationPrice = price;
+                pricesSentRef.current.ventilation = false; // Reset flag to trigger parent update
+            }
+        },
+        [flexiDuctVentilationPrice]
+    );
 
     // Handler for Tree Select reset completion
     const handleResetComplete = () => {
@@ -679,7 +1076,7 @@ function Schematic({
                 groupDimensions={groupDimensions}
                 setGroupDimensions={setGroupDimensions}
                 handleDimensionChange={handleDimensionChange}
-                onAccessDoorSelect={handleAccessDoorSelect} // Renamed for better naming consistency
+                onAccessDoorSelect={safeUpdateAccessDoorSelections}
                 onVentilationPriceChange={handleVentilationPriceChange}
                 onFanPartsPriceChange={setFanPartsPrice}
                 onAirInExPriceChange={setAirInExTotal}
@@ -694,10 +1091,10 @@ function Schematic({
                 initialAirInExTotal={initialAirInExTotal}
                 initialSchematicItemsTotal={initialSchematicItemsTotal}
                 initialFlexiDuctSelections={initialFlexiDuctSelections}
-                accessDoorSelections={accessDoorSelections} // Pass shared selections to child
-                setAccessDoorSelections={setAccessDoorSelections} // Pass setter to child
-                fanGradeSelections={fanGradeSelections} // Pass fan grade selections to child
-                setFanGradeSelections={setFanGradeSelections} // Pass setter to child
+                accessDoorSelections={accessDoorSelections}
+                setAccessDoorSelections={setAccessDoorSelections}
+                fanGradeSelections={fanGradeSelections}
+                setFanGradeSelections={setFanGradeSelections}
             />
         </div>
     );

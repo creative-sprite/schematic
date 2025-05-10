@@ -69,9 +69,17 @@ export default function NotesAccordion({ notes, setNotes }) {
         },
     ];
 
+    // Function to determine if a field has data
+    const fieldHasData = (field) => {
+        if (field === "obstructions") {
+            return Array.isArray(notes[field]) && notes[field].length > 0;
+        }
+        return notes[field] && notes[field].trim() !== "";
+    };
+
     // Render function for each card.
     const renderField = (item) => {
-        // Card style adjusted to allow three cards per row.
+        // Standard card style without highlighting the card border
         const cardStyle = {
             border: "1px solid #ccc",
             padding: "20px",
@@ -112,7 +120,17 @@ export default function NotesAccordion({ notes, setNotes }) {
                             setNotes({ ...notes, [item.field]: e.value });
                         }}
                         placeholder={item.placeholder}
-                        style={{ width: "100%" }}
+                        style={{
+                            width: "100%",
+                            border: fieldHasData(item.field)
+                                ? "1px solid var(--primary-color)"
+                                : "",
+                        }}
+                        className={
+                            fieldHasData(item.field)
+                                ? "p-inputtext-highlight"
+                                : ""
+                        }
                         display="comma"
                     />
                     <div
@@ -143,7 +161,16 @@ export default function NotesAccordion({ notes, setNotes }) {
                         setNotes({ ...notes, [item.field]: e.target.value })
                     }
                     placeholder={item.placeholder}
-                    style={{ height: "100px", width: "100%" }}
+                    style={{
+                        height: "100px",
+                        width: "100%",
+                        border: fieldHasData(item.field)
+                            ? "1px solid var(--primary-color)"
+                            : "",
+                    }}
+                    className={
+                        fieldHasData(item.field) ? "p-inputtext-highlight" : ""
+                    }
                     autoResize
                 />
             </div>

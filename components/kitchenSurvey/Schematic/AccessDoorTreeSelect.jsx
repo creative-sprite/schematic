@@ -2,7 +2,7 @@
 
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { TreeSelect } from "primereact/treeselect";
 import "primereact/resources/primereact.min.css";
 import "primeicons/primeicons.css";
@@ -16,21 +16,44 @@ export default function AccessDoorTreeSelect({
     const [selectedKey, setSelectedKey] = useState(null);
     const [expandedKeys, setExpandedKeys] = useState({});
     const [loading, setLoading] = useState(true);
+
+    // IMPROVED: Track initialization status more precisely
     const [hasDoorBeenLoaded, setHasDoorBeenLoaded] = useState(false);
+    const initialSelectionProcessedRef = useRef(false);
+
+    // NEW: More robust protection against circular updates
+    const isSelectingRef = useRef(false);
+    const selectionInProgressRef = useRef(false);
+    const selectionTimerRef = useRef(null);
+
+    // NEW: Track current selection value for comparison
+    const currentSelectionRef = useRef(null);
 
     // Log when initialSelection changes to help debug
     useEffect(() => {
         console.log(
-            `AccessDoorTreeSelect - initialSelection for item ${itemId}:`,
+            `[AccessDoorTreeSelect] initialSelection for item ${itemId}:`,
             initialSelection
+                ? typeof initialSelection === "object"
+                    ? `Object with ID: ${
+                          initialSelection._id ||
+                          initialSelection.mongoId ||
+                          initialSelection.id ||
+                          "unknown"
+                      }`
+                    : initialSelection
+                : "null"
         );
     }, [initialSelection, itemId]);
 
+    // Fetch access doors from API
     useEffect(() => {
         const fetchAccessDoors = async () => {
             try {
                 setLoading(true);
-                console.log("Fetching products from database...");
+                console.log(
+                    "[AccessDoorTreeSelect] Fetching products from database..."
+                );
 
                 // Using your existing API endpoint with URL search params for category
                 const url = new URL(
@@ -43,7 +66,7 @@ export default function AccessDoorTreeSelect({
 
                 if (!response.ok) {
                     console.error(
-                        `API error: ${response.status} ${response.statusText}`
+                        `[AccessDoorTreeSelect] API error: ${response.status} ${response.statusText}`
                     );
                     setLoading(false);
                     return;
@@ -52,19 +75,24 @@ export default function AccessDoorTreeSelect({
                 const result = await response.json();
 
                 if (result.success && result.data) {
-                    console.log(`Found ${result.data.length} access doors`);
+                    console.log(
+                        `[AccessDoorTreeSelect] Found ${result.data.length} access doors`
+                    );
 
                     // Process products into tree structure
                     const treeData = processProductsToTree(result.data);
                     setAccessDoorOptions(treeData);
                 } else {
                     console.error(
-                        "Failed to fetch access doors:",
+                        "[AccessDoorTreeSelect] Failed to fetch access doors:",
                         result.message || "Unknown error"
                     );
                 }
             } catch (error) {
-                console.error("Error fetching access doors:", error);
+                console.error(
+                    "[AccessDoorTreeSelect] Error fetching access doors:",
+                    error
+                );
             } finally {
                 setLoading(false);
             }
@@ -73,151 +101,137 @@ export default function AccessDoorTreeSelect({
         fetchAccessDoors();
     }, []);
 
-    // Enhanced effect to handle initialSelection after options are loaded
+    // ENHANCED: Effect to handle initialSelection ONLY after options are loaded
+    // This is critical to prevent triggering updates during initialization
     useEffect(() => {
-        // Only proceed if we have options and initialSelection and haven't loaded door yet
+        // Skip if any of these conditions are not met:
+        // 1. We have options loaded
+        // 2. We have an initialSelection to process
+        // 3. We haven't already loaded a door
+        // 4. We're done loading
+        // 5. We haven't processed this initial selection yet
         if (
-            accessDoorOptions.length > 0 &&
-            initialSelection &&
-            !hasDoorBeenLoaded &&
-            !loading
+            accessDoorOptions.length === 0 ||
+            !initialSelection ||
+            hasDoorBeenLoaded ||
+            loading ||
+            initialSelectionProcessedRef.current
         ) {
-            console.log(
-                `[AccessDoorTreeSelect] Trying to auto-select door for item ${itemId} with ID:`,
-                initialSelection
-            );
+            return;
+        }
 
-            // Handle different types of initialSelection (ID, object with ID, or full door object)
-            let selectionIdStr = "";
+        console.log(
+            `[AccessDoorTreeSelect] Processing initial selection for item ${itemId}...`
+        );
 
-            if (typeof initialSelection === "string") {
-                // Simple string ID
-                selectionIdStr = initialSelection;
-            } else if (typeof initialSelection === "object") {
-                if (
+        // Mark that we're now processing the initial selection to prevent reprocessing
+        initialSelectionProcessedRef.current = true;
+
+        // Handle different types of initialSelection (ID, object with ID, or full door object)
+        let selectionIdStr = "";
+
+        if (typeof initialSelection === "string") {
+            // Simple string ID
+            selectionIdStr = initialSelection;
+        } else if (typeof initialSelection === "object") {
+            if (
+                initialSelection._id ||
+                initialSelection.id ||
+                initialSelection.mongoId
+            ) {
+                // Object with ID field
+                const idValue =
                     initialSelection._id ||
-                    initialSelection.id ||
-                    initialSelection.mongoId
-                ) {
-                    // Object with ID field
-                    const idValue =
-                        initialSelection._id ||
-                        initialSelection.mongoId ||
-                        initialSelection.id;
-                    selectionIdStr =
-                        typeof idValue === "object"
-                            ? idValue.toString()
-                            : String(idValue);
-                } else {
-                    // Try to stringify the whole object
-                    selectionIdStr = initialSelection.toString();
-                }
-            }
-
-            console.log(
-                `[AccessDoorTreeSelect] Normalized ID for search: "${selectionIdStr}"`
-            );
-
-            // Search for a matching door in the options tree with improved ID handling
-            const findDoorByIdRecursive = (nodes, doorIdStr) => {
-                for (const node of nodes) {
-                    // Check if this node has the right value
-                    if (node.value) {
-                        // Extract all possible ID values
-                        const nodeId =
-                            node.value._id ||
-                            node.value.mongoId ||
-                            node.value.id;
-                        if (!nodeId) continue;
-
-                        // Convert to string with better error handling
-                        const nodeIdStr =
-                            typeof nodeId === "object"
-                                ? nodeId.toString()
-                                : String(nodeId);
-
-                        // Debug: show matches
-                        if (
-                            nodeIdStr.includes(doorIdStr) ||
-                            doorIdStr.includes(nodeIdStr)
-                        ) {
-                            console.log(
-                                `[AccessDoorTreeSelect] Potential match: ${nodeIdStr} vs ${doorIdStr}`
-                            );
-                        }
-
-                        // More flexible matching - check if either contains the other
-                        if (
-                            nodeIdStr === doorIdStr ||
-                            nodeIdStr.includes(doorIdStr) ||
-                            doorIdStr.includes(nodeIdStr)
-                        ) {
-                            return { key: node.key, door: node.value };
-                        }
-                    }
-
-                    // Check children if any
-                    if (node.children) {
-                        const found = findDoorByIdRecursive(
-                            node.children,
-                            doorIdStr
-                        );
-                        if (found) return found;
-                    }
-                }
-                return null;
-            };
-
-            const foundDoor = findDoorByIdRecursive(
-                accessDoorOptions,
-                selectionIdStr
-            );
-
-            if (foundDoor) {
-                console.log(
-                    `[AccessDoorTreeSelect] Found matching door for auto-selection:`,
-                    foundDoor
-                );
-
-                // Set the key for the dropdown
-                setSelectedKey(foundDoor.key);
-
-                // Create a consistently formatted door object
-                const doorSelection = {
-                    _id: foundDoor.door._id || foundDoor.door.id,
-                    mongoId: foundDoor.door._id || foundDoor.door.id,
-                    id: foundDoor.door._id || foundDoor.door.id,
-                    name: foundDoor.door.name || "",
-                    type: foundDoor.door.type || "",
-                    price: foundDoor.door.price || 0,
-                    accessDoorPrice: foundDoor.door.price || 0,
-                    dimensions: foundDoor.door.dimensions || "",
-                    // Preserve original door data
-                    ...foundDoor.door,
-                };
-
-                // Also trigger the selection callback to update parent state
-                if (onSelectDoor) {
-                    console.log(
-                        `[AccessDoorTreeSelect] Auto-selecting door with data:`,
-                        doorSelection
-                    );
-                    onSelectDoor(itemId, doorSelection);
-                }
-
-                // Mark as loaded to prevent repeated processing
-                setHasDoorBeenLoaded(true);
+                    initialSelection.mongoId ||
+                    initialSelection.id;
+                selectionIdStr =
+                    typeof idValue === "object"
+                        ? idValue.toString()
+                        : String(idValue);
             } else {
-                console.log(
-                    `[AccessDoorTreeSelect] No matching door found for ID: ${selectionIdStr}`
-                );
+                // Try to stringify the whole object
+                selectionIdStr = initialSelection.toString();
             }
+        }
+
+        console.log(
+            `[AccessDoorTreeSelect] Normalized ID for search: "${selectionIdStr}"`
+        );
+
+        // Search for a matching door in the options tree with improved ID handling
+        const findDoorByIdRecursive = (nodes, doorIdStr) => {
+            for (const node of nodes) {
+                // Check if this node has the right value
+                if (node.value) {
+                    // Extract all possible ID values
+                    const nodeId =
+                        node.value._id || node.value.mongoId || node.value.id;
+                    if (!nodeId) continue;
+
+                    // Convert to string with better error handling
+                    const nodeIdStr =
+                        typeof nodeId === "object"
+                            ? nodeId.toString()
+                            : String(nodeId);
+
+                    // More flexible matching - check if either contains the other
+                    if (
+                        nodeIdStr === doorIdStr ||
+                        nodeIdStr.includes(doorIdStr) ||
+                        doorIdStr.includes(nodeIdStr)
+                    ) {
+                        return { key: node.key, door: node.value };
+                    }
+                }
+
+                // Check children if any
+                if (node.children) {
+                    const found = findDoorByIdRecursive(
+                        node.children,
+                        doorIdStr
+                    );
+                    if (found) return found;
+                }
+            }
+            return null;
+        };
+
+        const foundDoor = findDoorByIdRecursive(
+            accessDoorOptions,
+            selectionIdStr
+        );
+
+        if (foundDoor) {
+            console.log(
+                `[AccessDoorTreeSelect] Found matching door for auto-selection:`,
+                foundDoor.door.name
+            );
+
+            // CRITICAL FIX: Set selection flag before updating state
+            isSelectingRef.current = true;
+
+            // First update the local selectedKey state
+            setSelectedKey(foundDoor.key);
+
+            // Also update our tracking ref
+            currentSelectionRef.current = foundDoor.door;
+
+            // Mark door as loaded
+            setHasDoorBeenLoaded(true);
+
+            // Reset selection flag after state update with sufficient delay
+            setTimeout(() => {
+                isSelectingRef.current = false;
+            }, 50);
+        } else {
+            console.log(
+                `[AccessDoorTreeSelect] No matching door found for ID: ${selectionIdStr}`
+            );
         }
     }, [
         accessDoorOptions,
         initialSelection,
         itemId,
-        onSelectDoor,
         loading,
         hasDoorBeenLoaded,
     ]);
@@ -230,7 +244,7 @@ export default function AccessDoorTreeSelect({
         );
 
         console.log(
-            `Filtered to ${accessDoorProducts.length} access door products`
+            `[AccessDoorTreeSelect] Filtered to ${accessDoorProducts.length} access door products`
         );
 
         // Group by name first
@@ -473,7 +487,7 @@ export default function AccessDoorTreeSelect({
                                 ) {
                                     price = Number(priceField.value);
                                     console.log(
-                                        `Extracted price for ${product.name}: ${price}`
+                                        `[AccessDoorTreeSelect] Extracted price for ${product.name}: ${price}`
                                     );
                                 }
                             }
@@ -489,6 +503,9 @@ export default function AccessDoorTreeSelect({
                             const productLabel = `${name} - ${type}: ${
                                 dimensionString || "No dimensions"
                             }${priceLabel}`;
+
+                            // Add dimensions as a field to the product
+                            product.dimensions = dimensionString;
 
                             // Product leaf node
                             typeNode.children.push({
@@ -517,57 +534,111 @@ export default function AccessDoorTreeSelect({
         setExpandedKeys(e.value);
     };
 
+    // COMPLETELY REWRITTEN: Selection change handler with robust protection against loops
     const onChange = (e) => {
-        setSelectedKey(e.value);
-
-        if (!e.value) {
-            if (onSelectDoor) {
-                onSelectDoor(itemId, null);
-            }
+        // Skip if we're in the middle of another selection operation
+        if (isSelectingRef.current) {
+            console.log(
+                `[AccessDoorTreeSelect] Skipping redundant selection update`
+            );
             return;
         }
 
-        // Find the selected door in the tree
-        const findDoorByKey = (nodes, key) => {
-            for (const node of nodes) {
-                if (node.key === key) return node.value;
-                if (node.children) {
-                    const found = findDoorByKey(node.children, key);
-                    if (found) return found;
-                }
-            }
-            return null;
-        };
+        // Set flags to prevent concurrent/circular updates
+        isSelectingRef.current = true;
+        selectionInProgressRef.current = true;
 
-        const selectedDoor = findDoorByKey(accessDoorOptions, e.value);
-        if (selectedDoor) {
-            console.log(
-                `[AccessDoorTreeSelect] Selected door with price: ${selectedDoor.price}`
-            );
+        // Clear any existing timer
+        if (selectionTimerRef.current) {
+            clearTimeout(selectionTimerRef.current);
+        }
 
-            // CRITICAL ENHANCEMENT: Create fully formatted door selection object
-            if (onSelectDoor) {
-                // Format door data with consistent fields for saving
-                const doorSelection = {
-                    _id: selectedDoor._id || selectedDoor.id,
-                    mongoId: selectedDoor._id || selectedDoor.id, // Ensure mongoId is present
-                    id: selectedDoor._id || selectedDoor.id, // Ensure id is present
-                    name: selectedDoor.name || "",
-                    type: selectedDoor.type || "",
-                    price: selectedDoor.price || 0,
-                    accessDoorPrice: selectedDoor.price || 0, // Keep this for backward compatibility
-                    dimensions: selectedDoor.dimensions || "",
-                    // Preserve original door data
-                    ...selectedDoor,
-                };
+        try {
+            // Update local state for dropdown display
+            setSelectedKey(e.value);
 
-                // Call parent's callback with the fully processed door data
+            // If selection is cleared, handle door removal
+            if (!e.value) {
                 console.log(
-                    `[AccessDoorTreeSelect] Sending door selection for item ${itemId}:`,
-                    doorSelection
+                    `[AccessDoorTreeSelect] Door selection cleared for ${itemId}`
                 );
-                onSelectDoor(itemId, doorSelection);
+                // Clear our current selection tracking
+                currentSelectionRef.current = null;
+
+                // Notify parent with debounced callback
+                selectionTimerRef.current = setTimeout(() => {
+                    if (onSelectDoor) {
+                        console.log(
+                            `[AccessDoorTreeSelect] Notifying parent of door removal for ${itemId}`
+                        );
+                        onSelectDoor(itemId, null);
+                    }
+                    selectionInProgressRef.current = false;
+                }, 50);
+
+                return;
             }
+
+            // Find the selected door in the tree
+            const findDoorByKey = (nodes, key) => {
+                for (const node of nodes) {
+                    if (node.key === key) return node.value;
+                    if (node.children) {
+                        const found = findDoorByKey(node.children, key);
+                        if (found) return found;
+                    }
+                }
+                return null;
+            };
+
+            const selectedDoor = findDoorByKey(accessDoorOptions, e.value);
+
+            // If no door found, just clear selection flags
+            if (!selectedDoor) {
+                console.log(
+                    `[AccessDoorTreeSelect] No door found for key ${e.value}`
+                );
+                selectionInProgressRef.current = false;
+                return;
+            }
+
+            // Skip update if the same door is already selected
+            if (
+                currentSelectionRef.current &&
+                currentSelectionRef.current._id === selectedDoor._id
+            ) {
+                console.log(
+                    `[AccessDoorTreeSelect] Same door already selected, skipping update`
+                );
+                selectionInProgressRef.current = false;
+                return;
+            }
+
+            // Update our tracking ref
+            currentSelectionRef.current = selectedDoor;
+
+            // Mark as loaded
+            setHasDoorBeenLoaded(true);
+
+            // Notify parent with debounced callback
+            // The timeout is critical for breaking circular update chains
+            console.log(
+                `[AccessDoorTreeSelect] Scheduling parent notification for door selection: ${selectedDoor.name}`
+            );
+            selectionTimerRef.current = setTimeout(() => {
+                if (onSelectDoor) {
+                    console.log(
+                        `[AccessDoorTreeSelect] Notifying parent of door selection: ${selectedDoor.name}`
+                    );
+                    onSelectDoor(itemId, selectedDoor);
+                }
+                selectionInProgressRef.current = false;
+            }, 50);
+        } finally {
+            // Always reset isSelectingRef after a delay
+            setTimeout(() => {
+                isSelectingRef.current = false;
+            }, 100);
         }
     };
 

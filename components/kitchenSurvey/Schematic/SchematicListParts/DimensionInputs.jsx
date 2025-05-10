@@ -5,70 +5,69 @@ import React, { useEffect, useState } from "react";
 
 // DimensionInputs: renders the three input rows for Length, Width, and Height
 // Props:
-// - dimensionKey: the key identifier to pass to the change handler
-// - dims: an object containing the current dimension values {length, width, height}
+// - item: the actual item object containing dimension values
 // - handleDimensionChange: function to call when an input value changes
-const DimensionInputs = ({ dimensionKey, dims, handleDimensionChange }) => {
+const DimensionInputs = ({ item, handleDimensionChange }) => {
     // Create controlled state for each dimension to prevent uncontrolled/controlled warnings
     // and ensure values are properly preserved during save - always as strings
     const [lengthValue, setLengthValue] = useState(
-        dims?.length !== undefined ? String(dims.length) : ""
+        item?.length !== undefined ? String(item.length) : ""
     );
     const [widthValue, setWidthValue] = useState(
-        dims?.width !== undefined ? String(dims.width) : ""
+        item?.width !== undefined ? String(item.width) : ""
     );
     const [heightValue, setHeightValue] = useState(
-        dims?.height !== undefined ? String(dims.height) : ""
+        item?.height !== undefined ? String(item.height) : ""
     );
 
     // Update local state when props change, always ensuring we use strings
     useEffect(() => {
-        if (dims) {
+        if (item) {
             // Only update if the values have changed to prevent unnecessary re-renders
             // Convert all values to strings for consistent comparisons
-            const dimLengthStr =
-                dims.length !== undefined && dims.length !== null
-                    ? String(dims.length)
+            const itemLengthStr =
+                item.length !== undefined && item.length !== null
+                    ? String(item.length)
                     : "";
-            const dimWidthStr =
-                dims.width !== undefined && dims.width !== null
-                    ? String(dims.width)
+            const itemWidthStr =
+                item.width !== undefined && item.width !== null
+                    ? String(item.width)
                     : "";
-            const dimHeightStr =
-                dims.height !== undefined && dims.height !== null
-                    ? String(dims.height)
+            const itemHeightStr =
+                item.height !== undefined && item.height !== null
+                    ? String(item.height)
                     : "";
 
-            if (dimLengthStr !== lengthValue) {
-                setLengthValue(dimLengthStr);
+            if (itemLengthStr !== lengthValue) {
+                setLengthValue(itemLengthStr);
             }
-            if (dimWidthStr !== widthValue) {
-                setWidthValue(dimWidthStr);
+            if (itemWidthStr !== widthValue) {
+                setWidthValue(itemWidthStr);
             }
-            if (dimHeightStr !== heightValue) {
-                setHeightValue(dimHeightStr);
+            if (itemHeightStr !== heightValue) {
+                setHeightValue(itemHeightStr);
             }
         }
-    }, [dims, lengthValue, widthValue, heightValue]);
+    }, [item, lengthValue, widthValue, heightValue]);
 
     // Handle dimension input changes - ensuring consistent string handling
     const handleLengthChange = (value) => {
         // Ensure we're working with strings to prevent controlled/uncontrolled issues
         const stringValue = value ? value.toString() : "";
         setLengthValue(stringValue);
-        handleDimensionChange(dimensionKey, "length", stringValue);
+        handleDimensionChange(item, "length", stringValue);
     };
 
     const handleWidthChange = (value) => {
         const stringValue = value ? value.toString() : "";
         setWidthValue(stringValue);
-        handleDimensionChange(dimensionKey, "width", stringValue);
+        handleDimensionChange(item, "width", stringValue);
     };
 
     const handleHeightChange = (value) => {
         const stringValue = value ? value.toString() : "";
         setHeightValue(stringValue);
-        handleDimensionChange(dimensionKey, "height", stringValue);
+        handleDimensionChange(item, "height", stringValue);
     };
 
     return (
@@ -103,22 +102,13 @@ const DimensionInputs = ({ dimensionKey, dims, handleDimensionChange }) => {
                     type="number"
                     value={lengthValue}
                     onChange={(e) => handleLengthChange(e.target.value)}
-                    // Add data attributes for direct DOM access from SaveSurvey
-                    data-dimension-key={dimensionKey}
+                    // Add data attributes for direct item ID
+                    data-item-id={item.id || item._id}
                     data-dimension-field="length"
                     onBlur={() => {
                         // On blur, ensure value is committed to parent and stored
-                        // Compare as strings to avoid type mismatches
-                        const dimLengthStr =
-                            dims?.length !== undefined && dims?.length !== null
-                                ? String(dims.length)
-                                : "";
-                        if (lengthValue !== dimLengthStr) {
-                            handleDimensionChange(
-                                dimensionKey,
-                                "length",
-                                lengthValue
-                            );
+                        if (lengthValue !== String(item.length)) {
+                            handleDimensionChange(item, "length", lengthValue);
                         }
                     }}
                     style={{
@@ -150,22 +140,13 @@ const DimensionInputs = ({ dimensionKey, dims, handleDimensionChange }) => {
                     type="number"
                     value={widthValue}
                     onChange={(e) => handleWidthChange(e.target.value)}
-                    // Add data attributes for direct DOM access from SaveSurvey
-                    data-dimension-key={dimensionKey}
+                    // Add data attributes for direct item ID
+                    data-item-id={item.id || item._id}
                     data-dimension-field="width"
                     onBlur={() => {
                         // On blur, ensure value is committed to parent and stored
-                        // Compare as strings to avoid type mismatches
-                        const dimWidthStr =
-                            dims?.width !== undefined && dims?.width !== null
-                                ? String(dims.width)
-                                : "";
-                        if (widthValue !== dimWidthStr) {
-                            handleDimensionChange(
-                                dimensionKey,
-                                "width",
-                                widthValue
-                            );
+                        if (widthValue !== String(item.width)) {
+                            handleDimensionChange(item, "width", widthValue);
                         }
                     }}
                     style={{
@@ -197,22 +178,13 @@ const DimensionInputs = ({ dimensionKey, dims, handleDimensionChange }) => {
                     type="number"
                     value={heightValue}
                     onChange={(e) => handleHeightChange(e.target.value)}
-                    // Add data attributes for direct DOM access from SaveSurvey
-                    data-dimension-key={dimensionKey}
+                    // Add data attributes for direct item ID
+                    data-item-id={item.id || item._id}
                     data-dimension-field="height"
                     onBlur={() => {
                         // On blur, ensure value is committed to parent and stored
-                        // Compare as strings to avoid type mismatches
-                        const dimHeightStr =
-                            dims?.height !== undefined && dims?.height !== null
-                                ? String(dims.height)
-                                : "";
-                        if (heightValue !== dimHeightStr) {
-                            handleDimensionChange(
-                                dimensionKey,
-                                "height",
-                                heightValue
-                            );
+                        if (heightValue !== String(item.height)) {
+                            handleDimensionChange(item, "height", heightValue);
                         }
                     }}
                     style={{
