@@ -130,7 +130,6 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
     const [cellSize, setCellSize] = useState(40);
     const [flexiDuctSelections, setFlexiDuctSelections] = useState({});
     const [accessDoorSelections, setAccessDoorSelections] = useState({});
-    const [groupDimensions, setGroupDimensions] = useState({});
     const [fanGradeSelections, setFanGradeSelections] = useState({});
 
     // An array to store each duplicated area's state for final calculations
@@ -470,6 +469,7 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
                 console.log("Final equipment object:", {
                     notes: updatedEquipment.notes,
                     specialistNotes: updatedEquipment.specialistNotes,
+                    // Show the first 20 chars for debugging
                     subcategoryCommentsKeys: Object.keys(
                         updatedEquipment.subcategoryComments || {}
                     ),
@@ -572,52 +572,46 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
                     setSelectedGroupId(survey.schematic.selectedGroupId || "");
 
                     // Add schematic visual data loading
-                    // First ensure we have initialized dimensions
-                    let dimensionsToUse = {};
-
-                    // First, load any saved groupDimensions if they exist
-                    if (
-                        survey.schematic.groupDimensions &&
-                        Object.keys(survey.schematic.groupDimensions).length > 0
-                    ) {
-                        console.log(
-                            "Loading saved group dimensions:",
-                            survey.schematic.groupDimensions
-                        );
-                        dimensionsToUse = {
-                            ...survey.schematic.groupDimensions,
-                        };
-                    }
-
-                    // Now load placed items and ensure dimension entries exist for each
+                    // MAJOR UPDATE: Now directly load placed items with their dimensions
                     if (survey.schematic.placedItems?.length > 0) {
+                        // Process the placed items to ensure dimensions are properly preserved
                         const processedItems = survey.schematic.placedItems.map(
                             (item) => {
-                                // Create a deep copy to avoid reference issues
+                                // Start with a direct copy of the item
                                 const newItem = { ...item };
 
-                                // Get a key for this item - use id consistently
-                                const itemKey = item.id || item._id || "";
+                                // Convert dimensions to strings to ensure consistent typing
+                                newItem.length =
+                                    item.length !== undefined &&
+                                    item.length !== null
+                                        ? String(item.length)
+                                        : "";
+                                newItem.width =
+                                    item.width !== undefined &&
+                                    item.width !== null
+                                        ? String(item.width)
+                                        : "";
+                                newItem.height =
+                                    item.height !== undefined &&
+                                    item.height !== null
+                                        ? String(item.height)
+                                        : "";
 
-                                // Extract dimensions from the item itself or from the groupDimensions if present
-                                const extractedDimensions = {
-                                    length: item.length || "",
-                                    width: item.width || "",
-                                    height: item.height || "",
-                                };
-
-                                // Store dimensions with consistent keys
-                                dimensionsToUse[itemKey] = extractedDimensions;
-
-                                // Log for debugging
+                                // Log item dimensions for debugging
                                 if (
-                                    extractedDimensions.length ||
-                                    extractedDimensions.width ||
-                                    extractedDimensions.height
+                                    newItem.length ||
+                                    newItem.width ||
+                                    newItem.height
                                 ) {
                                     console.log(
-                                        `Loading dimension for item ${itemKey}:`,
-                                        extractedDimensions
+                                        `Loading dimensions for item ${
+                                            item.name || item.id
+                                        }:`,
+                                        {
+                                            length: newItem.length,
+                                            width: newItem.width,
+                                            height: newItem.height,
+                                        }
                                     );
                                 }
 
@@ -625,18 +619,25 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
                             }
                         );
 
+                        // Log the first few items for verification
+                        if (processedItems.length > 0) {
+                            console.log(
+                                "Sample of processed items with dimensions:",
+                                processedItems.slice(0, 3).map((item) => ({
+                                    id: item.id,
+                                    name: item.name,
+                                    length: item.length,
+                                    width: item.width,
+                                    height: item.height,
+                                }))
+                            );
+                        }
+
                         console.log(
-                            "Setting placed items with synchronized dimensions"
+                            "Setting placed items with dimensions directly on items"
                         );
                         setPlacedItems(processedItems);
                     }
-
-                    // Set the final synchronized groupDimensions
-                    console.log(
-                        "Setting synchronized group dimensions:",
-                        dimensionsToUse
-                    );
-                    setGroupDimensions(dimensionsToUse);
 
                     if (survey.schematic.specialItems?.length > 0) {
                         setSpecialItems(survey.schematic.specialItems);
@@ -707,12 +708,8 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
                         }
                     }
 
-                    if (
-                        survey.schematic.groupDimensions &&
-                        Object.keys(survey.schematic.groupDimensions).length > 0
-                    ) {
-                        setGroupDimensions(survey.schematic.groupDimensions);
-                    }
+                    // REMOVED: No longer loading a separate groupDimensions object
+                    // All dimensions are directly on the placed items now
 
                     if (
                         survey.schematic.fanGradeSelections &&
@@ -969,7 +966,48 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
                     survey.duplicatedAreas &&
                     Array.isArray(survey.duplicatedAreas)
                 ) {
-                    const processedAreas = survey.duplicatedAreas;
+                    // Process duplicate areas to ensure placedItems have dimensions directly on them
+                    const processedAreas = survey.duplicatedAreas.map(
+                        (area) => {
+                            // Make a copy to avoid modifying the original
+                            const processedArea = { ...area };
+
+                            // If area has a schematic with placedItems, ensure dimensions are on them
+                            if (
+                                processedArea.schematic &&
+                                processedArea.schematic.placedItems
+                            ) {
+                                processedArea.schematic.placedItems =
+                                    processedArea.schematic.placedItems.map(
+                                        (item) => {
+                                            // Start with a copy of the item
+                                            const processedItem = { ...item };
+
+                                            // Ensure dimensions are strings for consistency
+                                            processedItem.length =
+                                                item.length !== undefined &&
+                                                item.length !== null
+                                                    ? String(item.length)
+                                                    : "";
+                                            processedItem.width =
+                                                item.width !== undefined &&
+                                                item.width !== null
+                                                    ? String(item.width)
+                                                    : "";
+                                            processedItem.height =
+                                                item.height !== undefined &&
+                                                item.height !== null
+                                                    ? String(item.height)
+                                                    : "";
+
+                                            return processedItem;
+                                        }
+                                    );
+                            }
+
+                            return processedArea;
+                        }
+                    );
 
                     setAreas(
                         processedAreas.map((area) => ({
@@ -1136,8 +1174,6 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
         setFlexiDuctSelections,
         accessDoorSelections,
         setAccessDoorSelections,
-        groupDimensions,
-        setGroupDimensions,
         fanGradeSelections,
         setFanGradeSelections,
 

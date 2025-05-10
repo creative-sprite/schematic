@@ -1,7 +1,7 @@
 // components\kitchenSurvey\Schematic\SchematicListParts\DimensionInputs.jsx
 
 "use client";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 
 // DimensionInputs: renders the three input rows for Length, Width, and Height
 // Props:
@@ -20,9 +20,17 @@ const DimensionInputs = ({ item, handleDimensionChange }) => {
         item?.height !== undefined ? String(item.height) : ""
     );
 
-    // Update local state when props change, always ensuring we use strings
+    // Add refs to track if input is currently being edited
+    const lengthInputRef = useRef(null);
+    const widthInputRef = useRef(null);
+    const heightInputRef = useRef(null);
+
+    // Track which field is being edited
+    const [editingField, setEditingField] = useState(null);
+
+    // Update local state when props change, but only if we're not actively editing
     useEffect(() => {
-        if (item) {
+        if (item && !editingField) {
             // Only update if the values have changed to prevent unnecessary re-renders
             // Convert all values to strings for consistent comparisons
             const itemLengthStr =
@@ -48,26 +56,54 @@ const DimensionInputs = ({ item, handleDimensionChange }) => {
                 setHeightValue(itemHeightStr);
             }
         }
-    }, [item, lengthValue, widthValue, heightValue]);
+    }, [item, lengthValue, widthValue, heightValue, editingField]);
 
     // Handle dimension input changes - ensuring consistent string handling
-    const handleLengthChange = (value) => {
+    const handleLengthChange = (e) => {
         // Ensure we're working with strings to prevent controlled/uncontrolled issues
-        const stringValue = value ? value.toString() : "";
+        const stringValue = e.target.value ? e.target.value.toString() : "";
         setLengthValue(stringValue);
         handleDimensionChange(item, "length", stringValue);
     };
 
-    const handleWidthChange = (value) => {
-        const stringValue = value ? value.toString() : "";
+    const handleWidthChange = (e) => {
+        const stringValue = e.target.value ? e.target.value.toString() : "";
         setWidthValue(stringValue);
         handleDimensionChange(item, "width", stringValue);
     };
 
-    const handleHeightChange = (value) => {
-        const stringValue = value ? value.toString() : "";
+    const handleHeightChange = (e) => {
+        const stringValue = e.target.value ? e.target.value.toString() : "";
         setHeightValue(stringValue);
         handleDimensionChange(item, "height", stringValue);
+    };
+
+    // Handle focus on input fields
+    const handleFocus = (field) => {
+        setEditingField(field);
+    };
+
+    // Handle blur (losing focus) on input fields
+    const handleBlur = (field, value) => {
+        // When blurring, we want to update the parent and mark as no longer editing
+        setEditingField(null);
+
+        // Ensure value is committed to parent on blur
+        if (field === "length" && value !== String(item.length)) {
+            handleDimensionChange(item, "length", value);
+        } else if (field === "width" && value !== String(item.width)) {
+            handleDimensionChange(item, "width", value);
+        } else if (field === "height" && value !== String(item.height)) {
+            handleDimensionChange(item, "height", value);
+        }
+    };
+
+    // Handle click to ensure text is selected when clicking into field
+    const handleClick = (inputRef) => {
+        if (inputRef && inputRef.current) {
+            // Select all text when clicking on the field
+            inputRef.current.select();
+        }
     };
 
     return (
@@ -101,16 +137,14 @@ const DimensionInputs = ({ item, handleDimensionChange }) => {
                 <input
                     type="number"
                     value={lengthValue}
-                    onChange={(e) => handleLengthChange(e.target.value)}
+                    onChange={handleLengthChange}
                     // Add data attributes for direct item ID
                     data-item-id={item.id || item._id}
                     data-dimension-field="length"
-                    onBlur={() => {
-                        // On blur, ensure value is committed to parent and stored
-                        if (lengthValue !== String(item.length)) {
-                            handleDimensionChange(item, "length", lengthValue);
-                        }
-                    }}
+                    ref={lengthInputRef}
+                    onFocus={() => handleFocus("length")}
+                    onBlur={() => handleBlur("length", lengthValue)}
+                    onClick={() => handleClick(lengthInputRef)}
                     style={{
                         textAlign: "right",
                         width: "200px",
@@ -139,16 +173,14 @@ const DimensionInputs = ({ item, handleDimensionChange }) => {
                 <input
                     type="number"
                     value={widthValue}
-                    onChange={(e) => handleWidthChange(e.target.value)}
+                    onChange={handleWidthChange}
                     // Add data attributes for direct item ID
                     data-item-id={item.id || item._id}
                     data-dimension-field="width"
-                    onBlur={() => {
-                        // On blur, ensure value is committed to parent and stored
-                        if (widthValue !== String(item.width)) {
-                            handleDimensionChange(item, "width", widthValue);
-                        }
-                    }}
+                    ref={widthInputRef}
+                    onFocus={() => handleFocus("width")}
+                    onBlur={() => handleBlur("width", widthValue)}
+                    onClick={() => handleClick(widthInputRef)}
                     style={{
                         textAlign: "right",
                         width: "200px",
@@ -177,16 +209,14 @@ const DimensionInputs = ({ item, handleDimensionChange }) => {
                 <input
                     type="number"
                     value={heightValue}
-                    onChange={(e) => handleHeightChange(e.target.value)}
+                    onChange={handleHeightChange}
                     // Add data attributes for direct item ID
                     data-item-id={item.id || item._id}
                     data-dimension-field="height"
-                    onBlur={() => {
-                        // On blur, ensure value is committed to parent and stored
-                        if (heightValue !== String(item.height)) {
-                            handleDimensionChange(item, "height", heightValue);
-                        }
-                    }}
+                    ref={heightInputRef}
+                    onFocus={() => handleFocus("height")}
+                    onBlur={() => handleBlur("height", heightValue)}
+                    onClick={() => handleClick(heightInputRef)}
                     style={{
                         textAlign: "right",
                         width: "200px",

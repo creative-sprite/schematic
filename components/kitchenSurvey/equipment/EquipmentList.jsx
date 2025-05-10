@@ -1,6 +1,6 @@
 // components\kitchenSurvey\equipment\EquipmentList.jsx
 
-import React, { memo } from "react";
+import React, { memo, useState, useEffect, useRef } from "react";
 import { Button } from "primereact/button"; // Button component for remove actions
 import { InputTextarea } from "primereact/inputtextarea"; // InputTextarea component for comment boxes
 
@@ -14,6 +14,68 @@ const groupBySubcategory = (entries) => {
     }, {});
 };
 
+// CommentTextarea component for better input performance
+const CommentTextarea = memo(({ id, value, onChange, label, placeholder }) => {
+    const [localValue, setLocalValue] = useState(value || "");
+    const debounceTimerRef = useRef(null);
+
+    // Sync with parent when props change
+    useEffect(() => {
+        if (value !== localValue) {
+            setLocalValue(value || "");
+        }
+    }, [value]);
+
+    const handleChange = (e) => {
+        const newValue = e.target.value;
+
+        // Update local state immediately for responsive typing
+        setLocalValue(newValue);
+
+        // Clear existing timer
+        if (debounceTimerRef.current) {
+            clearTimeout(debounceTimerRef.current);
+        }
+
+        // Debounce the parent update
+        debounceTimerRef.current = setTimeout(() => {
+            if (newValue !== value) {
+                onChange(newValue);
+            }
+        }, 300);
+    };
+
+    // Clear timer on unmount
+    useEffect(() => {
+        return () => {
+            if (debounceTimerRef.current) {
+                clearTimeout(debounceTimerRef.current);
+            }
+        };
+    }, []);
+
+    return (
+        <div className="field" style={{ marginTop: "1rem" }}>
+            <label htmlFor={id} className="block">
+                {label}
+            </label>
+            <InputTextarea
+                id={id}
+                name={id}
+                value={localValue}
+                onChange={handleChange}
+                autoResize
+                rows={3}
+                style={{ width: "100%", marginTop: "0.5rem" }}
+                placeholder={placeholder}
+                aria-label={label}
+            />
+        </div>
+    );
+});
+
+CommentTextarea.displayName = "CommentTextarea";
+
 // EquipmentList renders separate tables for volume, area, and normal items.
 const EquipmentList = memo((props) => {
     const {
@@ -24,6 +86,21 @@ const EquipmentList = memo((props) => {
         subcategoryComments = {}, // Comments passed from parent
         onSubcategoryCommentsChange, // Callback for saving comments
     } = props;
+
+    // Track current comments locally to avoid lag
+    const [localCommentsMap, setLocalCommentsMap] = useState({});
+    const isInitializedRef = useRef(false);
+
+    // Update local comments map when props change
+    useEffect(() => {
+        if (
+            !isInitializedRef.current ||
+            Object.keys(localCommentsMap).length === 0
+        ) {
+            setLocalCommentsMap(subcategoryComments);
+            isInitializedRef.current = true;
+        }
+    }, [subcategoryComments]);
 
     const volumeEntries = surveyList.filter((entry) =>
         isVolumeItem(entry.item)
@@ -109,14 +186,13 @@ const EquipmentList = memo((props) => {
         );
     };
 
-    // FIXED: Direct parent update without local state
+    // IMPROVED: Handle comment change with better performance
     const handleCommentChange = (subcategory, value) => {
-        console.log(`[EquipmentList] Comment for "${subcategory}" changed`);
-
-        // Skip if the value is the same
-        if (subcategoryComments[subcategory] === value) {
-            return;
-        }
+        // Update local state first for responsive UI
+        setLocalCommentsMap((prev) => ({
+            ...prev,
+            [subcategory]: value,
+        }));
 
         // Create a new comments object with updated value
         const newComments = {
@@ -124,7 +200,7 @@ const EquipmentList = memo((props) => {
             [subcategory]: value,
         };
 
-        // Notify parent component directly
+        // Notify parent component
         if (typeof onSubcategoryCommentsChange === "function") {
             onSubcategoryCommentsChange(newComments);
         }
@@ -138,32 +214,26 @@ const EquipmentList = memo((props) => {
                 .replace(/\s+/g, "-")
                 .toLowerCase();
 
+            // Get current value - prefer local state for responsiveness
+            const commentValue =
+                localCommentsMap[subcategory] !== undefined
+                    ? localCommentsMap[subcategory]
+                    : subcategoryComments[subcategory] || "";
+
             return (
                 <div key={subcategory} style={{ marginBottom: "1rem" }}>
                     <h4>{subcategory}</h4>
                     {renderSubcategoryTable(grouped[subcategory], type)}
 
-                    <div className="field" style={{ marginTop: "1rem" }}>
-                        <label
-                            htmlFor={`subcategory-comment-${subcategoryId}`}
-                            className="block"
-                        >
-                            Comments for {subcategory}
-                        </label>
-                        <InputTextarea
-                            id={`subcategory-comment-${subcategoryId}`}
-                            name={`subcategory-comment-${subcategoryId}`}
-                            value={subcategoryComments[subcategory] || ""}
-                            onChange={(e) =>
-                                handleCommentChange(subcategory, e.target.value)
-                            }
-                            autoResize
-                            rows={3}
-                            style={{ width: "100%", marginTop: "0.5rem" }}
-                            placeholder={`Add comment for ${subcategory}...`}
-                            aria-label={`Comments for ${subcategory}`}
-                        />
-                    </div>
+                    <CommentTextarea
+                        id={`subcategory-comment-${subcategoryId}`}
+                        value={commentValue}
+                        onChange={(value) =>
+                            handleCommentChange(subcategory, value)
+                        }
+                        label={`Comments for ${subcategory}`}
+                        placeholder={`Add comment for ${subcategory}...`}
+                    />
                 </div>
             );
         });
@@ -198,38 +268,24 @@ const EquipmentList = memo((props) => {
                         .replace(/\s+/g, "-")
                         .toLowerCase();
 
+                    // Get current value - prefer local state for responsiveness
+                    const commentValue =
+                        localCommentsMap[subcategory] !== undefined
+                            ? localCommentsMap[subcategory]
+                            : subcategoryComments[subcategory] || "";
+
                     return (
                         <div key={subcategory} style={{ marginBottom: "1rem" }}>
                             <h4>{subcategory}</h4>
-                            <div className="field">
-                                <label
-                                    htmlFor={`orphaned-comment-${subcategoryId}`}
-                                    className="block"
-                                >
-                                    Comments for {subcategory}
-                                </label>
-                                <InputTextarea
-                                    id={`orphaned-comment-${subcategoryId}`}
-                                    name={`orphaned-comment-${subcategoryId}`}
-                                    value={
-                                        subcategoryComments[subcategory] || ""
-                                    }
-                                    onChange={(e) =>
-                                        handleCommentChange(
-                                            subcategory,
-                                            e.target.value
-                                        )
-                                    }
-                                    autoResize
-                                    rows={3}
-                                    style={{
-                                        width: "100%",
-                                        marginTop: "0.5rem",
-                                    }}
-                                    placeholder={`Add comment for ${subcategory}...`}
-                                    aria-label={`Comments for ${subcategory}`}
-                                />
-                            </div>
+                            <CommentTextarea
+                                id={`orphaned-comment-${subcategoryId}`}
+                                value={commentValue}
+                                onChange={(value) =>
+                                    handleCommentChange(subcategory, value)
+                                }
+                                label={`Comments for ${subcategory}`}
+                                placeholder={`Add comment for ${subcategory}...`}
+                            />
                         </div>
                     );
                 })}

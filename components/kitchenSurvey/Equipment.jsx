@@ -63,12 +63,18 @@ export default function Equipment({
     // Enhanced refs for update tracking and prevention
     const isInternalStateUpdateRef = useRef(false);
     const initialRenderCompletedRef = useRef(false);
-    const isHandlingNotesChangeRef = useRef(false);
-    const isHandlingSubcategoryCommentsChangeRef = useRef(false);
 
-    // Track previous values for deep comparison
-    const prevNotesRef = useRef(initialNotes || "");
-    const prevSubcategoryCommentsRef = useRef(initialSubcategoryComments || {});
+    // IMPROVED: Debounce management
+    const debounceTimersRef = useRef({
+        notes: null,
+        subcategoryComments: null,
+    });
+
+    // IMPROVED: Cached values for comparison
+    const cachedValuesRef = useRef({
+        notes: initialNotes || "",
+        subcategoryComments: initialSubcategoryComments || {},
+    });
 
     // One-time initialization to log what we got from props
     useEffect(() => {
@@ -89,6 +95,15 @@ export default function Equipment({
                 equipment?.subcategoryComments || initialSubcategoryComments
             );
             console.log("- Using notes:", equipment?.notes || initialNotes);
+
+            // Initialize cached values
+            cachedValuesRef.current = {
+                notes: equipment?.notes || initialNotes || "",
+                subcategoryComments:
+                    equipment?.subcategoryComments ||
+                    initialSubcategoryComments ||
+                    {},
+            };
 
             setInitialized(true);
         }
@@ -151,7 +166,7 @@ export default function Equipment({
                 // Reset flag after state update
                 setTimeout(() => {
                     isInternalStateUpdateRef.current = false;
-                }, 0);
+                }, 50); // IMPROVED: Increased from 0 to 50ms for reliability
             }
 
             setInitialized(true);
@@ -221,7 +236,7 @@ export default function Equipment({
                         // Reset flag after state update
                         setTimeout(() => {
                             isInternalStateUpdateRef.current = false;
-                        }, 0);
+                        }, 50); // IMPROVED: Increased from 0 to 50ms for reliability
                     }
                 } else {
                     console.error("Failed to fetch equipment items:", json);
@@ -354,7 +369,7 @@ export default function Equipment({
         if (name === "subcategory") {
             setTimeout(() => {
                 isInternalStateUpdateRef.current = false;
-            }, 0);
+            }, 50); // IMPROVED: Increased from 0 to 50ms for reliability
         }
     };
 
@@ -393,75 +408,95 @@ export default function Equipment({
         );
     };
 
-    // FIXED: Handler for subcategory comments changes with proper circular update protection
+    // IMPROVED: Completely rewritten handler for subcategory comments
     const handleSubcategoryCommentsChange = (comments) => {
-        // Skip if we're already handling an update
-        if (isHandlingSubcategoryCommentsChangeRef.current) {
-            return;
+        // Clear any existing timer
+        if (debounceTimersRef.current.subcategoryComments) {
+            clearTimeout(debounceTimersRef.current.subcategoryComments);
         }
 
-        // Skip if no actual change
-        const commentsStr = JSON.stringify(comments);
-        const prevCommentsStr = JSON.stringify(
-            prevSubcategoryCommentsRef.current
-        );
-        if (commentsStr === prevCommentsStr) {
-            return;
-        }
+        // Set new timer for debouncing
+        debounceTimersRef.current.subcategoryComments = setTimeout(() => {
+            console.log("Equipment: Subcategory comments changed:", comments);
 
-        console.log("Equipment: Subcategory comments changed:", comments);
+            // Simple check for changes using direct property access
+            let hasChanges = false;
 
-        // Set flag to prevent circular updates
-        isHandlingSubcategoryCommentsChangeRef.current = true;
+            // Check if any keys were added or removed
+            const cachedKeys = Object.keys(
+                cachedValuesRef.current.subcategoryComments
+            );
+            const newKeys = Object.keys(comments);
 
-        // Update reference
-        prevSubcategoryCommentsRef.current = JSON.parse(commentsStr);
+            if (cachedKeys.length !== newKeys.length) {
+                hasChanges = true;
+            } else {
+                // Check if any values changed
+                for (const key of newKeys) {
+                    if (
+                        cachedValuesRef.current.subcategoryComments[key] !==
+                        comments[key]
+                    ) {
+                        hasChanges = true;
+                        break;
+                    }
+                }
+            }
 
-        // Update parent component with the new comments
-        if (typeof onEquipmentChange === "function") {
-            // Create a new equipment object with updated subcategoryComments
-            onEquipmentChange({
-                ...equipment,
-                subcategoryComments: comments,
-            });
-        }
+            // Only update if there are actual changes
+            if (hasChanges) {
+                // Cache the new value
+                cachedValuesRef.current.subcategoryComments = { ...comments };
 
-        // Reset flag after a short delay
-        setTimeout(() => {
-            isHandlingSubcategoryCommentsChangeRef.current = false;
-        }, 0);
+                // Update parent component with the new comments
+                if (typeof onEquipmentChange === "function") {
+                    // Create a new equipment object with updated subcategoryComments
+                    onEquipmentChange({
+                        ...equipment,
+                        subcategoryComments: comments,
+                    });
+                }
+            }
+        }, 300); // Proper 300ms debounce timeout
     };
 
-    // FIXED: Handler for equipment notes changes with proper circular update protection
+    // IMPROVED: Completely rewritten handler for equipment notes
     const handleNotesChange = (newNotes) => {
-        // Skip if we're already handling an update
-        if (isHandlingNotesChangeRef.current) {
-            return;
+        // Clear any existing timer
+        if (debounceTimersRef.current.notes) {
+            clearTimeout(debounceTimersRef.current.notes);
         }
 
-        // Skip if no actual change
-        if (newNotes === prevNotesRef.current) {
-            return;
-        }
+        // Set new timer for debouncing
+        debounceTimersRef.current.notes = setTimeout(() => {
+            // Skip if no actual change
+            if (newNotes === cachedValuesRef.current.notes) {
+                return;
+            }
 
-        console.log("Equipment: Notes changed:", newNotes);
+            console.log("Equipment: Notes changed:", newNotes);
 
-        // Set flag to prevent circular updates
-        isHandlingNotesChangeRef.current = true;
+            // Cache the new value
+            cachedValuesRef.current.notes = newNotes;
 
-        // Update reference
-        prevNotesRef.current = newNotes;
-
-        // Update parent component directly
-        if (typeof onNotesChange === "function") {
-            onNotesChange(newNotes);
-        }
-
-        // Reset flag after a short delay
-        setTimeout(() => {
-            isHandlingNotesChangeRef.current = false;
-        }, 0);
+            // Update parent component directly
+            if (typeof onNotesChange === "function") {
+                onNotesChange(newNotes);
+            }
+        }, 300); // Proper 300ms debounce timeout
     };
+
+    // Clean up debounce timers on unmount
+    useEffect(() => {
+        return () => {
+            if (debounceTimersRef.current.notes) {
+                clearTimeout(debounceTimersRef.current.notes);
+            }
+            if (debounceTimersRef.current.subcategoryComments) {
+                clearTimeout(debounceTimersRef.current.subcategoryComments);
+            }
+        };
+    }, []);
 
     // ---------------------------------------------------------------------
     // Single place to define subcategory order

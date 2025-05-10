@@ -1,7 +1,7 @@
 // components/kitchenSurvey/Area1Logic.jsx
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { MultiSelect } from "primereact/multiselect";
 import { InputText } from "primereact/inputtext";
 import Equipment from "@/components/kitchenSurvey/Equipment";
@@ -79,8 +79,6 @@ export default function Area1Logic({
     setFlexiDuctSelections,
     accessDoorSelections,
     setAccessDoorSelections,
-    groupDimensions,
-    setGroupDimensions,
     fanGradeSelections,
     setFanGradeSelections,
     // Pass survey images for the Images component
@@ -95,7 +93,7 @@ export default function Area1Logic({
     // State to track if Area ID has been filled
     const [areaIdFilled, setAreaIdFilled] = useState(!!structureId);
 
-    // ENHANCED: Refs to track state updates and prevent circular updates
+    // IMPROVED: Create separate update states for different data types
     const updatingStatesRef = useRef({
         surveyData: false,
         equipment: false,
@@ -106,18 +104,25 @@ export default function Area1Logic({
         canopy: false,
     });
 
-    // ADDED: Debounce timers for state updates
+    // IMPROVED: Better debounce timers with longer, more reliable timeouts
     const debounceTimersRef = useRef({
         surveyData: null,
         equipment: null,
+        subcategoryComments: null,
+        categoryComments: null,
+        specialistNotes: null,
+        equipmentNotes: null,
         structure: null,
         notes: null,
     });
 
-    // ADDED: Track previous values for deep comparison
+    // ENHANCED: Simplified and more efficient previous value tracking
     const prevStatesRef = useRef({
         surveyData: [],
-        equipment: equipment || {},
+        equipmentNotes: equipment?.notes || "",
+        specialistNotes: equipment?.specialistNotes || "",
+        subcategoryComments: equipment?.subcategoryComments || {},
+        categoryComments: equipment?.categoryComments || {},
         structureTotal: structureTotal || 0,
         structureId: structureId || "",
         structureSelectionData: structureSelectionData || [],
@@ -151,7 +156,10 @@ export default function Area1Logic({
             // Initialize tracking refs with current data
             prevStatesRef.current = {
                 surveyData: [...(surveyData || [])],
-                equipment: equipment ? { ...equipment } : {},
+                equipmentNotes: equipment?.notes || "",
+                specialistNotes: equipment?.specialistNotes || "",
+                subcategoryComments: equipment?.subcategoryComments || {},
+                categoryComments: equipment?.categoryComments || {},
                 structureTotal: structureTotal || 0,
                 structureId: structureId || "",
                 structureSelectionData: structureSelectionData
@@ -178,456 +186,727 @@ export default function Area1Logic({
         ventilationPrice,
     ]);
 
-    // IMPROVED: Safe handler for survey data changes
-    const handleSurveyDataChange = (newData) => {
-        // Skip if already handling an update
-        if (updatingStatesRef.current.surveyData) {
-            return;
-        }
+    // Clean up timers on unmount
+    useEffect(() => {
+        return () => {
+            // Clear all debounce timers
+            Object.values(debounceTimersRef.current).forEach((timer) => {
+                if (timer) clearTimeout(timer);
+            });
+        };
+    }, []);
 
-        // Skip if no actual change
-        const newDataStr = JSON.stringify(newData);
-        const prevDataStr = JSON.stringify(prevStatesRef.current.surveyData);
-        if (newDataStr === prevDataStr) {
-            return;
-        }
+    // IMPROVED: Memoized handler for survey data changes with better debounce
+    const handleSurveyDataChange = useCallback(
+        (newData) => {
+            // Skip if already handling an update
+            if (updatingStatesRef.current.surveyData) {
+                return;
+            }
 
-        // Clear any existing timer
-        if (debounceTimersRef.current.surveyData) {
-            clearTimeout(debounceTimersRef.current.surveyData);
-        }
+            // Simple length check before deep comparison
+            if (newData.length !== prevStatesRef.current.surveyData.length) {
+                // Clear any existing timer
+                if (debounceTimersRef.current.surveyData) {
+                    clearTimeout(debounceTimersRef.current.surveyData);
+                }
 
-        // Debounce the update
-        debounceTimersRef.current.surveyData = setTimeout(() => {
-            // Set flag to prevent circular updates
-            updatingStatesRef.current.surveyData = true;
+                // Debounce the update
+                debounceTimersRef.current.surveyData = setTimeout(() => {
+                    // Set flag to prevent circular updates
+                    updatingStatesRef.current.surveyData = true;
 
-            // Update reference
-            prevStatesRef.current.surveyData = JSON.parse(newDataStr);
+                    // Update reference
+                    prevStatesRef.current.surveyData = [...newData];
 
-            // Update state
-            setSurveyData(newData);
+                    // Update state
+                    setSurveyData(newData);
 
-            // Reset flag after a short delay
-            setTimeout(() => {
-                updatingStatesRef.current.surveyData = false;
-            }, 10);
-        }, 50);
-    };
+                    // Reset flag after a reasonable delay
+                    setTimeout(() => {
+                        updatingStatesRef.current.surveyData = false;
+                    }, 50);
+                }, 300); // Use a 300ms debounce timeout
+                return;
+            }
 
-    // IMPROVED: Safe handler for equipment changes
-    const handleEquipmentChange = (newEquipment) => {
-        // Skip if already handling an update
-        if (updatingStatesRef.current.equipment) {
-            return;
-        }
+            // Only do detailed comparison if lengths match
+            const hasChanges = newData.some((item, idx) => {
+                const prevItem = prevStatesRef.current.surveyData[idx];
+                // Skip if no corresponding previous item
+                if (!prevItem) return true;
 
-        // Skip if no actual change (comparing only necessary fields)
-        const equipHasNotes =
-            newEquipment.hasOwnProperty("notes") &&
-            equipment?.notes !== newEquipment.notes;
-        const equipHasSpecialistNotes =
-            newEquipment.hasOwnProperty("specialistNotes") &&
-            equipment?.specialistNotes !== newEquipment.specialistNotes;
-        const equipHasSubcategoryComments =
-            newEquipment.hasOwnProperty("subcategoryComments") &&
-            JSON.stringify(equipment?.subcategoryComments) !==
-                JSON.stringify(newEquipment.subcategoryComments);
-        const equipHasCategoryComments =
-            newEquipment.hasOwnProperty("categoryComments") &&
-            JSON.stringify(equipment?.categoryComments) !==
-                JSON.stringify(newEquipment.categoryComments);
+                // Compare essential properties directly
+                return (
+                    item.id !== prevItem.id ||
+                    item.item !== prevItem.item ||
+                    item.grade !== prevItem.grade ||
+                    item.number !== prevItem.number ||
+                    item.subcategory !== prevItem.subcategory ||
+                    item.length !== prevItem.length ||
+                    item.width !== prevItem.width ||
+                    item.height !== prevItem.height
+                );
+            });
 
-        // If nothing has changed, skip the update
-        if (
-            !equipHasNotes &&
-            !equipHasSpecialistNotes &&
-            !equipHasSubcategoryComments &&
-            !equipHasCategoryComments
-        ) {
-            return;
-        }
+            if (hasChanges) {
+                // Clear any existing timer
+                if (debounceTimersRef.current.surveyData) {
+                    clearTimeout(debounceTimersRef.current.surveyData);
+                }
 
-        console.log(
-            "Area1Logic: Equipment change detected with fields:",
-            Object.keys(newEquipment)
-        );
+                // Debounce the update
+                debounceTimersRef.current.surveyData = setTimeout(() => {
+                    // Set flag to prevent circular updates
+                    updatingStatesRef.current.surveyData = true;
 
-        // Clear any existing timer
-        if (debounceTimersRef.current.equipment) {
-            clearTimeout(debounceTimersRef.current.equipment);
-        }
+                    // Update reference
+                    prevStatesRef.current.surveyData = [...newData];
 
-        // Debounce the update
-        debounceTimersRef.current.equipment = setTimeout(() => {
-            // Set flag to prevent circular updates
-            updatingStatesRef.current.equipment = true;
+                    // Update state
+                    setSurveyData(newData);
 
-            // Create a merged equipment object that preserves all fields
-            let updatedEquipment;
-            if (equipment) {
-                updatedEquipment = { ...equipment };
+                    // Reset flag after a reasonable delay
+                    setTimeout(() => {
+                        updatingStatesRef.current.surveyData = false;
+                    }, 50);
+                }, 300); // Use a 300ms debounce timeout
+            }
+        },
+        [setSurveyData]
+    );
 
-                // Apply only the changed fields
-                if (equipHasNotes) updatedEquipment.notes = newEquipment.notes;
-                if (equipHasSpecialistNotes)
-                    updatedEquipment.specialistNotes =
-                        newEquipment.specialistNotes;
+    // COMPLETELY REWRITTEN: More efficient equipment changes handler
+    const handleEquipmentChange = useCallback(
+        (newEquipment) => {
+            // Skip if already handling an update
+            if (updatingStatesRef.current.equipment) {
+                return;
+            }
 
-                if (equipHasSubcategoryComments) {
-                    updatedEquipment.subcategoryComments = {
-                        ...(updatedEquipment.subcategoryComments || {}),
+            // Track if any field needs updating
+            let needsUpdate = false;
+            let updatedFields = [];
+
+            // Create a clean object to track what to update
+            const fieldsToUpdate = {};
+
+            // Check if notes field has changed
+            if (
+                newEquipment.hasOwnProperty("notes") &&
+                newEquipment.notes !== prevStatesRef.current.equipmentNotes
+            ) {
+                // Clear any existing notes timer
+                if (debounceTimersRef.current.equipmentNotes) {
+                    clearTimeout(debounceTimersRef.current.equipmentNotes);
+                }
+
+                fieldsToUpdate.notes = newEquipment.notes;
+                needsUpdate = true;
+                updatedFields.push("notes");
+
+                // Update reference immediately to avoid duplicate updates
+                prevStatesRef.current.equipmentNotes = newEquipment.notes;
+            }
+
+            // Check if specialist notes field has changed
+            if (
+                newEquipment.hasOwnProperty("specialistNotes") &&
+                newEquipment.specialistNotes !==
+                    prevStatesRef.current.specialistNotes
+            ) {
+                // Clear any existing specialist notes timer
+                if (debounceTimersRef.current.specialistNotes) {
+                    clearTimeout(debounceTimersRef.current.specialistNotes);
+                }
+
+                fieldsToUpdate.specialistNotes = newEquipment.specialistNotes;
+                needsUpdate = true;
+                updatedFields.push("specialistNotes");
+
+                // Update reference immediately to avoid duplicate updates
+                prevStatesRef.current.specialistNotes =
+                    newEquipment.specialistNotes;
+            }
+
+            // Check if subcategory comments have changed
+            if (newEquipment.hasOwnProperty("subcategoryComments")) {
+                // Do a simple key count comparison first for efficiency
+                const oldKeys = Object.keys(
+                    prevStatesRef.current.subcategoryComments || {}
+                );
+                const newKeys = Object.keys(
+                    newEquipment.subcategoryComments || {}
+                );
+
+                let commentsChanged = oldKeys.length !== newKeys.length;
+
+                // Only do detailed comparison if key counts match
+                if (!commentsChanged) {
+                    for (const key of newKeys) {
+                        if (
+                            prevStatesRef.current.subcategoryComments[key] !==
+                            newEquipment.subcategoryComments[key]
+                        ) {
+                            commentsChanged = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (commentsChanged) {
+                    // Clear any existing subcategory comments timer
+                    if (debounceTimersRef.current.subcategoryComments) {
+                        clearTimeout(
+                            debounceTimersRef.current.subcategoryComments
+                        );
+                    }
+
+                    fieldsToUpdate.subcategoryComments = {
+                        ...newEquipment.subcategoryComments,
+                    };
+                    needsUpdate = true;
+                    updatedFields.push("subcategoryComments");
+
+                    // Update reference immediately to avoid duplicate updates
+                    prevStatesRef.current.subcategoryComments = {
                         ...newEquipment.subcategoryComments,
                     };
                 }
+            }
 
-                if (equipHasCategoryComments) {
-                    updatedEquipment.categoryComments = {
-                        ...(updatedEquipment.categoryComments || {}),
+            // Check if category comments have changed
+            if (newEquipment.hasOwnProperty("categoryComments")) {
+                // Do a simple key count comparison first for efficiency
+                const oldKeys = Object.keys(
+                    prevStatesRef.current.categoryComments || {}
+                );
+                const newKeys = Object.keys(
+                    newEquipment.categoryComments || {}
+                );
+
+                let commentsChanged = oldKeys.length !== newKeys.length;
+
+                // Only do detailed comparison if key counts match
+                if (!commentsChanged) {
+                    for (const key of newKeys) {
+                        if (
+                            prevStatesRef.current.categoryComments[key] !==
+                            newEquipment.categoryComments[key]
+                        ) {
+                            commentsChanged = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (commentsChanged) {
+                    // Clear any existing category comments timer
+                    if (debounceTimersRef.current.categoryComments) {
+                        clearTimeout(
+                            debounceTimersRef.current.categoryComments
+                        );
+                    }
+
+                    fieldsToUpdate.categoryComments = {
+                        ...newEquipment.categoryComments,
+                    };
+                    needsUpdate = true;
+                    updatedFields.push("categoryComments");
+
+                    // Update reference immediately to avoid duplicate updates
+                    prevStatesRef.current.categoryComments = {
                         ...newEquipment.categoryComments,
                     };
                 }
-            } else {
-                updatedEquipment = newEquipment;
             }
 
-            // Update reference
-            prevStatesRef.current.equipment = { ...updatedEquipment };
+            // If nothing has changed, skip the update
+            if (!needsUpdate) {
+                return;
+            }
 
-            // Log the fields being updated
             console.log(
-                "Area1Logic: Updating equipment with fields:",
-                Object.keys(updatedEquipment)
+                "Area1Logic: Equipment change detected with fields:",
+                updatedFields.join(", ")
             );
+
+            // Clear main equipment timer
+            if (debounceTimersRef.current.equipment) {
+                clearTimeout(debounceTimersRef.current.equipment);
+            }
+
+            // Debounce the update with a single timer
+            debounceTimersRef.current.equipment = setTimeout(() => {
+                // Set flag to prevent circular updates
+                updatingStatesRef.current.equipment = true;
+
+                // Create a merged equipment object that preserves all fields
+                const updatedEquipment = equipment
+                    ? { ...equipment, ...fieldsToUpdate }
+                    : { ...fieldsToUpdate };
+
+                // Log the fields being updated
+                console.log(
+                    "Area1Logic: Updating equipment with fields:",
+                    updatedFields.join(", ")
+                );
+
+                // Update state
+                setEquipment(updatedEquipment);
+
+                // Reset flag after a reasonable delay
+                setTimeout(() => {
+                    updatingStatesRef.current.equipment = false;
+                }, 50);
+            }, 300); // Consistent 300ms debounce timeout
+        },
+        [equipment, setEquipment]
+    );
+
+    // IMPROVED: Direct handler for notes changes (used for regular equipment notes)
+    const handleNotesChange = useCallback(
+        (newNotes) => {
+            // Skip if already handling equipment updates
+            if (updatingStatesRef.current.equipment) {
+                return;
+            }
+
+            // Skip if no actual change
+            if (newNotes === prevStatesRef.current.equipmentNotes) {
+                return;
+            }
+
+            // Call equipment change with just the notes field
+            handleEquipmentChange({
+                notes: newNotes,
+            });
+        },
+        [handleEquipmentChange]
+    );
+
+    // IMPROVED: Memoized handler for specialist equipment changes
+    const handleSpecialistEquipmentChange = useCallback(
+        (newData) => {
+            // Skip if already handling an update
+            if (updatingStatesRef.current.specialistEquipment) {
+                return;
+            }
+
+            // Skip if no actual change (simple check)
+            if (
+                !newData ||
+                (Array.isArray(newData) &&
+                    Array.isArray(specialistEquipmentData) &&
+                    newData.length === specialistEquipmentData.length &&
+                    newData.every(
+                        (item, idx) =>
+                            item.id === specialistEquipmentData[idx]?.id &&
+                            item.item === specialistEquipmentData[idx]?.item
+                    ))
+            ) {
+                return;
+            }
+
+            // Set flag to prevent circular updates
+            updatingStatesRef.current.specialistEquipment = true;
 
             // Update state
-            setEquipment(updatedEquipment);
+            setSpecialistEquipmentData(newData);
 
-            // Reset flag after a short delay
+            // Reset flag after a reasonable delay
             setTimeout(() => {
-                updatingStatesRef.current.equipment = false;
-            }, 10);
-        }, 50);
-    };
+                updatingStatesRef.current.specialistEquipment = false;
+            }, 50);
+        },
+        [specialistEquipmentData, setSpecialistEquipmentData]
+    );
 
-    // IMPROVED: Safe handler for specialist equipment changes
-    const handleSpecialistEquipmentChange = (newData) => {
-        // Skip if already handling an update
-        if (updatingStatesRef.current.specialistEquipment) {
-            return;
-        }
+    // IMPROVED: Memoized handlers for structure-related changes
+    const handleStructureTotalChange = useCallback(
+        (total) => {
+            // Skip if already handling an update
+            if (updatingStatesRef.current.structure) {
+                return;
+            }
 
-        // Skip if no actual change
-        const newDataStr = JSON.stringify(newData);
-        const prevDataStr = JSON.stringify(specialistEquipmentData);
-        if (newDataStr === prevDataStr) {
-            return;
-        }
+            // Skip if no actual change
+            if (total === prevStatesRef.current.structureTotal) {
+                return;
+            }
 
-        // Set flag to prevent circular updates
-        updatingStatesRef.current.specialistEquipment = true;
+            // Set flag to prevent circular updates
+            updatingStatesRef.current.structure = true;
 
-        // Update state
-        setSpecialistEquipmentData(newData);
+            // Update reference
+            prevStatesRef.current.structureTotal = total;
 
-        // Reset flag after a short delay
-        setTimeout(() => {
-            updatingStatesRef.current.specialistEquipment = false;
-        }, 10);
-    };
+            // Update state
+            setStructureTotal(total);
 
-    // IMPROVED: Safe handler for structure-related changes
-    const handleStructureTotalChange = (total) => {
-        // Skip if already handling an update
-        if (updatingStatesRef.current.structure) {
-            return;
-        }
+            // Reset flag after a reasonable delay
+            setTimeout(() => {
+                updatingStatesRef.current.structure = false;
+            }, 50);
+        },
+        [setStructureTotal]
+    );
 
-        // Skip if no actual change
-        if (total === prevStatesRef.current.structureTotal) {
-            return;
-        }
+    // IMPROVED: Memoized handler for structure ID changes
+    const handleStructureIdChange = useCallback(
+        (id) => {
+            // Skip if already handling an update
+            if (updatingStatesRef.current.structure) {
+                return;
+            }
 
-        // Set flag to prevent circular updates
-        updatingStatesRef.current.structure = true;
+            // Skip if no actual change
+            if (id === prevStatesRef.current.structureId) {
+                return;
+            }
 
-        // Update reference
-        prevStatesRef.current.structureTotal = total;
+            // Set flag to prevent circular updates
+            updatingStatesRef.current.structure = true;
 
-        // Update state
-        setStructureTotal(total);
+            // Update reference
+            prevStatesRef.current.structureId = id;
 
-        // Reset flag after a short delay
-        setTimeout(() => {
-            updatingStatesRef.current.structure = false;
-        }, 10);
-    };
+            // Update state
+            setStructureId(id);
 
-    // IMPROVED: Safe handler for structure ID changes
-    const handleStructureIdChange = (id) => {
-        // Skip if already handling an update
-        if (updatingStatesRef.current.structure) {
-            return;
-        }
+            // Reset flag after a reasonable delay
+            setTimeout(() => {
+                updatingStatesRef.current.structure = false;
+            }, 50);
+        },
+        [setStructureId]
+    );
 
-        // Skip if no actual change
-        if (id === prevStatesRef.current.structureId) {
-            return;
-        }
+    // IMPROVED: Memoized handler for structure selection data changes
+    const handleStructureSelectionDataChange = useCallback(
+        (data) => {
+            // Skip if already handling an update
+            if (updatingStatesRef.current.structure) {
+                return;
+            }
 
-        // Set flag to prevent circular updates
-        updatingStatesRef.current.structure = true;
+            // Validate data
+            if (!data || !Array.isArray(data)) {
+                console.error(
+                    "Area1Logic: Invalid selection data received:",
+                    data
+                );
+                return;
+            }
 
-        // Update reference
-        prevStatesRef.current.structureId = id;
+            // Perform deep validation of each selection object
+            const validatedData = data.map((item) => {
+                // Ensure all fields are present
+                return {
+                    type: item.type || "",
+                    item: item.item || "", // Allow empty strings, MongoDB will handle null values
+                    grade: item.grade || "",
+                };
+            });
 
-        // Update state
-        setStructureId(id);
+            // Skip if no actual change - simple length check first
+            if (
+                validatedData.length !==
+                prevStatesRef.current.structureSelectionData.length
+            ) {
+                // Set flag to prevent circular updates
+                updatingStatesRef.current.structure = true;
 
-        // Reset flag after a short delay
-        setTimeout(() => {
-            updatingStatesRef.current.structure = false;
-        }, 10);
-    };
+                // Update reference
+                prevStatesRef.current.structureSelectionData = [
+                    ...validatedData,
+                ];
 
-    // IMPROVED: Safe handler for structure selection data changes
-    const handleStructureSelectionDataChange = (data) => {
-        // Skip if already handling an update
-        if (updatingStatesRef.current.structure) {
-            return;
-        }
+                // Update state
+                setStructureSelectionData(validatedData);
 
-        // Validate data
-        if (!data || !Array.isArray(data)) {
-            console.error("Area1Logic: Invalid selection data received:", data);
-            return;
-        }
+                // Reset flag after a reasonable delay
+                setTimeout(() => {
+                    updatingStatesRef.current.structure = false;
+                }, 50);
+                return;
+            }
 
-        // Perform deep validation of each selection object
-        const validatedData = data.map((item) => {
-            // Ensure all fields are present
-            return {
-                type: item.type || "",
-                item: item.item || "", // Allow empty strings, MongoDB will handle null values
-                grade: item.grade || "",
+            // Only do detailed comparison if lengths match
+            const hasChanges = validatedData.some((item, idx) => {
+                const prevItem =
+                    prevStatesRef.current.structureSelectionData[idx];
+                return (
+                    item.type !== prevItem.type ||
+                    item.item !== prevItem.item ||
+                    item.grade !== prevItem.grade
+                );
+            });
+
+            if (hasChanges) {
+                // Set flag to prevent circular updates
+                updatingStatesRef.current.structure = true;
+
+                // Update reference
+                prevStatesRef.current.structureSelectionData = [
+                    ...validatedData,
+                ];
+
+                // Update state
+                setStructureSelectionData(validatedData);
+
+                // Reset flag after a reasonable delay
+                setTimeout(() => {
+                    updatingStatesRef.current.structure = false;
+                }, 50);
+            }
+        },
+        [setStructureSelectionData]
+    );
+
+    // IMPROVED: Memoized handler for structure dimensions changes
+    const handleStructureDimensionsChange = useCallback(
+        (dimensions) => {
+            // Skip if already handling an update
+            if (updatingStatesRef.current.structure) {
+                return;
+            }
+
+            // Validate dimensions
+            if (!dimensions) {
+                console.error(
+                    "Area1Logic: Invalid dimensions received:",
+                    dimensions
+                );
+                return;
+            }
+
+            // Create a validated dimensions object with proper type conversion
+            const validatedDimensions = {
+                length:
+                    dimensions.length !== undefined &&
+                    dimensions.length !== null
+                        ? Number(dimensions.length)
+                        : null,
+                width:
+                    dimensions.width !== undefined && dimensions.width !== null
+                        ? Number(dimensions.width)
+                        : null,
+                height:
+                    dimensions.height !== undefined &&
+                    dimensions.height !== null
+                        ? Number(dimensions.height)
+                        : null,
             };
-        });
 
-        // Skip if no actual change after validation
-        const newDataStr = JSON.stringify(validatedData);
-        const prevDataStr = JSON.stringify(
-            prevStatesRef.current.structureSelectionData
-        );
-        if (newDataStr === prevDataStr) {
-            return;
-        }
+            // Skip if no actual change - simple direct comparison
+            if (
+                validatedDimensions.length ===
+                    prevStatesRef.current.structureDimensions.length &&
+                validatedDimensions.width ===
+                    prevStatesRef.current.structureDimensions.width &&
+                validatedDimensions.height ===
+                    prevStatesRef.current.structureDimensions.height
+            ) {
+                return;
+            }
 
-        // Set flag to prevent circular updates
-        updatingStatesRef.current.structure = true;
+            // Set flag to prevent circular updates
+            updatingStatesRef.current.structure = true;
 
-        // Update reference
-        prevStatesRef.current.structureSelectionData = JSON.parse(newDataStr);
+            // Update reference
+            prevStatesRef.current.structureDimensions = {
+                ...validatedDimensions,
+            };
 
-        // Update state
-        setStructureSelectionData(validatedData);
+            // Update state
+            setStructureDimensions(validatedDimensions);
 
-        // Reset flag after a short delay
-        setTimeout(() => {
-            updatingStatesRef.current.structure = false;
-        }, 10);
-    };
+            // Reset flag after a reasonable delay
+            setTimeout(() => {
+                updatingStatesRef.current.structure = false;
+            }, 50);
+        },
+        [setStructureDimensions]
+    );
 
-    // IMPROVED: Safe handler for structure dimensions changes
-    const handleStructureDimensionsChange = (dimensions) => {
-        // Skip if already handling an update
-        if (updatingStatesRef.current.structure) {
-            return;
-        }
+    // IMPROVED: Memoized handler for structure comments changes
+    const handleStructureCommentsChange = useCallback(
+        (comments) => {
+            // Skip if already handling an update
+            if (updatingStatesRef.current.structure) {
+                return;
+            }
 
-        // Validate dimensions
-        if (!dimensions) {
-            console.error(
-                "Area1Logic: Invalid dimensions received:",
-                dimensions
+            // Skip if no actual change
+            if (comments === structureComments) {
+                return;
+            }
+
+            // Set flag to prevent circular updates
+            updatingStatesRef.current.structure = true;
+
+            // Update state
+            setStructureComments(comments);
+
+            // Reset flag after a reasonable delay
+            setTimeout(() => {
+                updatingStatesRef.current.structure = false;
+            }, 50);
+        },
+        [structureComments, setStructureComments]
+    );
+
+    // IMPROVED: Memoized handlers for canopy-related changes
+    const handleCanopyTotalChange = useCallback(
+        (total) => {
+            // Skip if already handling an update
+            if (updatingStatesRef.current.canopy) {
+                return;
+            }
+
+            // Skip if no actual change
+            if (total === canopyTotal) {
+                return;
+            }
+
+            // Set flag to prevent circular updates
+            updatingStatesRef.current.canopy = true;
+
+            // Update state
+            setCanopyTotal(total);
+
+            // Reset flag after a reasonable delay
+            setTimeout(() => {
+                updatingStatesRef.current.canopy = false;
+            }, 50);
+        },
+        [canopyTotal, setCanopyTotal]
+    );
+
+    // IMPROVED: Memoized handler for canopy entries changes
+    const handleCanopyEntriesChange = useCallback(
+        (entries) => {
+            // Skip if already handling an update
+            if (updatingStatesRef.current.canopy) {
+                return;
+            }
+
+            // Skip if no actual change (simple length check)
+            if (entries.length === canopyEntries.length) {
+                // Only proceed with more detailed check if needed
+                let entriesChanged = false;
+                for (let i = 0; i < entries.length; i++) {
+                    if (entries[i].id !== canopyEntries[i].id) {
+                        entriesChanged = true;
+                        break;
+                    }
+                }
+
+                if (!entriesChanged) {
+                    return;
+                }
+            }
+
+            // Set flag to prevent circular updates
+            updatingStatesRef.current.canopy = true;
+
+            // Update state
+            setCanopyEntries(entries);
+
+            // Reset flag after a reasonable delay
+            setTimeout(() => {
+                updatingStatesRef.current.canopy = false;
+            }, 50);
+        },
+        [canopyEntries, setCanopyEntries]
+    );
+
+    // IMPROVED: Memoized handler for general notes changes
+    const handleNotesUpdate = useCallback(
+        (newNotes) => {
+            // Skip if no actual change (simple check)
+            if (newNotes === notes) {
+                return;
+            }
+
+            // Use a debounced update without check for specific fields
+            // since notes object might have various properties
+            // Clear any existing timer
+            if (debounceTimersRef.current.notes) {
+                clearTimeout(debounceTimersRef.current.notes);
+            }
+
+            // Debounce the update
+            debounceTimersRef.current.notes = setTimeout(() => {
+                setNotes(newNotes);
+            }, 300);
+        },
+        [notes, setNotes]
+    );
+
+    // IMPROVED: Memoized handler for ventilation price changes
+    const handleVentilationPriceChange = useCallback(
+        (price) => {
+            // Skip if already handling an update
+            if (updatingStatesRef.current.schematic) {
+                return;
+            }
+
+            // Skip if no actual change (with small threshold for floating point comparison)
+            if (
+                Math.abs(price - prevStatesRef.current.ventilationPrice) < 0.001
+            ) {
+                return;
+            }
+
+            // Set flag to prevent circular updates
+            updatingStatesRef.current.schematic = true;
+
+            // Update reference
+            prevStatesRef.current.ventilationPrice = price;
+
+            // Update state
+            setVentilationPrice(price);
+
+            // Reset flag after a reasonable delay
+            setTimeout(() => {
+                updatingStatesRef.current.schematic = false;
+            }, 50);
+        },
+        [setVentilationPrice]
+    );
+
+    // IMPROVED: Memoized handlers for UI state changes (less critical)
+    const handleSelectedGroupIdChange = useCallback(
+        (newId) => {
+            if (newId === selectedGroupId) {
+                return;
+            }
+            setSelectedGroupId(newId);
+        },
+        [selectedGroupId, setSelectedGroupId]
+    );
+
+    // IMPROVED: Memoized handler for visible sections changes
+    const handleVisibleSectionsChange = useCallback(
+        (newSections) => {
+            // Simple length check first
+            if (newSections.length !== visibleSections.length) {
+                setVisibleSections(newSections);
+                return;
+            }
+
+            // Only do detailed check if necessary
+            const sectionsChanged = newSections.some(
+                (section) => !visibleSections.includes(section)
             );
-            return;
-        }
-
-        // Create a validated dimensions object with proper type conversion
-        const validatedDimensions = {
-            length:
-                dimensions.length !== undefined && dimensions.length !== null
-                    ? Number(dimensions.length)
-                    : null,
-            width:
-                dimensions.width !== undefined && dimensions.width !== null
-                    ? Number(dimensions.width)
-                    : null,
-            height:
-                dimensions.height !== undefined && dimensions.height !== null
-                    ? Number(dimensions.height)
-                    : null,
-        };
-
-        // Skip if no actual change after validation
-        const newDimensionsStr = JSON.stringify(validatedDimensions);
-        const prevDimensionsStr = JSON.stringify(
-            prevStatesRef.current.structureDimensions
-        );
-        if (newDimensionsStr === prevDimensionsStr) {
-            return;
-        }
-
-        // Set flag to prevent circular updates
-        updatingStatesRef.current.structure = true;
-
-        // Update reference
-        prevStatesRef.current.structureDimensions =
-            JSON.parse(newDimensionsStr);
-
-        // Update state
-        setStructureDimensions(validatedDimensions);
-
-        // Reset flag after a short delay
-        setTimeout(() => {
-            updatingStatesRef.current.structure = false;
-        }, 10);
-    };
-
-    // IMPROVED: Safe handler for structure comments changes
-    const handleStructureCommentsChange = (comments) => {
-        // Skip if already handling an update
-        if (updatingStatesRef.current.structure) {
-            return;
-        }
-
-        // Skip if no actual change
-        if (comments === structureComments) {
-            return;
-        }
-
-        // Set flag to prevent circular updates
-        updatingStatesRef.current.structure = true;
-
-        // Update state
-        setStructureComments(comments);
-
-        // Reset flag after a short delay
-        setTimeout(() => {
-            updatingStatesRef.current.structure = false;
-        }, 10);
-    };
-
-    // IMPROVED: Safe handler for canopy changes
-    const handleCanopyTotalChange = (total) => {
-        // Skip if already handling an update
-        if (updatingStatesRef.current.canopy) {
-            return;
-        }
-
-        // Skip if no actual change
-        if (total === canopyTotal) {
-            return;
-        }
-
-        // Set flag to prevent circular updates
-        updatingStatesRef.current.canopy = true;
-
-        // Update state
-        setCanopyTotal(total);
-
-        // Reset flag after a short delay
-        setTimeout(() => {
-            updatingStatesRef.current.canopy = false;
-        }, 10);
-    };
-
-    // IMPROVED: Safe handler for canopy entries changes
-    const handleCanopyEntriesChange = (entries) => {
-        // Skip if already handling an update
-        if (updatingStatesRef.current.canopy) {
-            return;
-        }
-
-        // Skip if no actual change
-        const entriesStr = JSON.stringify(entries);
-        const prevEntriesStr = JSON.stringify(canopyEntries);
-        if (entriesStr === prevEntriesStr) {
-            return;
-        }
-
-        // Set flag to prevent circular updates
-        updatingStatesRef.current.canopy = true;
-
-        // Update state
-        setCanopyEntries(entries);
-
-        // Reset flag after a short delay
-        setTimeout(() => {
-            updatingStatesRef.current.canopy = false;
-        }, 10);
-    };
-
-    // IMPROVED: Safe handler for notes changes
-    const handleNotesUpdate = (newNotes) => {
-        // Skip if no actual change
-        if (JSON.stringify(newNotes) === JSON.stringify(notes)) {
-            return;
-        }
-
-        // Clear any existing timer
-        if (debounceTimersRef.current.notes) {
-            clearTimeout(debounceTimersRef.current.notes);
-        }
-
-        // Debounce the update
-        debounceTimersRef.current.notes = setTimeout(() => {
-            setNotes(newNotes);
-        }, 50);
-    };
-
-    // IMPROVED: Safe handler for ventilation price changes
-    const handleVentilationPriceChange = (price) => {
-        // Skip if already handling an update
-        if (updatingStatesRef.current.schematic) {
-            return;
-        }
-
-        // Skip if no actual change
-        if (Math.abs(price - prevStatesRef.current.ventilationPrice) < 0.001) {
-            return;
-        }
-
-        // Set flag to prevent circular updates
-        updatingStatesRef.current.schematic = true;
-
-        // Update reference
-        prevStatesRef.current.ventilationPrice = price;
-
-        // Update state
-        setVentilationPrice(price);
-
-        // Reset flag after a short delay
-        setTimeout(() => {
-            updatingStatesRef.current.schematic = false;
-        }, 10);
-    };
-
-    // IMPROVED: Safe handler for selected group ID changes
-    const handleSelectedGroupIdChange = (newId) => {
-        if (newId === selectedGroupId) {
-            return;
-        }
-        setSelectedGroupId(newId);
-    };
-
-    // IMPROVED: Safe handler for visible sections changes
-    const handleVisibleSectionsChange = (newSections) => {
-        if (JSON.stringify(newSections) === JSON.stringify(visibleSections)) {
-            return;
-        }
-        setVisibleSections(newSections);
-    };
+            if (sectionsChanged) {
+                setVisibleSections(newSections);
+            }
+        },
+        [visibleSections, setVisibleSections]
+    );
 
     // CSS for area input animation
     const areaInputStyles = `
@@ -811,12 +1090,7 @@ export default function Area1Logic({
                         initialSubcategoryComments={
                             equipment?.subcategoryComments || {}
                         }
-                        onNotesChange={(notes) => {
-                            // Update equipment with partial update containing only notes
-                            handleEquipmentChange({
-                                notes: notes, // Regular equipment notes
-                            });
-                        }}
+                        onNotesChange={handleNotesChange}
                         onEquipmentChange={handleEquipmentChange}
                     />
                 )}
@@ -862,8 +1136,6 @@ export default function Area1Logic({
                         setFlexiDuctSelections={setFlexiDuctSelections}
                         accessDoorSelections={accessDoorSelections}
                         setAccessDoorSelections={setAccessDoorSelections}
-                        groupDimensions={groupDimensions}
-                        setGroupDimensions={setGroupDimensions}
                         fanGradeSelections={fanGradeSelections}
                         setFanGradeSelections={setFanGradeSelections}
                     />

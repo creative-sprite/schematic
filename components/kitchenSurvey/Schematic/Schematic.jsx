@@ -40,7 +40,6 @@ function Schematic({
     initialCellSize = 40,
     initialSelectedGroupId = "",
     initialFlexiDuctSelections = {},
-    initialGroupDimensions = {}, // Add prop for saved dimensions
     // New shared state props
     placedItems,
     setPlacedItems,
@@ -54,8 +53,6 @@ function Schematic({
     setFlexiDuctSelections,
     accessDoorSelections,
     setAccessDoorSelections,
-    groupDimensions,
-    setGroupDimensions,
     fanGradeSelections,
     setFanGradeSelections,
 }) {
@@ -201,27 +198,6 @@ function Schematic({
 
         if (cellSize === 40 && initialCellSize) {
             setCellSize(initialCellSize);
-        }
-
-        // Initialize group dimensions from saved data with improved handling
-        if (Object.keys(initialGroupDimensions).length > 0) {
-            console.log(
-                "[Schematic] Initializing group dimensions from saved data:",
-                initialGroupDimensions
-            );
-
-            // First make a deep copy to avoid reference issues
-            const dimensionsCopy = JSON.parse(
-                JSON.stringify(initialGroupDimensions)
-            );
-
-            // Then update state - use functional update to ensure we preserve any existing values
-            setGroupDimensions((prev) => ({
-                ...prev,
-                ...dimensionsCopy,
-            }));
-
-            console.log("[Schematic] Dimension initialization complete");
         }
 
         // Set prices only if they're not already set
@@ -750,72 +726,6 @@ function Schematic({
         setSpecialRotation((prev) => (prev + 90) % 360);
     };
 
-    // Add effect to track dimension changes for debugging
-    useEffect(() => {
-        if (!initialized) return;
-
-        console.log(
-            "[Schematic] Current groupDimensions state:",
-            Object.keys(groupDimensions).length
-        );
-    }, [groupDimensions, initialized]);
-
-    // IMPROVED: Safe memoized handler for dimension changes
-    const handleDimensionChange = useCallback((groupKey, field, rawValue) => {
-        // Skip if already updating
-        if (updatingStateRef.current) return;
-
-        console.log(
-            `[Schematic] Dimension change for ${groupKey}.${field} = ${rawValue}`
-        );
-
-        // Set flag to prevent circular updates
-        updatingStateRef.current = true;
-
-        try {
-            setGroupDimensions((prev) => {
-                const newDims = { ...prev };
-                if (!newDims[groupKey]) {
-                    newDims[groupKey] = {};
-                }
-
-                // Ensure we're handling the value correctly
-                let valueToStore;
-                if (rawValue === "") {
-                    valueToStore = "";
-                } else {
-                    const parsed = parseInt(rawValue, 10);
-                    valueToStore = Number.isNaN(parsed) ? "" : parsed;
-                }
-
-                newDims[groupKey][field] = valueToStore;
-                return newDims;
-            });
-        } finally {
-            // Reset update flag after a short delay
-            setTimeout(() => {
-                updatingStateRef.current = false;
-            }, 10);
-        }
-    }, []);
-
-    // IMPROVED: Memoized ventilation price change handler
-    const handleVentilationPriceChange = useCallback(
-        (price) => {
-            // Skip if already updating
-            if (updatingStateRef.current) return;
-
-            // Only update if there's a real change in price to prevent update loops
-            if (Math.abs(flexiDuctVentilationPrice - price) > 0.001) {
-                setFlexiDuctVentilationPrice(price);
-                setVentilationPrice(price);
-                prevValuesRef.current.ventilationPrice = price;
-                pricesSentRef.current.ventilation = false; // Reset flag to trigger parent update
-            }
-        },
-        [flexiDuctVentilationPrice]
-    );
-
     // Handler for Tree Select reset completion
     const handleResetComplete = () => {
         setResetSelection(false);
@@ -1073,24 +983,21 @@ function Schematic({
 
             <SchematicList
                 placedItems={placedItems}
-                groupDimensions={groupDimensions}
-                setGroupDimensions={setGroupDimensions}
-                handleDimensionChange={handleDimensionChange}
+                setPlacedItems={setPlacedItems}
                 onAccessDoorSelect={safeUpdateAccessDoorSelections}
-                onVentilationPriceChange={handleVentilationPriceChange}
+                onVentilationPriceChange={(price) => {
+                    if (Math.abs(flexiDuctVentilationPrice - price) > 0.001) {
+                        setFlexiDuctVentilationPrice(price);
+                        setVentilationPrice(price);
+                        pricesSentRef.current.ventilation = false;
+                    }
+                }}
                 onFanPartsPriceChange={setFanPartsPrice}
                 onAirInExPriceChange={setAirInExTotal}
                 onSchematicItemsTotalChange={setSchematicItemsTotal}
                 structureIds={structureIds}
-                setPlacedItems={setPlacedItems}
                 flexiDuctSelections={flexiDuctSelections}
                 setFlexiDuctSelections={setFlexiDuctSelections}
-                initialAccessDoorPrice={initialAccessDoorPrice}
-                initialVentilationPrice={initialVentilationPrice}
-                initialFanPartsPrice={initialFanPartsPrice}
-                initialAirInExTotal={initialAirInExTotal}
-                initialSchematicItemsTotal={initialSchematicItemsTotal}
-                initialFlexiDuctSelections={initialFlexiDuctSelections}
                 accessDoorSelections={accessDoorSelections}
                 setAccessDoorSelections={setAccessDoorSelections}
                 fanGradeSelections={fanGradeSelections}
