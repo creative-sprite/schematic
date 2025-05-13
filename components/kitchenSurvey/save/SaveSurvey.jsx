@@ -1,12 +1,20 @@
 // components/kitchenSurvey/save/SaveSurvey.jsx
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Toast } from "primereact/toast";
+import { ProgressBar } from "primereact/progressbar";
 import {
     computeEquipmentTotal,
     computeGrandTotals,
 } from "../pricing/PricingUtils";
 import { getSurveyImageFolder } from "@/lib/cloudinary";
+
+// Utility function to generate Cloudinary URLs consistently
+const getCloudinaryUrl = (publicId) => {
+    const cloudName =
+        process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || "dnu5hunya";
+    return `https://res.cloudinary.com/${cloudName}/image/upload/${publicId}`;
+};
 
 /**
  * Component for handling survey saving functionality with automatic quote generation
@@ -32,6 +40,7 @@ export default function SaveSurvey({
     specialistEquipmentData,
     canopyTotal,
     canopyEntries = [], // Add default empty array to prevent undefined errors
+    canopyComments = {}, // Add canopyComments prop with default empty object
     accessDoorPrice,
     ventilationPrice,
     airPrice,
@@ -61,74 +70,48 @@ export default function SaveSurvey({
     const toast = useRef(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isHovered, setIsHovered] = useState(false);
-    // Store a reference to the latest surveyImages to avoid state dependency issues
-    const surveyImagesRef = useRef(surveyImages);
 
-    // Add upload activity tracking to prevent duplicate operations
-    const isUploadingRef = useRef(false);
+    // New state for tracking upload progress
+    const [uploadProgress, setUploadProgress] = useState({
+        active: false,
+        total: 0,
+        completed: 0,
+        message: "",
+    });
+
     // Track the active quote generation
     const quoteGenerationTimerRef = useRef(null);
 
-    // ADDED: Debug logging for structure data on mount
-    useEffect(() => {
-        console.log("[SaveSurvey] Initialized with structure data:", {
-            structureId,
-            structureTotal,
-            structureDimensions: structureDimensions
-                ? JSON.stringify(structureDimensions)
-                : "none",
-            selectionData: structureSelectionData
-                ? structureSelectionData
-                      .map((item) => `${item.type}:${item.item}:${item.grade}`)
-                      .join(", ")
-                : "none",
-        });
-    }, []);
+    // Debugging ref to track equipment state
+    const equipmentDebugRef = useRef({
+        lastEquipment: null,
+        hasSubcategoryComments: false,
+        commentCount: 0,
+    });
 
-    // ADDED: Debug logging for notes and comments on mount
+    // Update the debug ref when equipment changes
     useEffect(() => {
-        console.log("[SaveSurvey] Initialized with equipment data:", {
-            equipmentNotes: equipment?.notes
-                ? `${equipment.notes.substring(0, 20)}${
-                      equipment.notes.length > 20 ? "..." : ""
-                  }`
-                : "none",
-            specialistNotes: equipment?.specialistNotes
-                ? `${equipment.specialistNotes.substring(0, 20)}${
-                      equipment.specialistNotes.length > 20 ? "..." : ""
-                  }`
-                : "none",
-            subcategoryCommentsKeys: Object.keys(
-                equipment?.subcategoryComments || {}
-            ),
-            categoryCommentsKeys: Object.keys(
-                equipment?.categoryComments || {}
-            ),
-        });
-    }, []);
+        if (equipment) {
+            equipmentDebugRef.current = {
+                lastEquipment: equipment,
+                hasSubcategoryComments: !!equipment.subcategoryComments,
+                commentCount: equipment.subcategoryComments
+                    ? Object.keys(equipment.subcategoryComments).length
+                    : 0,
+            };
 
-    // Added debug logging for placed items to verify dimensions
-    useEffect(() => {
-        if (placedItems && placedItems.length > 0) {
             console.log(
-                "[SaveSurvey] Current placed items dimensions:",
-                placedItems.slice(0, 3).map((item) => ({
-                    id: item.id,
-                    name: item.name,
-                    length: item.length,
-                    width: item.width,
-                    height: item.height,
-                }))
+                "SaveSurvey: Equipment updated:",
+                equipment.subcategoryComments
+                    ? `Has ${
+                          Object.keys(equipment.subcategoryComments).length
+                      } comments`
+                    : "Missing subcategoryComments"
             );
         }
-    }, [placedItems]);
+    }, [equipment]);
 
-    // Keep surveyImagesRef up to date, but without causing re-renders
-    useEffect(() => {
-        surveyImagesRef.current = surveyImages;
-    }, [surveyImages]);
-
-    // Clean up timers on unmount
+    // Cleanup timer on unmount
     useEffect(() => {
         return () => {
             if (quoteGenerationTimerRef.current) {
@@ -137,10 +120,10 @@ export default function SaveSurvey({
         };
     }, []);
 
-    // IMPROVED: Memoized equipment total calculation
-    const computedEquipmentTotal = useCallback(() => {
+    // Memoized equipment total calculation
+    const computedEquipmentTotal = () => {
         return computeEquipmentTotal(surveyData, equipmentItems);
-    }, [surveyData, equipmentItems]);
+    };
 
     // For dynamic import of jsPDF
     const [jsPDFModule, setJsPDFModule] = useState(null);
@@ -158,8 +141,8 @@ export default function SaveSurvey({
         });
     }, []);
 
-    // IMPROVED: Memoized grand totals calculation
-    const computedGrandTotals = useCallback(() => {
+    // Memoized grand totals calculation
+    const computedGrandTotals = () => {
         // Create object with main area totals
         const mainTotals = {
             structureTotal: structureTotal,
@@ -177,20 +160,7 @@ export default function SaveSurvey({
 
         // Use utility function to compute combined totals
         return computeGrandTotals(mainTotals, areasState);
-    }, [
-        structureTotal,
-        computedEquipmentTotal,
-        canopyTotal,
-        accessDoorPrice,
-        ventilationPrice,
-        airPrice,
-        fanPartsPrice,
-        airInExTotal,
-        schematicItemsTotal,
-        modify,
-        selectedGroupId,
-        areasState,
-    ]);
+    };
 
     /**
      * Captures only the used portion of the schematic as a JPG image
@@ -318,8 +288,7 @@ export default function SaveSurvey({
     };
 
     /**
-     * Generates a quote PDF using a simplified approach
-     * This builds a clean new content specifically for PDF
+     * Simplified function to generate a quote PDF
      */
     const generateQuote = async (savedSurveyId) => {
         // Simple locking mechanism with console
@@ -496,15 +465,6 @@ export default function SaveSurvey({
                         `
                                 : `<p>No equipment items added</p>`
                         }
-                        ${
-                            equipment?.notes
-                                ? `
-                        <div style="margin-top: 10px;">
-                            <p><strong>Equipment Notes:</strong> ${equipment.notes}</p>
-                        </div>
-                        `
-                                : ""
-                        }
                     </div>
                     
                     <!-- Specialist Equipment -->
@@ -540,15 +500,6 @@ export default function SaveSurvey({
                         </table>
                         `
                                 : `<p>No specialist equipment items added</p>`
-                        }
-                        ${
-                            equipment?.specialistNotes
-                                ? `
-                        <div style="margin-top: 10px;">
-                            <p><strong>Specialist Equipment Notes:</strong> ${equipment.specialistNotes}</p>
-                        </div>
-                        `
-                                : ""
                         }
                     </div>
                     
@@ -593,199 +544,6 @@ export default function SaveSurvey({
                         }
                         <p><strong>Canopy Total:</strong> £${
                             canopyTotal ? canopyTotal.toFixed(2) : "0.00"
-                        }</p>
-                    </div>
-                    
-                    <!-- Schematic List Items -->
-                    <div style="margin-bottom: 30px; border: 1px solid #ddd; padding: 15px; border-radius: 4px;">
-                        <h2 style="background-color: #f0f0f0; padding: 8px; margin-top: 0;">Schematic List Items</h2>
-                        ${
-                            placedItems && placedItems.length > 0
-                                ? `
-                        <table style="width: 100%; border-collapse: collapse; margin-bottom: 15px;">
-                            <tr style="background-color: #f5f5f5;">
-                                <th style="padding: 8px; text-align: left; border: 1px solid #ddd;">Item</th>
-                                <th style="padding: 8px; text-align: left; border: 1px solid #ddd;">Category</th>
-                                <th style="padding: 8px; text-align: right; border: 1px solid #ddd;">Dimensions</th>
-                            </tr>
-                            ${placedItems
-                                .filter((item) => item.name) // Only include items with names
-                                .map(
-                                    (item) => `
-                            <tr>
-                                <td style="padding: 8px; border: 1px solid #ddd;">${
-                                    item.name || "N/A"
-                                }</td>
-                                <td style="padding: 8px; border: 1px solid #ddd;">${
-                                    item.category || "N/A"
-                                }</td>
-                                <td style="padding: 8px; text-align: right; border: 1px solid #ddd;">${
-                                    (item.length ? `L: ${item.length}` : "") +
-                                        (item.width
-                                            ? ` W: ${item.width}`
-                                            : "") +
-                                        (item.height
-                                            ? ` H: ${item.height}`
-                                            : "") || "N/A"
-                                }</td>
-                            </tr>
-                            `
-                                )
-                                .join("")}
-                        </table>
-                        `
-                                : `<p>No schematic items added</p>`
-                        }
-                    </div>
-                    
-                    <!-- Schematic Information -->
-                    <div style="margin-bottom: 30px; border: 1px solid #ddd; padding: 15px; border-radius: 4px;">
-                        <h2 style="background-color: #f0f0f0; padding: 8px; margin-top: 0;">Schematic Information</h2>
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-                            <div>
-                                <p><strong>Access Door Price:</strong> £${
-                                    accessDoorPrice
-                                        ? accessDoorPrice.toFixed(2)
-                                        : "0.00"
-                                }</p>
-                                <p><strong>Ventilation Price:</strong> £${
-                                    ventilationPrice
-                                        ? ventilationPrice.toFixed(2)
-                                        : "0.00"
-                                }</p>
-                                <p><strong>Air Price:</strong> £${
-                                    airPrice ? airPrice.toFixed(2) : "0.00"
-                                }</p>
-                            </div>
-                            <div>
-                                <p><strong>Fan Parts Price:</strong> £${
-                                    fanPartsPrice
-                                        ? fanPartsPrice.toFixed(2)
-                                        : "0.00"
-                                }</p>
-                                <p><strong>Air In/Ex Total:</strong> £${
-                                    airInExTotal
-                                        ? airInExTotal.toFixed(2)
-                                        : "0.00"
-                                }</p>
-                                <p><strong>Schematic Items Total:</strong> £${
-                                    typeof schematicItemsTotal === "object"
-                                        ? (
-                                              schematicItemsTotal.overall || 0
-                                          ).toFixed(2)
-                                        : (schematicItemsTotal || 0).toFixed(2)
-                                }</p>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- Ventilation Information -->
-                    <div style="margin-bottom: 30px; border: 1px solid #ddd; padding: 15px; border-radius: 4px;">
-                        <h2 style="background-color: #f0f0f0; padding: 8px; margin-top: 0;">Ventilation Information</h2>
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-                            <div>
-                                <p><strong>Extract Rate (m³/s):</strong> ${
-                                    ventilation?.extractRate || "N/A"
-                                }</p>
-                                <p><strong>Extract Type:</strong> ${
-                                    ventilation?.extractType || "N/A"
-                                }</p>
-                                <p><strong>Supply Rate (m³/s):</strong> ${
-                                    ventilation?.supplyRate || "N/A"
-                                }</p>
-                            </div>
-                            <div>
-                                <p><strong>Supply Type:</strong> ${
-                                    ventilation?.supplyType || "N/A"
-                                }</p>
-                                <p><strong>Fan Location:</strong> ${
-                                    ventilation?.fanLocation || "N/A"
-                                }</p>
-                                <p><strong>Atmosphere Discharge:</strong> ${
-                                    ventilation?.atmosphereDischarge || "N/A"
-                                }</p>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- Access Requirements -->
-                    <div style="margin-bottom: 30px; border: 1px solid #ddd; padding: 15px; border-radius: 4px;">
-                        <h2 style="background-color: #f0f0f0; padding: 8px; margin-top: 0;">Access Requirements</h2>
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-                            <div>
-                                <p><strong>Induction Needed:</strong> ${
-                                    access?.inductionNeeded || "No"
-                                }</p>
-                                <p><strong>Maintenance Engineer:</strong> ${
-                                    access?.maintenanceEngineer || "No"
-                                }</p>
-                                <p><strong>Mechanical Engineer:</strong> ${
-                                    access?.mechanicalEngineer || "No"
-                                }</p>
-                                <p><strong>Electrical Engineer:</strong> ${
-                                    access?.electricalEngineer || "No"
-                                }</p>
-                            </div>
-                            <div>
-                                <p><strong>System Isolated:</strong> ${
-                                    access?.systemIsolated || "No"
-                                }</p>
-                                <p><strong>Roof Access:</strong> ${
-                                    access?.roofAccess || "No"
-                                }</p>
-                                <p><strong>Keys Required:</strong> ${
-                                    access?.keysrequired || "No"
-                                }</p>
-                                <p><strong>Permit to Work:</strong> ${
-                                    access?.permitToWork || "No"
-                                }</p>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- Operations Information -->
-                    <div style="margin-bottom: 30px; border: 1px solid #ddd; padding: 15px; border-radius: 4px;">
-                        <h2 style="background-color: #f0f0f0; padding: 8px; margin-top: 0;">Site Operations</h2>
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-                            <div>
-                                <p><strong>Patron Disruption:</strong> ${
-                                    operations?.patronDisruption || "No"
-                                }</p>
-                                <p><strong>Type of Cooking:</strong> ${
-                                    operations?.typeOfCooking || "N/A"
-                                }</p>
-                                <p><strong>Covers Per Day:</strong> ${
-                                    operations?.coversPerDay || "N/A"
-                                }</p>
-                            </div>
-                            <div>
-                                <p><strong>Best Service Time:</strong> ${
-                                    operations?.bestServiceTime || "N/A"
-                                }</p>
-                                <p><strong>Best Service Day:</strong> ${
-                                    operations?.bestServiceDay || "N/A"
-                                }</p>
-                                <p><strong>8 Hours Available:</strong> ${
-                                    operations?.eightHoursAvailable || "No"
-                                }</p>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- Notes -->
-                    <div style="margin-bottom: 30px; border: 1px solid #ddd; padding: 15px; border-radius: 4px;">
-                        <h2 style="background-color: #f0f0f0; padding: 8px; margin-top: 0;">Notes</h2>
-                        <p><strong>Comments:</strong> ${
-                            notes?.comments || "No comments added"
-                        }</p>
-                        <p><strong>Previous Issues:</strong> ${
-                            notes?.previousIssues || "None"
-                        }</p>
-                        <p><strong>Damage:</strong> ${
-                            notes?.damage || "None reported"
-                        }</p>
-                        <p><strong>Inaccessible Areas:</strong> ${
-                            notes?.inaccessibleAreas || "None reported"
                         }</p>
                     </div>
                     
@@ -950,234 +708,352 @@ export default function SaveSurvey({
     };
 
     /**
-     * Uploads images to Cloudinary via our server API and returns updated image objects
-     * @param {Array} images - Array of image objects with files
-     * @param {string} siteName - Site name for folder structure
-     * @param {string} surveyRef - Survey reference for folder structure
-     * @param {string} category - Image category (Structure, Equipment, etc.)
-     * @returns {Array} - Updated image objects with Cloudinary URLs
+     * Simplified function to upload a single image to Cloudinary
+     * Returns the uploaded image data, or null on failure
      */
-    const uploadImagesToCloudinary = async (
-        images,
-        siteName,
-        surveyRef,
-        category
-    ) => {
-        if (!images || images.length === 0) {
-            console.log(`[SaveSurvey] No images to upload for ${category}`);
-            return [];
+    const uploadSingleImage = async (image, category, siteName, surveyRef) => {
+        if (!image || !image.file) {
+            console.log(`[SaveSurvey] Cannot upload image - missing file`);
+            return null;
         }
 
-        const uploadedImages = [];
-        let siteNameSafe = siteName || "unknown-site";
-        siteNameSafe = siteNameSafe.replace(/[:/\\?*"|<>]/g, "-"); // Clean site name for URL
+        try {
+            // Create folder path using helper function
+            const folder = getSurveyImageFolder(siteName, surveyRef, category);
 
-        console.log(
-            `[SaveSurvey] Starting upload of ${images.length} images for ${category}`,
-            images.map((img) => ({
-                hasFile: !!img.file,
-                fileType: img.file ? img.file.type : "none",
-                fileSize: img.file ? img.file.size : 0,
-                isPending: !!img.metadata?.pendingUpload,
-                url: img.url ? img.url.substring(0, 20) + "..." : "no url",
-            }))
-        );
+            console.log(`[SaveSurvey] Uploading image to folder: ${folder}`);
 
-        // Process each image
-        for (const image of images) {
-            // Enhanced validation and debugging
-            if (!image) {
-                console.error(
-                    `[SaveSurvey] Skipping undefined image object for ${category}`
-                );
-                continue;
-            }
+            // Create form data for upload
+            const formData = new FormData();
+            formData.append("file", image.file);
+            formData.append("folder", folder);
+            formData.append("preserveFilename", "true"); // Preserve original filename
 
-            // Check if the image has a file property and is pending upload
-            if (!image.file) {
-                console.log(`[SaveSurvey] Image missing file property:`, {
-                    url: image.url
-                        ? image.url.substring(0, 20) + "..."
-                        : "none",
-                    alt: image.alt || "none",
-                    metadata: image.metadata ? "present" : "missing",
-                });
-                uploadedImages.push(image); // Keep but don't upload
-                continue;
-            }
-
-            if (!image.metadata?.pendingUpload) {
-                console.log(`[SaveSurvey] Image not pending upload:`, {
-                    isPending: !!image.metadata?.pendingUpload,
-                    isCloudinary: !!image.publicId,
-                });
-                uploadedImages.push(image); // Keep but don't upload
-                continue;
-            }
-
-            // Image is eligible for upload - proceed
-            console.log(`[SaveSurvey] Processing image for upload:`, {
-                name: image.file?.name || "unknown",
-                size: image.file?.size || 0,
-                type: image.file?.type || "unknown",
+            // Upload to server API endpoint
+            const response = await fetch("/api/cloudinary/upload", {
+                method: "POST",
+                body: formData,
             });
 
-            try {
-                // Create folder path using the updated format
-                const folder = getSurveyImageFolder(
-                    siteName,
-                    surveyRef,
-                    category
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(
+                    `Upload failed: ${response.statusText} - ${errorText}`
                 );
-
-                console.log(
-                    `[SaveSurvey] Uploading image to folder: ${folder}`
-                );
-
-                // Create form data for upload to our server API
-                const formData = new FormData();
-                formData.append("file", image.file);
-                formData.append("folder", folder);
-                formData.append("preserveFilename", "true"); // Preserve original filename without timestamp
-
-                console.log(
-                    `[SaveSurvey] Sending to /api/cloudinary/upload with:`,
-                    {
-                        folder,
-                        fileName: image.file.name,
-                        fileSize: image.file.size,
-                        fileType: image.file.type,
-                        preserveFilename: true,
-                    }
-                );
-
-                // Upload to our server-side API endpoint instead of directly to Cloudinary
-                const response = await fetch("/api/cloudinary/upload", {
-                    method: "POST",
-                    body: formData,
-                });
-
-                if (!response.ok) {
-                    let errorData;
-                    try {
-                        errorData = await response.json();
-                    } catch (e) {
-                        // If response isn't JSON
-                        errorData = { message: await response.text() };
-                    }
-
-                    console.error(`[SaveSurvey] API error response:`, {
-                        status: response.status,
-                        statusText: response.statusText,
-                        errorData,
-                    });
-
-                    throw new Error(
-                        `Upload failed: ${
-                            errorData.message || response.statusText
-                        }`
-                    );
-                }
-
-                const result = await response.json();
-                console.log(`[SaveSurvey] Upload response:`, {
-                    success: result.success,
-                    publicId: result.data?.public_id || "none",
-                    message: result.message || "No message",
-                });
-
-                if (!result.success || !result.data) {
-                    throw new Error(
-                        `Upload failed: ${result.message || "Unknown error"}`
-                    );
-                }
-
-                const data = result.data;
-                console.log(
-                    `[SaveSurvey] Successfully uploaded image to Cloudinary: ${data.public_id}`
-                );
-
-                // Create uploaded image object with Cloudinary data
-                const uploadedImage = {
-                    publicId: data.public_id,
-                    url: data.secure_url,
-                    secureUrl: data.secure_url,
-                    alt: image.alt || image.title || "",
-                    title: image.title || image.alt || "",
-                    format: data.format,
-                    width: data.width,
-                    height: data.height,
-                    uploadedAt: new Date().toISOString(),
-                    metadata: {
-                        ...image.metadata,
-                        pendingUpload: false,
-                        cloudinary: true,
-                        originalName: image.metadata?.name,
-                        category: category, // Ensure category is stored in metadata
-                    },
-                };
-
-                uploadedImages.push(uploadedImage);
-
-                // Show success notification
-                toast.current.show({
-                    severity: "success",
-                    summary: "Upload Success",
-                    detail: `Uploaded image to Cloudinary: ${image.file.name}`,
-                    life: 3000,
-                });
-
-                // If we were working with blob URLs, revoke them to free up memory
-                if (
-                    image.url &&
-                    typeof image.url === "string" &&
-                    image.url.startsWith("blob:")
-                ) {
-                    URL.revokeObjectURL(image.url);
-                }
-            } catch (error) {
-                console.error(
-                    `[SaveSurvey] Error uploading image to Cloudinary:`,
-                    error
-                );
-                toast.current.show({
-                    severity: "error",
-                    summary: "Upload Error",
-                    detail: `Failed to upload image: ${error.message}`,
-                    life: 5000,
-                });
-
-                // If upload fails, mark the image with an error flag but still include it
-                uploadedImages.push({
-                    ...image,
-                    metadata: {
-                        ...image.metadata,
-                        uploadError: true,
-                        errorMessage: error.message,
-                    },
-                });
             }
-        }
 
-        console.log(
-            `[SaveSurvey] Completed processing ${
-                uploadedImages.length
-            } images for ${category}. Success count: ${
-                uploadedImages.filter((img) => img.publicId).length
-            }`
-        );
-        return uploadedImages;
+            const result = await response.json();
+
+            if (!result.success) {
+                throw new Error(result.message || "Upload failed");
+            }
+
+            const data = result.data;
+
+            // Return uploaded image data with simplified structure
+            return {
+                publicId: data.public_id,
+                url: data.secure_url,
+                category: category,
+                uploaded: true,
+            };
+        } catch (error) {
+            console.error(`[SaveSurvey] Error uploading image:`, error);
+            return null;
+        }
     };
 
     /**
-     * Handles the saving of survey data with Cloudinary image processing
+     * Simplified batch upload function with progress tracking
+     */
+    const uploadAllImages = async (images, siteName, surveyRef) => {
+        // Count total images that need uploading
+        let totalImagesToUpload = 0;
+        let imagesToUpload = [];
+
+        // Create flat list of all images that need uploading
+        Object.entries(images).forEach(([category, categoryImages]) => {
+            categoryImages.forEach((image) => {
+                // Only include images with files that haven't been uploaded
+                if (image.file && !image.uploaded) {
+                    totalImagesToUpload++;
+                    imagesToUpload.push({
+                        ...image,
+                        category,
+                    });
+                }
+            });
+        });
+
+        // If no images to upload, return original images
+        if (totalImagesToUpload === 0) {
+            console.log("[SaveSurvey] No images need uploading");
+            return images;
+        }
+
+        // Initialize progress
+        setUploadProgress({
+            active: true,
+            total: totalImagesToUpload,
+            completed: 0,
+            message: `Starting upload of ${totalImagesToUpload} images...`,
+        });
+
+        // Make a copy of the images object to update
+        const updatedImages = JSON.parse(JSON.stringify(images));
+
+        // Process each image
+        for (let i = 0; i < imagesToUpload.length; i++) {
+            const image = imagesToUpload[i];
+            const { category } = image;
+
+            // Update progress
+            setUploadProgress((prev) => ({
+                ...prev,
+                completed: i,
+                message: `Uploading image ${
+                    i + 1
+                } of ${totalImagesToUpload}...`,
+            }));
+
+            // Upload the image
+            const uploadedImage = await uploadSingleImage(
+                image,
+                category,
+                siteName,
+                surveyRef
+            );
+
+            // Find the image in our updatedImages and update it
+            if (uploadedImage) {
+                const index = updatedImages[category].findIndex(
+                    (img) =>
+                        img.id === image.id ||
+                        (img.url === image.url && !img.publicId)
+                );
+
+                if (index !== -1) {
+                    // Update with uploaded data
+                    updatedImages[category][index] = {
+                        ...updatedImages[category][index],
+                        publicId: uploadedImage.publicId,
+                        url: uploadedImage.url,
+                        uploaded: true,
+                        file: null, // Remove file reference after upload
+                    };
+                }
+            }
+        }
+
+        // Complete progress
+        setUploadProgress({
+            active: false,
+            total: totalImagesToUpload,
+            completed: totalImagesToUpload,
+            message: `Completed upload of ${totalImagesToUpload} images`,
+        });
+
+        return updatedImages;
+    };
+
+    /**
+     * IMPROVED: Function to directly capture equipment comments from DOM
+     * This serves as a fallback if state-based comments are missing
+     */
+    const captureEquipmentCommentsFromDOM = () => {
+        const capturedComments = {};
+
+        if (typeof document !== "undefined") {
+            try {
+                // Target all subcategory comment textareas by their ID pattern
+                const commentTextareas = document.querySelectorAll(
+                    '[id^="subcategory-comment-"]'
+                );
+                commentTextareas.forEach((textarea) => {
+                    if (textarea.value && textarea.value.trim()) {
+                        // Extract subcategory from ID by removing the prefix and converting hyphens back to spaces
+                        const idParts = textarea.id.split("-");
+                        if (idParts.length >= 3) {
+                            const subcategoryId = idParts.slice(2).join("-");
+                            const subcategory = subcategoryId.replace(
+                                /-/g,
+                                " "
+                            );
+                            capturedComments[subcategory] =
+                                textarea.value.trim();
+                        }
+                    }
+                });
+
+                // Also check for orphaned comments (those without equipment entries)
+                const orphanedCommentTextareas = document.querySelectorAll(
+                    '[id^="orphaned-comment-"]'
+                );
+                orphanedCommentTextareas.forEach((textarea) => {
+                    if (textarea.value && textarea.value.trim()) {
+                        const idParts = textarea.id.split("-");
+                        if (idParts.length >= 3) {
+                            const subcategoryId = idParts.slice(2).join("-");
+                            const subcategory = subcategoryId.replace(
+                                /-/g,
+                                " "
+                            );
+                            capturedComments[subcategory] =
+                                textarea.value.trim();
+                        }
+                    }
+                });
+
+                console.log(
+                    "[SaveSurvey] Directly captured",
+                    Object.keys(capturedComments).length,
+                    "comments from DOM"
+                );
+            } catch (error) {
+                console.error(
+                    "[SaveSurvey] Error capturing comments from DOM:",
+                    error
+                );
+            }
+        }
+
+        return capturedComments;
+    };
+
+    /**
+     * NEW: Function to directly capture specialist equipment category comments from DOM
+     * This serves as a fallback if state-based comments are missing
+     */
+    const captureSpecialistCategoryCommentsFromDOM = () => {
+        const capturedComments = {};
+
+        if (typeof document !== "undefined") {
+            try {
+                // Target all category comment textareas by their ID pattern
+                const commentTextareas = document.querySelectorAll(
+                    '[id^="category-comment-"]'
+                );
+
+                console.log(
+                    "[SaveSurvey] Found",
+                    commentTextareas.length,
+                    "specialist category comment textareas in DOM"
+                );
+
+                commentTextareas.forEach((textarea) => {
+                    if (textarea.value && textarea.value.trim()) {
+                        // Extract category from ID by removing the prefix and converting hyphens back to spaces
+                        const idParts = textarea.id.split("-");
+                        if (idParts.length >= 3) {
+                            const categoryId = idParts.slice(2).join("-");
+                            const category = categoryId.replace(/-/g, " ");
+                            capturedComments[category] = textarea.value.trim();
+                            console.log(
+                                "[SaveSurvey] Captured comment for category:",
+                                category
+                            );
+                        }
+                    }
+                });
+
+                console.log(
+                    "[SaveSurvey] Directly captured",
+                    Object.keys(capturedComments).length,
+                    "specialist category comments from DOM"
+                );
+            } catch (error) {
+                console.error(
+                    "[SaveSurvey] Error capturing specialist category comments from DOM:",
+                    error
+                );
+            }
+        }
+
+        return capturedComments;
+    };
+
+    /**
+     * IMPROVED: Simplified function to sync comments before saving
+     * This directly calls component methods to force updates
+     */
+    const syncComponentStates = () => {
+        console.log("[SaveSurvey] Syncing component states before saving");
+
+        // Try to sync canopy comments using Area1Logic's method
+        let canopySynced = false;
+        if (
+            typeof window !== "undefined" &&
+            window.area1LogicInstance &&
+            typeof window.area1LogicInstance.syncCanopyComments === "function"
+        ) {
+            canopySynced = window.area1LogicInstance.syncCanopyComments();
+            console.log("[SaveSurvey] Canopy comments synced:", canopySynced);
+        }
+
+        // Try to sync equipment subcategory comments
+        let equipmentSynced = false;
+        if (
+            typeof window !== "undefined" &&
+            window.equipmentComponentInstance &&
+            typeof window.equipmentComponentInstance.syncSubcategoryComments ===
+                "function"
+        ) {
+            equipmentSynced =
+                window.equipmentComponentInstance.syncSubcategoryComments();
+            console.log(
+                "[SaveSurvey] Equipment comments synced:",
+                equipmentSynced
+            );
+        }
+
+        // Try to sync specialist equipment category comments
+        let specialistSynced = false;
+        if (
+            typeof window !== "undefined" &&
+            window.specialistEquipmentInstance &&
+            typeof window.specialistEquipmentInstance.syncChanges === "function"
+        ) {
+            specialistSynced = window.specialistEquipmentInstance.syncChanges();
+            console.log(
+                "[SaveSurvey] Specialist equipment category comments synced:",
+                specialistSynced
+            );
+        } else {
+            console.log(
+                "[SaveSurvey] No specialist equipment instance found for syncing"
+            );
+        }
+
+        // Try direct component access as fallback
+        if (
+            !canopySynced &&
+            typeof window !== "undefined" &&
+            window.canopyComponentInstance
+        ) {
+            if (
+                typeof window.canopyComponentInstance.forceUpdateComments ===
+                "function"
+            ) {
+                canopySynced =
+                    window.canopyComponentInstance.forceUpdateComments();
+                console.log(
+                    "[SaveSurvey] Canopy comments synced via direct component access:",
+                    canopySynced
+                );
+            }
+        }
+
+        // Increase delay to ensure updates have been processed
+        return new Promise((resolve) => setTimeout(resolve, 300));
+    };
+
+    /**
+     * Simplified save survey function with better comment handling
      */
     const handleSaveSurvey = async () => {
         // Protect against double submission
-        if (isSubmitting || isUploadingRef.current) {
-            console.log(
-                "[SaveSurvey] Already submitting or uploading - ignoring click"
-            );
+        if (isSubmitting) {
+            console.log("[SaveSurvey] Already submitting - ignoring click");
             return;
         }
 
@@ -1193,504 +1069,285 @@ export default function SaveSurvey({
         }
 
         setIsSubmitting(true);
-        isUploadingRef.current = true;
-
-        // Get images from surveyImagesRef to avoid the dependency in useEffect
-        const imagesToProcess = { ...surveyImagesRef.current };
-
-        // Count images by category for logging
-        Object.entries(imagesToProcess).forEach(([category, imgs]) => {
-            console.log(
-                `[SaveSurvey] Category ${category} has ${imgs.length} images`
-            );
-
-            // Check for file objects and pending uploads
-            const withFiles = imgs.filter((img) => !!img.file).length;
-            const pendingUploads = imgs.filter(
-                (img) => !!img.metadata?.pendingUpload
-            ).length;
-
-            console.log(`[SaveSurvey] Category ${category} status:`, {
-                totalImages: imgs.length,
-                imagesWithFiles: withFiles,
-                pendingUploads: pendingUploads,
-            });
-        });
-
-        // Process and upload images only if there are any to process
-        let processedImages = { ...imagesToProcess };
-
-        const siteName =
-            siteDetails?.name || siteDetails?.siteName || "unknown-site";
-        const cleanRef = refValue
-            ? refValue.replace(/[:/\\?*"|<>]/g, "-")
-            : "unknown";
-
-        console.log(
-            `[SaveSurvey] Using site name: ${siteName}, ref: ${cleanRef}`
-        );
 
         try {
-            // Use Promise.all to wait for ALL category uploads to complete
-            console.log(
-                "[SaveSurvey] Starting uploads for all categories with Promise.all"
+            // IMPROVED: Sync component states before proceeding
+            await syncComponentStates();
+
+            // Short pause to ensure all state updates have been processed
+            await new Promise((resolve) => setTimeout(resolve, 200));
+
+            // Extract site info for folder structure
+            const siteName =
+                siteDetails?.name || siteDetails?.siteName || "unknown-site";
+            const cleanRef = refValue
+                ? refValue.replace(/[:/\\?*"|<>]/g, "-")
+                : "unknown";
+
+            // 1. Upload all images that need uploading
+            const updatedImages = await uploadAllImages(
+                surveyImages,
+                siteName,
+                cleanRef
             );
 
-            // Track all upload promises in an array
-            const uploadPromises = [];
-            const categoryResults = {};
+            // 2. Extract the site ID properly for MongoDB reference
+            const siteId = siteDetails._id || siteDetails.id;
 
-            // For each category, create a promise for uploading all images
-            for (const category of Object.keys(processedImages)) {
-                if (
-                    processedImages[category] &&
-                    processedImages[category].length > 0
-                ) {
-                    console.log(
-                        `[SaveSurvey] Queueing ${processedImages[category].length} images for ${category}`
-                    );
-
-                    // Create a promise that uploads all images in this category
-                    // We'll resolve all these promises in parallel with Promise.all
-                    const categoryPromise = (async () => {
-                        toast.current.show({
-                            severity: "info",
-                            summary: `Uploading ${category} Images`,
-                            detail: `Starting upload of ${processedImages[category].length} images...`,
-                            life: 3000,
-                        });
-
-                        // Start the upload for this category
-                        const uploadedImages = await uploadImagesToCloudinary(
-                            processedImages[category],
-                            siteName,
-                            cleanRef,
-                            category
-                        );
-
-                        // Store the result for this category
-                        categoryResults[category] = uploadedImages;
-
-                        console.log(
-                            `[SaveSurvey] Completed ${uploadedImages.length} images for ${category}`
-                        );
-
-                        // Show category completion message
-                        toast.current.show({
-                            severity: "success",
-                            summary: `${category} Uploads Complete`,
-                            detail: `Uploaded ${
-                                uploadedImages.filter((img) => img.publicId)
-                                    .length
-                            } images to Cloudinary`,
-                            life: 3000,
-                        });
-
-                        return uploadedImages;
-                    })();
-
-                    // Add this category's promise to our array
-                    uploadPromises.push(categoryPromise);
-                }
-            }
-
-            // Wait for ALL category uploads to complete before proceeding
-            if (uploadPromises.length > 0) {
-                toast.current.show({
-                    severity: "info",
-                    summary: "Image Upload in Progress",
-                    detail: `Processing ${uploadPromises.length} categories of images for upload...`,
-                    life: 5000,
-                });
-
-                console.log(
-                    `[SaveSurvey] Waiting for ${uploadPromises.length} category uploads to complete...`
-                );
-
-                try {
-                    await Promise.all(uploadPromises);
-                    console.log(
-                        "[SaveSurvey] All category uploads completed successfully!"
-                    );
-
-                    toast.current.show({
-                        severity: "success",
-                        summary: "Image Upload Complete",
-                        detail: "All images have been successfully uploaded to Cloudinary!",
-                        life: 5000,
-                    });
-
-                    // Now update the processed images with results from all categories
-                    for (const [category, images] of Object.entries(
-                        categoryResults
-                    )) {
-                        processedImages[category] = images;
-                    }
-                } catch (uploadError) {
-                    console.error(
-                        "[SaveSurvey] Error during image uploads:",
-                        uploadError
-                    );
-                    toast.current.show({
-                        severity: "error",
-                        summary: "Upload Error",
-                        detail: "Some images failed to upload. Survey will save but some images may be missing.",
-                        life: 5000,
-                    });
-                }
-            } else {
-                console.log("[SaveSurvey] No images to upload");
-            }
-
-            console.log(
-                "[SaveSurvey] All images processed for Cloudinary upload"
-            );
-        } catch (error) {
-            console.error("[SaveSurvey] Error processing images:", error);
-            toast.current.show({
-                severity: "error",
-                summary: "Image Processing Error",
-                detail: "There was an error uploading images to Cloudinary. The survey will be saved without images.",
-                life: 5000,
-            });
-        } finally {
-            // Reset upload flag
-            isUploadingRef.current = false;
-        }
-
-        // Extract the site ID properly for MongoDB reference - handling both _id and id formats
-        const siteId = siteDetails._id || siteDetails.id;
-
-        // Compute main area totals separately without combining with duplicated areas
-        const mainTotals = {
-            structureTotal: structureTotal,
-            equipmentTotal: computedEquipmentTotal(), // computed from main area's surveyData
-            canopyTotal: canopyTotal,
-            accessDoorPrice: accessDoorPrice,
-            ventilationPrice: ventilationPrice,
-            airPrice: airPrice,
-            fanPartsPrice: fanPartsPrice,
-            airInExTotal: airInExTotal,
-            schematicItemsTotal: schematicItemsTotal,
-            modify: modify,
-            groupingId: selectedGroupId, // main area's groupingId
-        };
-
-        // Create a copy of contacts with the primary/walkAround flags set correctly
-        const processedContacts = contacts.map((contact, index) => {
-            return {
+            // 3. Process contacts with the primary/walkAround flags
+            const processedContacts = contacts.map((contact, index) => ({
                 ...contact,
                 isPrimaryContact: index === primaryContactIndex,
                 isWalkAroundContact: index === walkAroundContactIndex,
-            };
-        });
+            }));
 
-        // Create a processed copy of operations data
-        const processedOperations = { ...operations };
-
-        // Convert time string values to Date objects for MongoDB
-        if (processedOperations.operationalHours) {
-            // Process weekdays times
-            if (processedOperations.operationalHours.weekdays) {
-                const weekdays = processedOperations.operationalHours.weekdays;
-
-                if (weekdays.start) {
-                    // Create Date objects from time strings (HH:MM)
-                    const [hours, minutes] = weekdays.start
-                        .split(":")
-                        .map(Number);
-                    const startDate = new Date();
-                    startDate.setHours(hours, minutes, 0);
-                    weekdays.start = startDate;
-                }
-
-                if (weekdays.end) {
-                    const [hours, minutes] = weekdays.end
-                        .split(":")
-                        .map(Number);
-                    const endDate = new Date();
-                    endDate.setHours(hours, minutes, 0);
-                    weekdays.end = endDate;
-                }
-            }
-
-            // Process weekend times
-            if (processedOperations.operationalHours.weekend) {
-                const weekend = processedOperations.operationalHours.weekend;
-
-                if (weekend.start) {
-                    const [hours, minutes] = weekend.start
-                        .split(":")
-                        .map(Number);
-                    const startDate = new Date();
-                    startDate.setHours(hours, minutes, 0);
-                    weekend.start = startDate;
-                }
-
-                if (weekend.end) {
-                    const [hours, minutes] = weekend.end.split(":").map(Number);
-                    const endDate = new Date();
-                    endDate.setHours(hours, minutes, 0);
-                    weekend.end = endDate;
-                }
-            }
-        }
-
-        // Log placed items dimensions for verification
-        console.log(
-            "[SaveSurvey] Verifying dimensions on placedItems:",
-            placedItems.slice(0, 3).map((item) => ({
-                id: item.id,
-                name: item.name,
-                length: item.length || "none",
-                width: item.width || "none",
-                height: item.height || "none",
-            }))
-        );
-
-        // CRITICAL FIX: Add debug logging for notes fields
-        console.log("[SaveSurvey] Preparing to save with notes fields:", {
-            equipmentNotes: equipment?.notes,
-            specialistNotes: equipment?.specialistNotes,
-            // Show the first 20 chars for debugging
-            equipmentNotesPreview: equipment?.notes
-                ? equipment.notes.substring(0, 20) +
-                  (equipment.notes.length > 20 ? "..." : "")
-                : "none",
-            specialistNotesPreview: equipment?.specialistNotes
-                ? equipment.specialistNotes.substring(0, 20) +
-                  (equipment.specialistNotes.length > 20 ? "..." : "")
-                : "none",
-        });
-
-        // CRITICAL FIX: Extract equipment data with clear separation
-        // Make sure notes and comments fields are properly extracted and validated
-        const equipmentNotes = equipment?.notes || "";
-        const specialistNotes = equipment?.specialistNotes || "";
-        const subcategoryComments = equipment?.subcategoryComments || {};
-        const categoryComments = equipment?.categoryComments || {};
-
-        // CRITICAL FIX: Process duplicated areas to ensure each includes the equipment notes and comments properly separated
-        const processedAreasState = areasState.map((area) => {
-            return {
-                ...area,
-                // Ensure equipment notes and subcategory comments are included properly
-                equipmentNotes: area.equipmentNotes || "",
-                equipmentSubcategoryComments:
-                    area.equipmentSubcategoryComments || {},
-                // Ensure specialist equipment notes and category comments are separate
-                specialistNotes: area.specialistNotes || "",
-                categoryComments: area.categoryComments || {},
-            };
-        });
-
-        // ADDED: Validate and normalize structure selection data
-        const normalizedSelectionData = (structureSelectionData || []).map(
-            (item) => {
-                return {
+            // 4. Prepare normalized structure data
+            const normalizedSelectionData = (structureSelectionData || []).map(
+                (item) => ({
                     type: item.type || "",
-                    item: item.item || "", // Allow empty strings for MongoDB
+                    item: item.item || "",
                     grade: item.grade || "",
-                };
-            }
-        );
+                })
+            );
 
-        console.log(
-            "[SaveSurvey] Normalized selection data:",
-            normalizedSelectionData
-        );
+            const normalizedDimensions = {
+                length:
+                    structureDimensions?.length !== undefined
+                        ? Number(structureDimensions.length)
+                        : null,
+                width:
+                    structureDimensions?.width !== undefined
+                        ? Number(structureDimensions.width)
+                        : null,
+                height:
+                    structureDimensions?.height !== undefined
+                        ? Number(structureDimensions.height)
+                        : null,
+            };
 
-        // ADDED: Validate and normalize structure dimensions with explicit number conversion
-        const normalizedDimensions = {
-            length:
-                structureDimensions?.length !== undefined &&
-                structureDimensions?.length !== null
-                    ? Number(structureDimensions.length)
-                    : null,
-            width:
-                structureDimensions?.width !== undefined &&
-                structureDimensions?.width !== null
-                    ? Number(structureDimensions.width)
-                    : null,
-            height:
-                structureDimensions?.height !== undefined &&
-                structureDimensions?.height !== null
-                    ? Number(structureDimensions.height)
-                    : null,
-        };
+            // Log equipment and comments state before saving
+            console.log(
+                "[SaveSurvey] Equipment object at save time:",
+                equipment ? "present" : "missing",
+                equipment?.subcategoryComments
+                    ? `with ${
+                          Object.keys(equipment.subcategoryComments).length
+                      } comments`
+                    : "WITHOUT subcategoryComments"
+            );
 
-        console.log(
-            "[SaveSurvey] Normalized dimensions:",
-            normalizedDimensions
-        );
+            console.log(
+                "[SaveSurvey] Canopy comments at save time:",
+                canopyComments
+                    ? `${Object.keys(canopyComments).length} comments`
+                    : "None"
+            );
 
-        // CRITICAL FIX: Create comprehensive survey payload with correct separation
-        const surveyPayload = {
-            // Basic info
-            refValue: refValue,
-            surveyDate: surveyDate,
-            site: { _id: siteId }, // Format site reference as object with _id property
+            // IMPROVED: Direct capture of equipment comments from DOM
+            const domCapturedComments = captureEquipmentCommentsFromDOM();
 
-            // Contacts - use the processed contacts with flags
-            contacts: processedContacts,
+            // NEW: Direct capture of specialist category comments from DOM
+            const domCapturedSpecialistComments =
+                captureSpecialistCategoryCommentsFromDOM();
 
-            // Site sections - Use dedicated parking field
-            general: {
-                surveyType:
-                    processedOperations.typeOfCooking || "Kitchen Deep Clean",
-                parking: parking || "",
-                dbs: access.dbs || "Not Required",
-                permit: access.permit || "No",
-            },
+            // Create a final subcategoryComments object with prioritized sources
+            const finalSubcategoryComments = {
+                // Start with any existing comments from equipment object
+                ...(equipment?.subcategoryComments || {}),
+                // Add any comments captured from DOM (these will override if keys match)
+                ...domCapturedComments,
+            };
 
-            // Store all images in the top-level images field
-            images: processedImages,
+            // NEW: Create a final specialist categoryComments object with prioritized sources
+            const finalSpecialistCategoryComments = {
+                // Start with any existing comments from equipment object
+                ...(equipment?.categoryComments || {}),
+                // Add any comments captured from DOM (these will override if keys match)
+                ...domCapturedSpecialistComments,
+            };
 
-            // Section data with FIXED normalized structure dimensions and selection data
-            structure: {
-                structureId,
-                structureTotal,
-                selectionData: normalizedSelectionData,
-                dimensions: normalizedDimensions,
-                structureComments: structureComments || "",
-            },
+            console.log(
+                "[SaveSurvey] Final subcategoryComments for saving:",
+                Object.keys(finalSubcategoryComments).length > 0
+                    ? `${Object.keys(finalSubcategoryComments).length} comments`
+                    : "Empty object"
+            );
 
-            // CRITICAL FIX: Include subcategoryComments in the equipmentSurvey section with regular equipment notes
-            equipmentSurvey: {
-                entries: surveyData,
-                subcategoryComments: subcategoryComments,
-                notes: equipmentNotes, // Use separate variable for regular equipment notes
-            },
+            console.log(
+                "[SaveSurvey] Final specialist categoryComments for saving:",
+                Object.keys(finalSpecialistCategoryComments).length > 0
+                    ? `${
+                          Object.keys(finalSpecialistCategoryComments).length
+                      } comments`
+                    : "Empty object"
+            );
 
-            // CRITICAL FIX: Include categoryComments in the specialistEquipmentSurvey section with specialist notes
-            specialistEquipmentSurvey: {
-                entries: specialistEquipmentData,
-                categoryComments: categoryComments,
-                notes: specialistNotes, // Use separate variable for specialist equipment notes
-            },
+            // 5. Create the survey payload with simplified structure
+            const surveyPayload = {
+                // Basic info
+                refValue: refValue,
+                surveyDate: surveyDate,
+                site: { _id: siteId },
+                contacts: processedContacts,
 
-            canopySurvey: {
-                entries:
-                    canopyEntries && canopyEntries.length > 0
-                        ? canopyEntries
-                        : canopyTotal
-                        ? [{ canopyTotal }]
-                        : [],
-            },
-            schematic: {
-                // Pricing data
-                accessDoorPrice,
-                ventilationPrice,
-                airPrice,
-                fanPartsPrice,
-                airInExTotal,
-                schematicItemsTotal,
-                selectedGroupId,
+                // General info
+                general: {
+                    surveyType:
+                        operations.typeOfCooking || "Kitchen Deep Clean",
+                    parking: parking || "",
+                    dbs: access.dbs || "Not Required",
+                    permit: access.permit || "No",
+                },
 
-                // Canvas configuration
-                gridSpaces: gridSpaces,
-                cellSize: cellSize,
+                // Images in standardized format - just publicId and category
+                images: {
+                    Structure: updatedImages.Structure.map((img) => ({
+                        publicId: img.publicId,
+                        url: img.url,
+                        category: "Structure",
+                    })).filter((img) => img.publicId),
 
-                // Save full collections of selections
-                accessDoorSelections: accessDoorSelections,
-                flexiDuctSelections: flexiDuctSelections,
-                fanGradeSelections: fanGradeSelections,
+                    Equipment: updatedImages.Equipment.map((img) => ({
+                        publicId: img.publicId,
+                        url: img.url,
+                        category: "Equipment",
+                    })).filter((img) => img.publicId),
 
-                // MODIFIED: Pass placedItems directly with their dimensions
-                // No need for separate groupDimensions anymore
-                placedItems: placedItems,
-                specialItems: specialItems,
-            },
+                    Canopy: updatedImages.Canopy.map((img) => ({
+                        publicId: img.publicId,
+                        url: img.url,
+                        category: "Canopy",
+                    })).filter((img) => img.publicId),
 
-            // Form sections
-            ventilationInfo: {
-                ...ventilation,
-                accessLocations: ventilation.accessLocations || [],
-            },
-            access: access,
+                    Ventilation: updatedImages.Ventilation.map((img) => ({
+                        publicId: img.publicId,
+                        url: img.url,
+                        category: "Ventilation",
+                    })).filter((img) => img.publicId),
+                },
 
-            // CRITICAL FIX: Use separate fields for specialistEquipment section
-            specialistEquipment: {
-                // Include basic toggle fields
-                acroPropsToggle: equipment?.acroPropsToggle || "No",
-                loftBoardsToggle: equipment?.loftBoardsToggle || "No",
-                scaffBoardsToggle: equipment?.scaffBoardsToggle || "No",
-                laddersToggle: equipment?.laddersToggle || "No",
-                mobileScaffoldTower: equipment?.mobileScaffoldTower || "No",
-                flexiHose: equipment?.flexiHose || "No",
-                flexiHoseCircumference: equipment?.flexiHoseCircumference || "",
-                flexiHoseLength: equipment?.flexiHoseLength || "",
-                mewp: equipment?.mewp || "No",
-                // Use the specialist notes, not regular equipment notes
-                notes: specialistNotes,
-                // Include category comments
-                categoryComments: categoryComments,
-            },
+                // Section data
+                structure: {
+                    structureId,
+                    structureTotal,
+                    selectionData: normalizedSelectionData,
+                    dimensions: normalizedDimensions,
+                    structureComments: structureComments || "",
+                },
 
-            operations: processedOperations, // operations no longer contains parking
-            notes: notes, // The notes object should already have obstructions as an array
+                // IMPROVED: Use finalSubcategoryComments that combines state and DOM captures
+                equipmentSurvey: {
+                    entries: surveyData,
+                    subcategoryComments: finalSubcategoryComments,
+                },
 
-            // CRITICAL FIX: Updated areas state with proper equipment data separation
-            // Areas and totals - include updated area state with correctly separated fields
-            totals: {
-                mainArea: mainTotals,
-                duplicatedAreas: processedAreasState, // Use processed areas with proper field separation
-                grandTotal: computedGrandTotals(), // Grand total for all areas
-                modify: modify,
-            },
-            duplicatedAreas: processedAreasState, // Use processed areas with proper field separation
-        };
+                // IMPROVED: Use finalSpecialistCategoryComments that combines state and DOM captures
+                specialistEquipmentSurvey: {
+                    entries: specialistEquipmentData,
+                    categoryComments: finalSpecialistCategoryComments,
+                },
 
-        // Fix the type issues with schematicItemsTotal without logging the large payloads
-        if (typeof surveyPayload.schematic.schematicItemsTotal === "object") {
-            surveyPayload.schematic.schematicItemsTotal =
-                surveyPayload.schematic.schematicItemsTotal.overall || 0;
-        }
+                // IMPROVED: Use current canopyComments state directly
+                canopySurvey: {
+                    entries:
+                        canopyEntries && canopyEntries.length > 0
+                            ? canopyEntries
+                            : canopyTotal
+                            ? [{ canopyTotal }]
+                            : [],
+                    comments: canopyComments || {}, // Use current state
+                },
 
-        if (
-            typeof surveyPayload.totals.mainArea.schematicItemsTotal ===
-            "object"
-        ) {
-            surveyPayload.totals.mainArea.schematicItemsTotal =
-                surveyPayload.totals.mainArea.schematicItemsTotal.overall || 0;
-        }
+                schematic: {
+                    accessDoorPrice,
+                    ventilationPrice,
+                    airPrice,
+                    fanPartsPrice,
+                    airInExTotal,
+                    schematicItemsTotal:
+                        typeof schematicItemsTotal === "object"
+                            ? schematicItemsTotal.overall || 0
+                            : schematicItemsTotal,
+                    selectedGroupId,
+                    gridSpaces,
+                    cellSize,
+                    accessDoorSelections,
+                    flexiDuctSelections,
+                    fanGradeSelections,
+                    placedItems,
+                    specialItems,
+                },
 
-        // Ensure grandTotal has numeric values
-        if (surveyPayload.totals.grandTotal) {
-            if (
-                typeof surveyPayload.totals.grandTotal.schematicItemsTotal ===
-                "object"
-            ) {
-                surveyPayload.totals.grandTotal.schematicItemsTotal =
-                    surveyPayload.totals.grandTotal.schematicItemsTotal
-                        .overall || 0;
-            } else if (
-                typeof surveyPayload.totals.grandTotal.schematicItemsTotal ===
-                "string"
-            ) {
-                // Handle string representation of object
-                if (
-                    surveyPayload.totals.grandTotal.schematicItemsTotal.includes(
-                        "[object Object]"
-                    )
-                ) {
-                    surveyPayload.totals.grandTotal.schematicItemsTotal = 0;
-                } else {
-                    surveyPayload.totals.grandTotal.schematicItemsTotal =
-                        Number(
-                            surveyPayload.totals.grandTotal.schematicItemsTotal
-                        ) || 0;
-                }
-            }
-        }
+                // Form sections
+                ventilationInfo: {
+                    ...ventilation,
+                    accessLocations: ventilation.accessLocations || [],
+                },
+                access: access,
 
-        // ADDED: Log the final structure data being saved
-        console.log("[SaveSurvey] Final structure data being saved:", {
-            selectionData: surveyPayload.structure.selectionData,
-            dimensions: surveyPayload.structure.dimensions,
-        });
+                specialistEquipment: {
+                    acroPropsToggle: equipment?.acroPropsToggle || "No",
+                    loftBoardsToggle: equipment?.loftBoardsToggle || "No",
+                    scaffBoardsToggle: equipment?.scaffBoardsToggle || "No",
+                    laddersToggle: equipment?.laddersToggle || "No",
+                    mobileScaffoldTower: equipment?.mobileScaffoldTower || "No",
+                    flexiHose: equipment?.flexiHose || "No",
+                    flexiHoseCircumference:
+                        equipment?.flexiHoseCircumference || "",
+                    flexiHoseLength: equipment?.flexiHoseLength || "",
+                    mewp: equipment?.mewp || "No",
+                    // Store category comments in the specialistEquipment section too
+                    categoryComments: finalSpecialistCategoryComments,
+                },
 
-        try {
+                operations: operations,
+                notes: notes,
+
+                // Areas and totals
+                totals: {
+                    mainArea: {
+                        structureTotal,
+                        equipmentTotal: computedEquipmentTotal(),
+                        canopyTotal,
+                        accessDoorPrice,
+                        ventilationPrice,
+                        airPrice,
+                        fanPartsPrice,
+                        airInExTotal,
+                        schematicItemsTotal:
+                            typeof schematicItemsTotal === "object"
+                                ? schematicItemsTotal.overall || 0
+                                : schematicItemsTotal,
+                        modify,
+                        groupingId: selectedGroupId,
+                    },
+                    duplicatedAreas: areasState,
+                    grandTotal: computedGrandTotals(),
+                    modify: modify,
+                },
+                duplicatedAreas: areasState,
+            };
+
+            // Log critical parts of the payload
+            console.log("[SaveSurvey] Final payload structure:", {
+                hasEquipmentSurvey: !!surveyPayload.equipmentSurvey,
+                hasSubcategoryComments:
+                    !!surveyPayload.equipmentSurvey?.subcategoryComments,
+                subcategoryCommentsCount: Object.keys(
+                    surveyPayload.equipmentSurvey?.subcategoryComments || {}
+                ).length,
+                hasCanopyComments: !!surveyPayload.canopySurvey?.comments,
+                canopyCommentsCount: Object.keys(
+                    surveyPayload.canopySurvey?.comments || {}
+                ).length,
+                hasSpecialistCategoryComments:
+                    Object.keys(
+                        surveyPayload.specialistEquipmentSurvey
+                            .categoryComments || {}
+                    ).length > 0,
+            });
+
+            // 6. Save the survey
             let res;
             // If editing existing, use PUT; otherwise POST
             if (surveyId) {
@@ -1721,89 +1378,44 @@ export default function SaveSurvey({
                         : "Survey saved successfully!",
                 });
 
-                // Automatically generate quote for the saved survey without nested function calls
+                // Generate quote
                 if (json.data && (json.data._id || json.data.id)) {
                     const savedId = json.data._id || json.data.id;
                     console.log(
-                        `[SaveSurvey] Survey saved with ID: ${savedId}, DIRECT call to generate quote`
-                    );
-                    console.log(
-                        `[SaveSurvey] SINGLE GENERATION - TIMESTAMP: ${new Date().toISOString()}`
+                        `[SaveSurvey] Survey saved with ID: ${savedId}`
                     );
 
-                    // IMPROVED: Use a timer to delay quote generation to avoid race conditions
-                    // Clear any existing timer
+                    // Use a timer to delay quote generation
                     if (quoteGenerationTimerRef.current) {
                         clearTimeout(quoteGenerationTimerRef.current);
                     }
 
-                    // Set a new timer
                     quoteGenerationTimerRef.current = setTimeout(async () => {
                         try {
                             await generateQuote(savedId);
-                            console.log(
-                                `[SaveSurvey] Quote generated successfully for survey: ${savedId}`
-                            );
                         } catch (quoteError) {
                             console.error(
-                                "[SaveSurvey] ERROR IN DIRECT QUOTE GENERATION:",
+                                "[SaveSurvey] Error generating quote:",
                                 quoteError
                             );
-                            window.__inProgressQuoteGeneration = false; // Ensure flag is reset on error
                         }
-                    }, 500); // 500ms delay to ensure server has processed the survey save
+                    }, 500);
                 }
 
-                console.log(
-                    `[SaveSurvey] TIMESTAMP BEFORE REDIRECT: ${new Date().toISOString()}`
-                );
-
-                // Add longer delay to ensure uploads have time to complete
-                // and user can see confirmation messages
-                toast.current.show({
-                    severity: "success",
-                    summary: "Save Complete",
-                    detail: "Survey saved successfully and all uploads completed!",
-                    life: 5000,
-                });
-
-                // Redirect back to site page or surveys list after delay
-                if (siteDetails && siteDetails._id) {
-                    console.log(
-                        `[SaveSurvey] Will redirect to site page after delay: /database/clients/site/${siteDetails._id}`
-                    );
-
-                    // Use a longer timeout to ensure uploads completely finish and user sees success messages
-                    setTimeout(() => {
+                // Redirect after a delay
+                setTimeout(() => {
+                    if (siteDetails && siteDetails._id) {
                         router.push(
                             `/database/clients/site/${siteDetails._id}`
                         );
-                    }, 3000); // Increased to 3 seconds to ensure uploads complete
-                } else {
-                    console.log(
-                        "[SaveSurvey] Will redirect to surveys list after delay"
-                    );
-
-                    // Use a longer timeout to ensure uploads completely finish and user sees success messages
-                    setTimeout(() => {
+                    } else {
                         router.push("/surveys");
-                    }, 3000); // Increased to 3 seconds to ensure uploads complete
-                }
+                    }
+                }, 3000);
             } else {
-                // Enhanced error handling to show validation errors
-                console.error("[SaveSurvey] API Error Response:", json);
-                if (json.errors) {
-                    console.error(
-                        "[SaveSurvey] Validation errors:",
-                        json.errors
-                    );
-                    const errorDetails = Object.entries(json.errors)
-                        .map(([field, message]) => `${field}: ${message}`)
-                        .join(", ");
-                    throw new Error(`Validation error: ${errorDetails}`);
-                } else {
-                    throw new Error(json.message || "Failed to save survey");
-                }
+                // Enhanced error handling
+                console.error("[SaveSurvey] API Error:", json);
+                throw new Error(json.message || "Failed to save survey");
             }
         } catch (error) {
             console.error("[SaveSurvey] Error saving survey:", error);
@@ -1814,12 +1426,52 @@ export default function SaveSurvey({
             });
         } finally {
             setIsSubmitting(false);
+            setUploadProgress({
+                active: false,
+                total: 0,
+                completed: 0,
+                message: "",
+            });
         }
     };
 
     return (
         <>
             <Toast ref={toast} />
+
+            {/* Upload progress indicator */}
+            {uploadProgress.active && (
+                <div
+                    style={{
+                        position: "fixed",
+                        top: "70px",
+                        left: "50%",
+                        transform: "translateX(-50%)",
+                        width: "60%",
+                        backgroundColor: "white",
+                        padding: "1rem",
+                        borderRadius: "8px",
+                        boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+                        zIndex: 1001,
+                    }}
+                >
+                    <h3>Uploading Images</h3>
+                    <p>{uploadProgress.message}</p>
+                    <ProgressBar
+                        value={
+                            (uploadProgress.completed / uploadProgress.total) *
+                            100
+                        }
+                        style={{ height: "20px" }}
+                    />
+                    <p>
+                        {uploadProgress.completed} of {uploadProgress.total}{" "}
+                        complete
+                    </p>
+                </div>
+            )}
+
+            {/* Save button */}
             <div
                 style={{
                     position: "fixed",
@@ -1840,11 +1492,12 @@ export default function SaveSurvey({
                         color: "#fff",
                         border: "none",
                         borderRadius: "4px",
-                        cursor: "pointer",
+                        cursor: isSubmitting ? "not-allowed" : "pointer",
                         transition: "background-color 0.2s ease",
                         display: "flex",
                         alignItems: "center",
                         gap: "0.5rem",
+                        opacity: isSubmitting ? 0.7 : 1,
                     }}
                 >
                     {isSubmitting && (

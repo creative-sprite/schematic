@@ -2,9 +2,9 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { Button } from "primereact/button"; // Button component for remove actions
-import { InputTextarea } from "primereact/inputtextarea"; // InputTextarea component for comment boxes
 import { Card } from "primereact/card"; // Card component for better display
 import { Divider } from "primereact/divider"; // Divider for visual separation
+import SpecialistCommentTextarea from "./SpecialistCommentTextarea"; // Import the specialist comment component
 
 // Helper function to group entries by category
 const groupByCategory = (entries) => {
@@ -27,29 +27,22 @@ export default function SpecialistEquipmentList(props) {
         onCategoryCommentsChange, // Callback for saving comments
     } = props;
 
-    // State to store comments per category
-    const [comments, setComments] = useState(initialCategoryComments || {});
+    // State to store comments per category - simplified approach
+    const [comments, setComments] = useState({});
     // Store complete custom field objects keyed by ID
     const [customFields, setCustomFields] = useState({});
     const [loadingFields, setLoadingFields] = useState(false);
 
-    // Add refs to prevent repeated fetches and track component lifecycle
-    const didFetchCustomFieldsRef = useRef(false);
-    const fetchErrorRef = useRef(false);
+    // Debug ref to track comments updates
+    const commentsDebugRef = useRef({
+        lastUpdate: Date.now(),
+        count: 0,
+    });
+
+    // Simplified refs - only track mount status for cleanup
     const isMountedRef = useRef(true);
-
-    // ADDED: Ref to track category comments update status
-    const updatingCommentsRef = useRef(false);
-    const prevCommentsRef = useRef({});
-
-    // Helper function to check if a comment field has data
-    const commentHasData = (category) => {
-        return (
-            comments[category] !== undefined &&
-            comments[category] !== null &&
-            comments[category] !== ""
-        );
-    };
+    const fetchErrorRef = useRef(false);
+    const didFetchCustomFieldsRef = useRef(false);
 
     // Cleanup on unmount
     useEffect(() => {
@@ -58,27 +51,41 @@ export default function SpecialistEquipmentList(props) {
         };
     }, []);
 
-    // Initialize comments from saved data if provided
+    // IMPROVED: Initialize comments from initial props and keep synced with updates
     useEffect(() => {
-        // FIXED: Skip if already updating to prevent circular updates
-        if (updatingCommentsRef.current) return;
-
-        // Only update if there's an actual change
+        // Only update if we have comments data and it's different from current
         if (
             initialCategoryComments &&
-            Object.keys(initialCategoryComments).length > 0 &&
-            JSON.stringify(initialCategoryComments) !==
-                JSON.stringify(prevCommentsRef.current)
+            Object.keys(initialCategoryComments).length > 0
         ) {
-            console.log(
-                "Loading category comments in SpecialistEquipmentList:",
-                initialCategoryComments
-            );
-            // Update tracking refs
-            prevCommentsRef.current = { ...initialCategoryComments };
-            setComments(initialCategoryComments);
+            const currentKeys = Object.keys(comments);
+            const incomingKeys = Object.keys(initialCategoryComments);
+
+            // Check if different keys or values
+            const needsUpdate =
+                currentKeys.length !== incomingKeys.length ||
+                incomingKeys.some(
+                    (key) => comments[key] !== initialCategoryComments[key]
+                );
+
+            if (needsUpdate) {
+                console.log(
+                    "SpecialistEquipmentList: Updating comments from props:",
+                    Object.keys(initialCategoryComments).length,
+                    "comments"
+                );
+
+                // Update debug tracking
+                commentsDebugRef.current = {
+                    lastUpdate: Date.now(),
+                    count: commentsDebugRef.current.count + 1,
+                };
+
+                // Set the comments state with the new data
+                setComments({ ...initialCategoryComments });
+            }
         }
-    }, [initialCategoryComments]);
+    }, [initialCategoryComments]); // FIXED: Only depend on initialCategoryComments, not comments
 
     // Fetch custom fields to map fieldId to all field properties including prefix/suffix
     useEffect(() => {
@@ -172,7 +179,48 @@ export default function SpecialistEquipmentList(props) {
         }
     };
 
-    // Render entry function - NOT using useCallback
+    // Enhanced comment change handler with better logging and structure
+    const handleCommentChange = (id, value) => {
+        // Extract category from comment ID
+        const idParts = id.split("-");
+        if (idParts.length >= 3) {
+            const categoryId = idParts.slice(2).join("-");
+            const category = categoryId.replace(/-/g, " ");
+
+            // Log the change
+            console.log(
+                `SpecialistEquipmentList: Comment changed for "${category}":`,
+                value.length > 20 ? value.slice(0, 20) + "..." : value
+            );
+
+            // Create new comments object with updated value
+            const newComments = {
+                ...comments,
+                [category]: value,
+            };
+
+            // Update local state first for immediate feedback
+            setComments(newComments);
+
+            // Also update debug reference
+            commentsDebugRef.current = {
+                lastUpdate: Date.now(),
+                count: commentsDebugRef.current.count + 1,
+            };
+
+            // Notify parent with all comments
+            if (typeof onCategoryCommentsChange === "function") {
+                onCategoryCommentsChange(newComments);
+            }
+        } else {
+            console.warn(
+                "SpecialistEquipmentList: Invalid comment ID format:",
+                id
+            );
+        }
+    };
+
+    // Render entry function
     const renderEntry = (entry) => {
         const isDimension = entry.length || entry.width || entry.height;
 
@@ -358,109 +406,47 @@ export default function SpecialistEquipmentList(props) {
         );
     };
 
-    // FIXED: Updated section rendering function with better debugging
+    // Improved section rendering with better category comment handling
     const renderSection = (entries, type) => {
         const grouped = groupByCategory(entries);
 
-        // ADDED: Better debug logging for categories and comments
         console.log(
             "Rendering sections with categories:",
-            Object.keys(grouped),
-            "Comments available:",
-            Object.keys(comments)
+            Object.keys(grouped)
         );
 
-        return Object.keys(grouped).map((category) => (
-            <div key={category} style={{ marginBottom: "2rem" }}>
-                <h2
-                    id={`category-${category
-                        .replace(/\s+/g, "-")
-                        .toLowerCase()}`}
-                >
-                    {category}
-                </h2>
-                <Divider />
+        return Object.keys(grouped).map((category) => {
+            // Generate a safe category ID for DOM elements
+            const categoryId = category.replace(/\s+/g, "-").toLowerCase();
 
-                {grouped[category].map((entry) => renderEntry(entry))}
+            // FIXED: Get the comment value for this category - check all case variations
+            const commentValue =
+                comments[category] ||
+                comments[category.toLowerCase()] ||
+                comments[category.toUpperCase()] ||
+                "";
 
-                {/* Comment box for the category */}
-                <div className="field">
-                    <label
-                        htmlFor={`category-comment-${category
-                            .replace(/\s+/g, "-")
-                            .toLowerCase()}`}
-                        className="block"
-                    >
-                        Comments for {category}
-                    </label>
-                    {/* ADDED: Debug value display to check what's coming from state */}
-                    {/* <div style={{fontSize: '10px', color: 'gray'}}>
-                        Debug: Comments value: "{comments[category] || ""}"
-                    </div> */}
-                    <InputTextarea
-                        id={`category-comment-${category
-                            .replace(/\s+/g, "-")
-                            .toLowerCase()}`}
-                        name={`category-comment-${category
-                            .replace(/\s+/g, "-")
-                            .toLowerCase()}`}
-                        value={comments[category] || ""}
-                        onChange={(e) => {
-                            const newValue = e.target.value;
+            // Create the textarea ID that matches the pattern in SaveSurvey.jsx
+            const textareaId = `category-comment-${categoryId}`;
 
-                            // ADDED: Skip if no actual change
-                            if (newValue === comments[category]) {
-                                return;
-                            }
+            return (
+                <div key={category} style={{ marginBottom: "2rem" }}>
+                    <h2 id={`category-${categoryId}`}>{category}</h2>
+                    <Divider />
 
-                            // Create new comments object with the updated value
-                            const newComments = {
-                                ...comments,
-                                [category]: newValue,
-                            };
+                    {grouped[category].map((entry) => renderEntry(entry))}
 
-                            // ADDED: Set update flag to prevent circular updates
-                            updatingCommentsRef.current = true;
-
-                            // Update local state
-                            setComments(newComments);
-
-                            // Update tracking reference
-                            prevCommentsRef.current = newComments;
-
-                            // Notify parent component
-                            if (
-                                typeof onCategoryCommentsChange === "function"
-                            ) {
-                                console.log(
-                                    "Category comment changed:",
-                                    category,
-                                    newValue.slice(0, 20) +
-                                        (newValue.length > 20 ? "..." : "")
-                                );
-                                onCategoryCommentsChange(newComments);
-                            }
-
-                            // Reset flag after a short delay
-                            setTimeout(() => {
-                                updatingCommentsRef.current = false;
-                            }, 0);
-                        }}
-                        autoResize
-                        rows={3}
-                        style={{
-                            width: "100%",
-                            marginTop: "0.5rem",
-                            border: commentHasData(category)
-                                ? "1px solid var(--primary-color)"
-                                : "",
-                        }}
+                    {/* Use the SpecialistCommentTextarea component with careful ID matching */}
+                    <SpecialistCommentTextarea
+                        id={textareaId}
+                        value={commentValue}
+                        onChange={handleCommentChange}
+                        label={`Comments for ${category}`}
                         placeholder={`Add comment for ${category}...`}
-                        aria-label={`Comments for ${category}`}
                     />
                 </div>
-            </div>
-        ));
+            );
+        });
     };
 
     // Get entries by type
@@ -468,7 +454,7 @@ export default function SpecialistEquipmentList(props) {
     const areaEntries = getEntriesByType(surveyList, "area");
     const normalEntries = getEntriesByType(surveyList, "normal");
 
-    // Filter entries by type - NOT using useCallback
+    // Filter entries by type
     function getEntriesByType(entries, type) {
         if (type === "volume") {
             return entries.filter((entry) => isVolumeItem(entry.item));
@@ -485,10 +471,6 @@ export default function SpecialistEquipmentList(props) {
     return (
         <div className="mt-4">
             <h2 id="selected-items-heading">Selected Items</h2>
-            {/* ADDED: Better debug info for comments */}
-            {/* <div style={{fontSize: '10px', color: 'gray', marginBottom: '10px'}}>
-                Debug: Loaded comments: {JSON.stringify(comments)}
-            </div> */}
             {volumeEntries.length > 0 && renderSection(volumeEntries, "volume")}
             {areaEntries.length > 0 && renderSection(areaEntries, "area")}
             {normalEntries.length > 0 && renderSection(normalEntries, "normal")}

@@ -39,13 +39,13 @@ export default function SurveyForm() {
     // ADDED: Track initialized state to prevent unnecessary updates
     const initializedRef = useRef(false);
 
-    // ADDED: Refs to track update status and prevent circular updates
+    // ADDED: Refs to track update status and prevent circular updates for elements
+    // that still need protection
     const updatingSurveyDataRef = useRef(false);
     const updatingSpecialistEquipmentRef = useRef(false);
     const updatingStructureTotalRef = useRef(false);
     const updatingCanopyTotalRef = useRef(false);
-    const updatingSchematicRef = useRef(false);
-    const updatingEquipmentRef = useRef(false);
+    // REMOVED updatingEquipmentRef - no longer needed
     const updatingAccessRef = useRef(false);
     const updatingVentilationRef = useRef(false);
     const updatingNotesRef = useRef(false);
@@ -56,8 +56,7 @@ export default function SurveyForm() {
     const prevSpecialistEquipmentRef = useRef([]);
     const prevStructureTotalRef = useRef(0);
     const prevCanopyTotalRef = useRef(0);
-    const prevSchematicRef = useRef({});
-    const prevEquipmentRef = useRef({});
+    // REMOVED prevEquipmentRef - no longer needed
     const prevAccessRef = useRef({});
     const prevVentilationRef = useRef({});
     const prevNotesRef = useRef({});
@@ -95,6 +94,8 @@ export default function SurveyForm() {
         setSpecialistEquipmentData,
         specialistEquipmentId,
         setSpecialistEquipmentId,
+        // NEW: Get the initialSpecialistEquipmentSurvey object
+        initialSpecialistEquipmentSurvey,
 
         // Structure data
         structureTotal,
@@ -110,6 +111,8 @@ export default function SurveyForm() {
         setCanopyTotal,
         canopyEntries,
         setCanopyEntries,
+        canopyComments,
+        setCanopyComments,
 
         // Schematic costs
         accessDoorPrice,
@@ -190,6 +193,21 @@ export default function SurveyForm() {
         setWalkAroundContactIndex,
     } = useSurveyDataLoader(surveyId, siteIdParam, toast);
 
+    // Debug the initialSpecialistEquipmentSurvey data to confirm we're getting it
+    useEffect(() => {
+        if (initialSpecialistEquipmentSurvey?.categoryComments) {
+            console.log(
+                "Page: Loaded specialist category comments:",
+                Object.keys(initialSpecialistEquipmentSurvey.categoryComments)
+                    .length,
+                "items",
+                JSON.stringify(
+                    initialSpecialistEquipmentSurvey.categoryComments
+                )
+            );
+        }
+    }, [initialSpecialistEquipmentSurvey]);
+
     // Create area refs whenever the areas array changes
     React.useEffect(() => {
         // Create refs for each area
@@ -204,19 +222,10 @@ export default function SurveyForm() {
             prevSpecialistEquipmentRef.current = [...specialistEquipmentData];
             prevStructureTotalRef.current = structureTotal;
             prevCanopyTotalRef.current = canopyTotal;
-            prevEquipmentRef.current = equipment ? { ...equipment } : {};
             prevAccessRef.current = access ? { ...access } : {};
             prevVentilationRef.current = ventilation ? { ...ventilation } : {};
             prevNotesRef.current = notes ? { ...notes } : {};
             prevOperationsRef.current = operations ? { ...operations } : {};
-            prevSchematicRef.current = {
-                accessDoorPrice,
-                ventilationPrice,
-                airPrice,
-                fanPartsPrice,
-                airInExTotal,
-                schematicItemsTotal,
-            };
             prevAreasStateRef.current = [...areasState];
 
             initializedRef.current = true;
@@ -227,17 +236,10 @@ export default function SurveyForm() {
         specialistEquipmentData,
         structureTotal,
         canopyTotal,
-        equipment,
         access,
         ventilation,
         notes,
         operations,
-        accessDoorPrice,
-        ventilationPrice,
-        airPrice,
-        fanPartsPrice,
-        airInExTotal,
-        schematicItemsTotal,
         areasState,
     ]);
 
@@ -375,33 +377,53 @@ export default function SurveyForm() {
         }, 0);
     };
 
-    // Safe setter for equipment
+    // SIMPLIFIED: Direct canopy comments handler with no circular update protection
+    const handleCanopyCommentsChange = (comments) => {
+        // Simply update the state directly - no circular protection needed
+        setCanopyComments(comments);
+    };
+
+    // IMPROVED: Equipment change handler with special handling for categoryComments
     const handleEquipmentChange = (newEquipment) => {
-        // Skip if already updating
-        if (updatingEquipmentRef.current) {
-            return;
-        }
+        console.log(
+            "Page: Received equipment update:",
+            Object.keys(newEquipment).join(", ")
+        );
 
-        // Skip if no actual change
-        const newEquipStr = JSON.stringify(newEquipment);
-        const prevEquipStr = JSON.stringify(prevEquipmentRef.current);
-        if (newEquipStr === prevEquipStr) {
-            return;
-        }
+        // Direct state update that preserves all fields
+        setEquipment((prev) => {
+            // Create a new object to avoid mutation
+            const updatedEquipment = { ...prev };
 
-        // Set flag to prevent circular updates
-        updatingEquipmentRef.current = true;
+            // Copy all properties from newEquipment to updatedEquipment
+            Object.keys(newEquipment).forEach((key) => {
+                updatedEquipment[key] = newEquipment[key];
+            });
 
-        // Update reference
-        prevEquipmentRef.current = JSON.parse(newEquipStr);
+            // Special handling for subcategoryComments
+            if (newEquipment.subcategoryComments) {
+                console.log(
+                    "Page: Updating subcategoryComments with",
+                    Object.keys(newEquipment.subcategoryComments).length,
+                    "entries"
+                );
+                updatedEquipment.subcategoryComments =
+                    newEquipment.subcategoryComments;
+            }
 
-        // Update state
-        setEquipment(newEquipment);
+            // Special handling for categoryComments
+            if (newEquipment.categoryComments) {
+                console.log(
+                    "Page: Updating categoryComments with",
+                    Object.keys(newEquipment.categoryComments).length,
+                    "entries"
+                );
+                updatedEquipment.categoryComments =
+                    newEquipment.categoryComments;
+            }
 
-        // Reset flag after a short delay
-        setTimeout(() => {
-            updatingEquipmentRef.current = false;
-        }, 0);
+            return updatedEquipment;
+        });
     };
 
     // Safe setter for areas state
@@ -592,6 +614,8 @@ export default function SurveyForm() {
                             setCanopyId={setCanopyId}
                             canopyEntries={canopyEntries}
                             setCanopyEntries={setCanopyEntries}
+                            canopyComments={canopyComments}
+                            setCanopyComments={handleCanopyCommentsChange}
                             specialistEquipmentData={specialistEquipmentData}
                             setSpecialistEquipmentData={
                                 handleSpecialistEquipmentDataChange
@@ -713,6 +737,10 @@ export default function SurveyForm() {
                             // Pass site details and reference for proper image organization
                             siteDetails={siteDetails}
                             refValue={refValue}
+                            // IMPROVED: Pass the comments directly from specialistEquipmentSurvey
+                            initialSpecialistEquipmentSurvey={
+                                initialSpecialistEquipmentSurvey
+                            }
                         />
                     </div>
                 </div>
@@ -823,6 +851,7 @@ export default function SurveyForm() {
                     specialistEquipmentData={specialistEquipmentData}
                     canopyTotal={canopyTotal}
                     canopyEntries={canopyEntries}
+                    canopyComments={canopyComments} // Add canopyComments here
                     accessDoorPrice={accessDoorPrice}
                     ventilationPrice={ventilationPrice}
                     airPrice={airPrice}

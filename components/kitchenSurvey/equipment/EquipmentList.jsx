@@ -1,8 +1,8 @@
 // components\kitchenSurvey\equipment\EquipmentList.jsx
 
-import React, { memo, useState, useEffect, useRef } from "react";
+import React, { memo, useCallback } from "react";
 import { Button } from "primereact/button"; // Button component for remove actions
-import { InputTextarea } from "primereact/inputtextarea"; // InputTextarea component for comment boxes
+import CommentTextarea from "./CommentTextarea"; // Import our updated component
 
 // Helper function to group entries by subcategory
 const groupBySubcategory = (entries) => {
@@ -13,68 +13,6 @@ const groupBySubcategory = (entries) => {
         return acc;
     }, {});
 };
-
-// CommentTextarea component for better input performance
-const CommentTextarea = memo(({ id, value, onChange, label, placeholder }) => {
-    const [localValue, setLocalValue] = useState(value || "");
-    const debounceTimerRef = useRef(null);
-
-    // Sync with parent when props change
-    useEffect(() => {
-        if (value !== localValue) {
-            setLocalValue(value || "");
-        }
-    }, [value]);
-
-    const handleChange = (e) => {
-        const newValue = e.target.value;
-
-        // Update local state immediately for responsive typing
-        setLocalValue(newValue);
-
-        // Clear existing timer
-        if (debounceTimerRef.current) {
-            clearTimeout(debounceTimerRef.current);
-        }
-
-        // Debounce the parent update
-        debounceTimerRef.current = setTimeout(() => {
-            if (newValue !== value) {
-                onChange(newValue);
-            }
-        }, 300);
-    };
-
-    // Clear timer on unmount
-    useEffect(() => {
-        return () => {
-            if (debounceTimerRef.current) {
-                clearTimeout(debounceTimerRef.current);
-            }
-        };
-    }, []);
-
-    return (
-        <div className="field" style={{ marginTop: "1rem" }}>
-            <label htmlFor={id} className="block">
-                {label}
-            </label>
-            <InputTextarea
-                id={id}
-                name={id}
-                value={localValue}
-                onChange={handleChange}
-                autoResize
-                rows={3}
-                style={{ width: "100%", marginTop: "0.5rem" }}
-                placeholder={placeholder}
-                aria-label={label}
-            />
-        </div>
-    );
-});
-
-CommentTextarea.displayName = "CommentTextarea";
 
 // EquipmentList renders separate tables for volume, area, and normal items.
 const EquipmentList = memo((props) => {
@@ -87,21 +25,7 @@ const EquipmentList = memo((props) => {
         onSubcategoryCommentsChange, // Callback for saving comments
     } = props;
 
-    // Track current comments locally to avoid lag
-    const [localCommentsMap, setLocalCommentsMap] = useState({});
-    const isInitializedRef = useRef(false);
-
-    // Update local comments map when props change
-    useEffect(() => {
-        if (
-            !isInitializedRef.current ||
-            Object.keys(localCommentsMap).length === 0
-        ) {
-            setLocalCommentsMap(subcategoryComments);
-            isInitializedRef.current = true;
-        }
-    }, [subcategoryComments]);
-
+    // Filter entries by type
     const volumeEntries = surveyList.filter((entry) =>
         isVolumeItem(entry.item)
     );
@@ -111,6 +35,9 @@ const EquipmentList = memo((props) => {
     const normalEntries = surveyList.filter(
         (entry) => !isVolumeItem(entry.item) && !specialItems.has(entry.item)
     );
+
+    // Track which subcategories have been rendered
+    const renderedSubcategories = new Set();
 
     const renderSubcategoryTable = (entries, type) => {
         let headers;
@@ -186,39 +113,66 @@ const EquipmentList = memo((props) => {
         );
     };
 
-    // IMPROVED: Handle comment change with better performance
-    const handleCommentChange = (subcategory, value) => {
-        // Update local state first for responsive UI
-        setLocalCommentsMap((prev) => ({
-            ...prev,
-            [subcategory]: value,
-        }));
+    // Handle comment change with direct parent notification and robust ID parsing
+    const handleCommentChange = useCallback(
+        (commentId, value) => {
+            // Guard against invalid IDs
+            if (!commentId) return;
 
-        // Create a new comments object with updated value
-        const newComments = {
-            ...subcategoryComments,
-            [subcategory]: value,
-        };
+            // Extract subcategory from the comment ID
+            let subcategory = "";
 
-        // Notify parent component
-        if (typeof onSubcategoryCommentsChange === "function") {
-            onSubcategoryCommentsChange(newComments);
-        }
-    };
+            // Handle subcategory-comment-{subcategoryId} format
+            if (commentId.startsWith("subcategory-comment-")) {
+                subcategory = commentId
+                    .substring("subcategory-comment-".length)
+                    .replace(/-/g, " ");
+            }
+            // Handle orphaned-comment-{subcategoryId} format
+            else if (commentId.startsWith("orphaned-comment-")) {
+                subcategory = commentId
+                    .substring("orphaned-comment-".length)
+                    .replace(/-/g, " ");
+            }
+
+            // Only update if we have a valid subcategory and the callback exists
+            if (
+                subcategory &&
+                typeof onSubcategoryCommentsChange === "function"
+            ) {
+                console.log(
+                    `Equipment: Updating comment for subcategory "${subcategory}"`
+                );
+
+                const updatedComments = {
+                    ...subcategoryComments,
+                    [subcategory]: value,
+                };
+
+                onSubcategoryCommentsChange(updatedComments);
+            }
+        },
+        [subcategoryComments, onSubcategoryCommentsChange]
+    );
 
     const renderSection = (entries, type) => {
         const grouped = groupBySubcategory(entries);
         return Object.keys(grouped).map((subcategory) => {
+            // Add to rendered set - both exact case and lowercase
+            renderedSubcategories.add(subcategory);
+            renderedSubcategories.add(subcategory.toLowerCase());
+
             // Create ID-safe version of subcategory for labels
             const subcategoryId = subcategory
                 .replace(/\s+/g, "-")
                 .toLowerCase();
 
-            // Get current value - prefer local state for responsiveness
+            // Get current comment value from props - check both exact and case variations
             const commentValue =
-                localCommentsMap[subcategory] !== undefined
-                    ? localCommentsMap[subcategory]
-                    : subcategoryComments[subcategory] || "";
+                subcategoryComments[subcategory] ||
+                subcategoryComments[subcategory.toLowerCase()] ||
+                subcategoryComments[subcategory.toUpperCase()] ||
+                "";
 
             return (
                 <div key={subcategory} style={{ marginBottom: "1rem" }}>
@@ -228,9 +182,7 @@ const EquipmentList = memo((props) => {
                     <CommentTextarea
                         id={`subcategory-comment-${subcategoryId}`}
                         value={commentValue}
-                        onChange={(value) =>
-                            handleCommentChange(subcategory, value)
-                        }
+                        onChange={handleCommentChange}
                         label={`Comments for ${subcategory}`}
                         placeholder={`Add comment for ${subcategory}...`}
                     />
@@ -244,16 +196,23 @@ const EquipmentList = memo((props) => {
         // Get all subcategories that have comments
         const commentSubcategories = Object.keys(subcategoryComments);
 
-        // Get all subcategories that are in the surveyList
-        const surveySubcategories = new Set(
-            surveyList.map((entry) => entry.subcategory)
-        );
-
-        // Find subcategories that have comments but no entries in surveyList
+        // Find subcategories that have comments but haven't been rendered already
         const orphanedSubcategories = commentSubcategories.filter(
-            (subcategory) =>
-                !surveySubcategories.has(subcategory) &&
-                subcategoryComments[subcategory]
+            (subcategory) => {
+                // FIXED: Check if this subcategory has already been rendered (in any case)
+                if (
+                    renderedSubcategories.has(subcategory) ||
+                    renderedSubcategories.has(subcategory.toLowerCase())
+                ) {
+                    return false;
+                }
+
+                // Only include if it has a comment value
+                return (
+                    subcategoryComments[subcategory] &&
+                    subcategoryComments[subcategory].trim() !== ""
+                );
+            }
         );
 
         if (orphanedSubcategories.length === 0) {
@@ -262,27 +221,20 @@ const EquipmentList = memo((props) => {
 
         return (
             <div style={{ marginTop: "2rem" }}>
+                <h3>Additional Comments</h3>
                 {orphanedSubcategories.map((subcategory) => {
                     // Create ID-safe version of subcategory for labels
                     const subcategoryId = subcategory
                         .replace(/\s+/g, "-")
                         .toLowerCase();
 
-                    // Get current value - prefer local state for responsiveness
-                    const commentValue =
-                        localCommentsMap[subcategory] !== undefined
-                            ? localCommentsMap[subcategory]
-                            : subcategoryComments[subcategory] || "";
-
                     return (
                         <div key={subcategory} style={{ marginBottom: "1rem" }}>
                             <h4>{subcategory}</h4>
                             <CommentTextarea
                                 id={`orphaned-comment-${subcategoryId}`}
-                                value={commentValue}
-                                onChange={(value) =>
-                                    handleCommentChange(subcategory, value)
-                                }
+                                value={subcategoryComments[subcategory] || ""}
+                                onChange={handleCommentChange}
                                 label={`Comments for ${subcategory}`}
                                 placeholder={`Add comment for ${subcategory}...`}
                             />

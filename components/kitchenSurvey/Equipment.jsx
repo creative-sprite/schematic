@@ -9,7 +9,6 @@ import "../../styles/surveyForm.css";
 // Import subcomponents
 import EquipmentForm from "./equipment/EquipmentForm";
 import EquipmentList from "./equipment/EquipmentList";
-import EquipmentNotes from "./equipment/EquipmentNotes";
 
 export default function Equipment({
     onSurveyListChange,
@@ -18,21 +17,9 @@ export default function Equipment({
     initialSurveyData = [],
     initialEquipmentId = "",
     equipment = {},
-    initialNotes = "",
-    onNotesChange,
     onEquipmentChange,
     initialSubcategoryComments = {},
 }) {
-    // Debug: Log received props on mount to verify what data is coming in
-    useEffect(() => {
-        console.log("Equipment component received props:", {
-            initialSubcategoryComments,
-            equipmentSubcategoryComments: equipment?.subcategoryComments,
-            initialNotes,
-            equipmentNotes: equipment?.notes,
-        });
-    }, []);
-
     // State for equipment items fetched from the API
     const [equipmentItems, setEquipmentItems] = React.useState([]);
 
@@ -50,6 +37,18 @@ export default function Equipment({
     // Survey list state
     const [surveyList, setSurveyList] = React.useState(initialSurveyData || []);
 
+    // NEW: Add a state for subcategory comments
+    const [subcategoryComments, setSubcategoryComments] = React.useState(
+        initialSubcategoryComments || {}
+    );
+
+    // DEBUG: Add a ref to track updates to subcategory comments
+    const commentsUpdateRef = useRef({
+        lastUpdated: Date.now(),
+        count: 0,
+        lastValue: {},
+    });
+
     // Special items set
     const specialItems = new Set([
         "Condiment - Cutlery Counter",
@@ -57,116 +56,71 @@ export default function Equipment({
         "Work Surface",
     ]);
 
-    // Initialization tracking
+    // Track initialization state
     const [initialized, setInitialized] = React.useState(false);
 
-    // Enhanced refs for update tracking and prevention
-    const isInternalStateUpdateRef = useRef(false);
-    const initialRenderCompletedRef = useRef(false);
-
-    // IMPROVED: Debounce management
-    const debounceTimersRef = useRef({
-        notes: null,
-        subcategoryComments: null,
-    });
-
-    // IMPROVED: Cached values for comparison
-    const cachedValuesRef = useRef({
-        notes: initialNotes || "",
-        subcategoryComments: initialSubcategoryComments || {},
-    });
-
-    // One-time initialization to log what we got from props
+    // One-time initialization
     useEffect(() => {
         if (!initialized) {
-            console.log("Equipment component initialization:");
-            console.log("- Initial notes:", initialNotes);
-            console.log("- Equipment object notes:", equipment?.notes);
-            console.log(
-                "- Initial subcategory comments:",
-                initialSubcategoryComments
-            );
-            console.log(
-                "- Equipment subcategory comments:",
-                equipment?.subcategoryComments
-            );
-            console.log(
-                "- Using subcategory comments:",
-                equipment?.subcategoryComments || initialSubcategoryComments
-            );
-            console.log("- Using notes:", equipment?.notes || initialNotes);
+            // Initialize from survey data if available
+            if (initialSurveyData && initialSurveyData.length > 0) {
+                setSurveyList(initialSurveyData);
 
-            // Initialize cached values
-            cachedValuesRef.current = {
-                notes: equipment?.notes || initialNotes || "",
-                subcategoryComments:
-                    equipment?.subcategoryComments ||
-                    initialSubcategoryComments ||
-                    {},
-            };
+                // Set equipment ID using the first structure ID if available
+                if (typeof onEquipmentIdChange === "function") {
+                    const idToUse =
+                        initialEquipmentId ||
+                        (structureIds.length > 0 ? structureIds[0] : "");
+                    onEquipmentIdChange(idToUse);
+                }
 
-            setInitialized(true);
-        }
-    }, [initialized, initialNotes, equipment, initialSubcategoryComments]);
-
-    // Helper functions
-    function isWalkIn(subcategory, item) {
-        if (subcategory.trim().toLowerCase() === "cold (int)") {
-            const lowerItem = item.trim().toLowerCase();
-            return (
-                lowerItem === "freezer - walk-in" ||
-                lowerItem === "fridge - walk-in"
-            );
-        }
-        return false;
-    }
-
-    function isVolumeItem(item) {
-        const lowerItem = item.trim().toLowerCase();
-        return (
-            lowerItem === "fridge - walk-in" ||
-            lowerItem === "freezer - walk-in" ||
-            lowerItem === "cupboard wall / floor"
-        );
-    }
-
-    // Initialize with saved data if provided
-    useEffect(() => {
-        if (initialSurveyData && initialSurveyData.length > 0 && !initialized) {
-            console.log(
-                "Initializing from saved survey data:",
-                initialSurveyData
-            );
-            setSurveyList(initialSurveyData);
-
-            // Even though we've removed the UI selector, we still need to pass the ID to parent
-            if (typeof onEquipmentIdChange === "function") {
-                // Use the initialEquipmentId if provided, otherwise use the first structureId if available
-                const idToUse =
-                    initialEquipmentId ||
-                    (structureIds.length > 0 ? structureIds[0] : "");
-                onEquipmentIdChange(idToUse);
+                // Initialize subcategory from the first item if available
+                if (
+                    initialSurveyData.length > 0 &&
+                    initialSurveyData[0].subcategory
+                ) {
+                    setSurveyForm((prev) => ({
+                        ...prev,
+                        subcategory: initialSurveyData[0].subcategory,
+                    }));
+                }
             }
 
-            // FIXED: Initialize subcategory with guards to prevent loops
+            // Initialize subcategory comments if available
             if (
-                initialSurveyData.length > 0 &&
-                initialSurveyData[0].subcategory &&
-                !isInternalStateUpdateRef.current
+                initialSubcategoryComments &&
+                Object.keys(initialSubcategoryComments).length > 0
             ) {
-                // Mark we're in internal update
-                isInternalStateUpdateRef.current = true;
+                console.log(
+                    "Equipment: Initializing with",
+                    Object.keys(initialSubcategoryComments).length,
+                    "subcategory comments"
+                );
+                setSubcategoryComments(initialSubcategoryComments);
 
-                // Update form state
-                setSurveyForm((prev) => ({
-                    ...prev,
-                    subcategory: initialSurveyData[0].subcategory,
-                }));
+                // Also update debug ref
+                commentsUpdateRef.current = {
+                    lastUpdated: Date.now(),
+                    count: 1,
+                    lastValue: { ...initialSubcategoryComments },
+                };
+            } else if (
+                equipment?.subcategoryComments &&
+                Object.keys(equipment.subcategoryComments).length > 0
+            ) {
+                console.log(
+                    "Equipment: Initializing with",
+                    Object.keys(equipment.subcategoryComments).length,
+                    "comments from equipment prop"
+                );
+                setSubcategoryComments(equipment.subcategoryComments);
 
-                // Reset flag after state update
-                setTimeout(() => {
-                    isInternalStateUpdateRef.current = false;
-                }, 50); // IMPROVED: Increased from 0 to 50ms for reliability
+                // Also update debug ref
+                commentsUpdateRef.current = {
+                    lastUpdated: Date.now(),
+                    count: 1,
+                    lastValue: { ...equipment.subcategoryComments },
+                };
             }
 
             setInitialized(true);
@@ -177,7 +131,48 @@ export default function Equipment({
         onEquipmentIdChange,
         structureIds,
         initialized,
+        initialSubcategoryComments,
+        equipment,
     ]);
+
+    // ADDED: Expose a method to synchronize subcategory comments
+    useEffect(() => {
+        if (typeof window !== "undefined") {
+            window.equipmentComponentInstance = {
+                syncSubcategoryComments: () => {
+                    console.log(
+                        "Equipment: Force syncing subcategory comments",
+                        Object.keys(subcategoryComments).length > 0
+                            ? `(${
+                                  Object.keys(subcategoryComments).length
+                              } comments)`
+                            : "(empty)"
+                    );
+
+                    if (
+                        Object.keys(subcategoryComments).length > 0 &&
+                        typeof onEquipmentChange === "function"
+                    ) {
+                        onEquipmentChange({
+                            subcategoryComments: { ...subcategoryComments },
+                        });
+                        return true;
+                    }
+                    return false;
+                },
+            };
+        }
+
+        // Cleanup on unmount
+        return () => {
+            if (
+                typeof window !== "undefined" &&
+                window.equipmentComponentInstance
+            ) {
+                delete window.equipmentComponentInstance;
+            }
+        };
+    }, [subcategoryComments, onEquipmentChange]);
 
     // Listen for structure ID changes from parent
     useEffect(() => {
@@ -214,29 +209,12 @@ export default function Equipment({
                         });
                     setEquipmentItems(equipment);
 
-                    // MODIFIED: Only set subcategory if current value is empty
-                    if (
-                        !surveyForm.subcategory &&
-                        equipment.length > 0 &&
-                        !isInternalStateUpdateRef.current &&
-                        !initialRenderCompletedRef.current
-                    ) {
-                        // Mark we're updating internally
-                        isInternalStateUpdateRef.current = true;
-
-                        // Track that initial render has completed
-                        initialRenderCompletedRef.current = true;
-
-                        // Set the initial subcategory to the first available one
+                    // Set subcategory if current value is empty and we have equipment items
+                    if (!surveyForm.subcategory && equipment.length > 0) {
                         setSurveyForm((prev) => ({
                             ...prev,
                             subcategory: equipment[0].subcategory.trim(),
                         }));
-
-                        // Reset flag after state update
-                        setTimeout(() => {
-                            isInternalStateUpdateRef.current = false;
-                        }, 50); // IMPROVED: Increased from 0 to 50ms for reliability
                     }
                 } else {
                     console.error("Failed to fetch equipment items:", json);
@@ -247,7 +225,7 @@ export default function Equipment({
         };
 
         fetchEquipmentItems();
-    }, []); // Fixed: Empty dependency array to load only once
+    }, []); // Load only once
 
     // Notify parent when surveyList changes.
     useEffect(() => {
@@ -267,6 +245,44 @@ export default function Equipment({
         }
     }, [surveyList, onSurveyListChange, onEquipmentIdChange, structureIds]);
 
+    // ADDED: Effect to forward subcategory comments to parent when they change
+    useEffect(() => {
+        // Skip first render
+        if (!initialized) return;
+
+        // Debounce timer for comments updates
+        const timer = setTimeout(() => {
+            if (
+                typeof onEquipmentChange === "function" &&
+                Object.keys(subcategoryComments).length > 0
+            ) {
+                console.log(
+                    "Equipment: Sending subcategory comments to parent:",
+                    Object.keys(subcategoryComments).length > 0
+                        ? `(${
+                              Object.keys(subcategoryComments).length
+                          } comments)`
+                        : "(empty)"
+                );
+
+                // Track updates in debug ref
+                commentsUpdateRef.current = {
+                    lastUpdated: Date.now(),
+                    count: commentsUpdateRef.current.count + 1,
+                    lastValue: { ...subcategoryComments },
+                };
+
+                // Send to parent
+                onEquipmentChange({
+                    subcategoryComments: { ...subcategoryComments },
+                });
+            }
+        }, 300);
+
+        // Cleanup timer
+        return () => clearTimeout(timer);
+    }, [subcategoryComments, onEquipmentChange, initialized]);
+
     // Build unique subcategories (trimmed).
     const uniqueSubcategories = Array.from(
         new Set(equipmentItems.map((itm) => itm.subcategory.trim()))
@@ -281,7 +297,28 @@ export default function Equipment({
     );
 
     // Use a ref to guard against duplicate additions for normal items.
-    const lastAddedRef = useRef({});
+    const lastAddedRef = React.useRef({});
+
+    // Helper functions
+    function isWalkIn(subcategory, item) {
+        if (subcategory.trim().toLowerCase() === "cold (int)") {
+            const lowerItem = item.trim().toLowerCase();
+            return (
+                lowerItem === "freezer - walk-in" ||
+                lowerItem === "fridge - walk-in"
+            );
+        }
+        return false;
+    }
+
+    function isVolumeItem(item) {
+        const lowerItem = item.trim().toLowerCase();
+        return (
+            lowerItem === "fridge - walk-in" ||
+            lowerItem === "freezer - walk-in" ||
+            lowerItem === "cupboard wall / floor"
+        );
+    }
 
     // handleAddSurvey: For dimension items (nonzero dimensions) always add a new row.
     // For normal items, if an entry exists, increment its count by 1 per click.
@@ -320,19 +357,9 @@ export default function Equipment({
         });
     };
 
-    // FIXED: Modified handleSurveyChange with circular update protection
+    // Simplified handleSurveyChange function
     const handleSurveyChange = (e) => {
         const { name, value } = e.target;
-
-        // If this is a subcategory change and we're already updating it, skip to avoid circular updates
-        if (name === "subcategory" && isInternalStateUpdateRef.current) {
-            return;
-        }
-
-        // Set flag if this is a subcategory change
-        if (name === "subcategory") {
-            isInternalStateUpdateRef.current = true;
-        }
 
         // Handle different field types
         if (["number", "length", "width", "height"].includes(name)) {
@@ -363,13 +390,6 @@ export default function Equipment({
             }));
         } else {
             setSurveyForm((prev) => ({ ...prev, [name]: value }));
-        }
-
-        // Reset subcategory update flag after a short delay
-        if (name === "subcategory") {
-            setTimeout(() => {
-                isInternalStateUpdateRef.current = false;
-            }, 50); // IMPROVED: Increased from 0 to 50ms for reliability
         }
     };
 
@@ -408,95 +428,26 @@ export default function Equipment({
         );
     };
 
-    // IMPROVED: Completely rewritten handler for subcategory comments
-    const handleSubcategoryCommentsChange = (comments) => {
-        // Clear any existing timer
-        if (debounceTimersRef.current.subcategoryComments) {
-            clearTimeout(debounceTimersRef.current.subcategoryComments);
+    // IMPROVED: Handler for subcategory comments changes with better state management
+    const handleSubcategoryCommentsChange = (updatedComments) => {
+        // Log the update
+        console.log(
+            "Equipment: Updating subcategory comments",
+            Object.keys(updatedComments).length > 0
+                ? `(${Object.keys(updatedComments).length} comments)`
+                : "(empty)"
+        );
+
+        // Update local state
+        setSubcategoryComments(updatedComments);
+
+        // Directly update parent too with a dedicated update
+        if (typeof onEquipmentChange === "function") {
+            onEquipmentChange({
+                subcategoryComments: updatedComments,
+            });
         }
-
-        // Set new timer for debouncing
-        debounceTimersRef.current.subcategoryComments = setTimeout(() => {
-            console.log("Equipment: Subcategory comments changed:", comments);
-
-            // Simple check for changes using direct property access
-            let hasChanges = false;
-
-            // Check if any keys were added or removed
-            const cachedKeys = Object.keys(
-                cachedValuesRef.current.subcategoryComments
-            );
-            const newKeys = Object.keys(comments);
-
-            if (cachedKeys.length !== newKeys.length) {
-                hasChanges = true;
-            } else {
-                // Check if any values changed
-                for (const key of newKeys) {
-                    if (
-                        cachedValuesRef.current.subcategoryComments[key] !==
-                        comments[key]
-                    ) {
-                        hasChanges = true;
-                        break;
-                    }
-                }
-            }
-
-            // Only update if there are actual changes
-            if (hasChanges) {
-                // Cache the new value
-                cachedValuesRef.current.subcategoryComments = { ...comments };
-
-                // Update parent component with the new comments
-                if (typeof onEquipmentChange === "function") {
-                    // Create a new equipment object with updated subcategoryComments
-                    onEquipmentChange({
-                        ...equipment,
-                        subcategoryComments: comments,
-                    });
-                }
-            }
-        }, 300); // Proper 300ms debounce timeout
     };
-
-    // IMPROVED: Completely rewritten handler for equipment notes
-    const handleNotesChange = (newNotes) => {
-        // Clear any existing timer
-        if (debounceTimersRef.current.notes) {
-            clearTimeout(debounceTimersRef.current.notes);
-        }
-
-        // Set new timer for debouncing
-        debounceTimersRef.current.notes = setTimeout(() => {
-            // Skip if no actual change
-            if (newNotes === cachedValuesRef.current.notes) {
-                return;
-            }
-
-            console.log("Equipment: Notes changed:", newNotes);
-
-            // Cache the new value
-            cachedValuesRef.current.notes = newNotes;
-
-            // Update parent component directly
-            if (typeof onNotesChange === "function") {
-                onNotesChange(newNotes);
-            }
-        }, 300); // Proper 300ms debounce timeout
-    };
-
-    // Clean up debounce timers on unmount
-    useEffect(() => {
-        return () => {
-            if (debounceTimersRef.current.notes) {
-                clearTimeout(debounceTimersRef.current.notes);
-            }
-            if (debounceTimersRef.current.subcategoryComments) {
-                clearTimeout(debounceTimersRef.current.subcategoryComments);
-            }
-        };
-    }, []);
 
     // ---------------------------------------------------------------------
     // Single place to define subcategory order
@@ -514,6 +465,13 @@ export default function Equipment({
         "Special",
     ];
     // ---------------------------------------------------------------------
+
+    // Determine which comments to use - with preference to local state
+    const currentComments =
+        subcategoryComments ||
+        equipment?.subcategoryComments ||
+        initialSubcategoryComments ||
+        {};
 
     return (
         <div className="survey-container">
@@ -539,14 +497,8 @@ export default function Equipment({
                 specialItems={specialItems}
                 isVolumeItem={isVolumeItem}
                 handleRemoveEntry={handleRemoveEntry}
-                subcategoryComments={
-                    equipment?.subcategoryComments || initialSubcategoryComments
-                }
+                subcategoryComments={currentComments}
                 onSubcategoryCommentsChange={handleSubcategoryCommentsChange}
-            />
-            <EquipmentNotes
-                notes={equipment?.notes || initialNotes}
-                onNotesChange={handleNotesChange}
             />
             <datalist id="subcategorySuggestions">
                 {uniqueSubcategories.map((sug, idx) => (

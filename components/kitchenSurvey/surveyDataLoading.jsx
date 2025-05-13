@@ -54,8 +54,15 @@ function generateRefValue(lastRefId = "") {
     return `${randomNum}${nextRefId}`;
 }
 
+// Consistent utility for generating Cloudinary URLs
+const getCloudinaryUrl = (publicId) => {
+    const cloudName =
+        process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || "dnu5hunya";
+    return `https://res.cloudinary.com/${cloudName}/image/upload/${publicId}`;
+};
+
 /**
- * Custom hook for loading survey data
+ * Custom hook for loading survey data with simplified image handling
  */
 export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
     // Loading state
@@ -68,8 +75,13 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
     // Dedicated parking state
     const [parking, setParking] = useState("");
 
-    // Survey images state - always use standardized location
-    const [surveyImages, setSurveyImages] = useState({});
+    // Survey images state - standardized location
+    const [surveyImages, setSurveyImages] = useState({
+        Structure: [],
+        Equipment: [],
+        Canopy: [],
+        Ventilation: [],
+    });
 
     // States for equipment data in the main area
     const [surveyData, setSurveyData] = useState([]);
@@ -78,6 +90,14 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
     // State for specialist equipment
     const [specialistEquipmentData, setSpecialistEquipmentData] = useState([]);
     const [specialistEquipmentId, setSpecialistEquipmentId] = useState("");
+    // NEW: Added state to store the full specialistEquipmentSurvey object
+    const [
+        initialSpecialistEquipmentSurvey,
+        setInitialSpecialistEquipmentSurvey,
+    ] = useState({
+        entries: [],
+        categoryComments: {},
+    });
 
     // Structure data
     const [structureTotal, setStructureTotal] = useState(0);
@@ -88,6 +108,8 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
     // Canopy data
     const [canopyTotal, setCanopyTotal] = useState(0);
     const [canopyEntries, setCanopyEntries] = useState([]);
+    // Add canopy comments state
+    const [canopyComments, setCanopyComments] = useState({});
 
     // Schematic-based partial costs in the main area
     const [accessDoorPrice, setAccessDoorPrice] = useState(0);
@@ -130,30 +152,31 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
     const [cellSize, setCellSize] = useState(40);
     const [flexiDuctSelections, setFlexiDuctSelections] = useState({});
     const [accessDoorSelections, setAccessDoorSelections] = useState({});
+    const [groupDimensions, setGroupDimensions] = useState({});
     const [fanGradeSelections, setFanGradeSelections] = useState({});
 
     // An array to store each duplicated area's state for final calculations
     const [areasState, setAreasState] = useState([]); // array of totals
     const [areas, setAreas] = useState([]);
 
-    // FIXED: Initialize Ventilation Information state with proper options arrays
+    // Simplified Ventilation Information state
     const [ventilation, setVentilation] = useState({
         obstructionsToggle: "No",
         obstructionsText: "",
         obstructionsManualText: "",
-        obstructionsOptions: [], // Ensure options array is initialized
+        obstructionsOptions: [],
         damageToggle: "No",
         damageText: "",
         damageManualText: "",
-        damageOptions: [], // Ensure options array is initialized
+        damageOptions: [],
         inaccessibleAreasToggle: "No",
         inaccessibleAreasText: "",
         inaccessibleAreasManualText: "",
-        inaccessibleAreasOptions: [], // Ensure options array is initialized
+        inaccessibleAreasOptions: [],
         clientActionsToggle: "No",
         clientActionsText: "",
         clientActionsManualText: "",
-        clientActionsOptions: [], // Ensure options array is initialized
+        clientActionsOptions: [],
         description: "",
         accessLocations: [],
     });
@@ -172,6 +195,8 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
         roofAccess: "No",
         roofAccessDetails: "",
         wasteTankToggle: "No",
+        wasteTankSelection: "No",
+        wasteTankDetails: "",
         keysrequired: "No",
         keysContact: "",
         permitToWork: "No",
@@ -179,8 +204,7 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
         frequencyOfService: "",
     });
 
-    // CRITICAL FIX: Updated equipment state with separate notes fields
-    // Specialist Equipment state with proper initialization
+    // Simplified equipment state with clear separation of fields - REMOVED notes
     const [equipment, setEquipment] = useState({
         acroPropsToggle: "No",
         loftBoardsToggle: "No",
@@ -191,8 +215,6 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
         flexiHoseCircumference: "",
         flexiHoseLength: "",
         mewp: "No",
-        notes: "", // Regular equipment notes
-        specialistNotes: "", // Specialist equipment notes (separate field)
         subcategoryComments: {}, // Equipment subcategory comments
         categoryComments: {}, // Specialist equipment category comments
     });
@@ -233,18 +255,16 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
     const [primaryContactIndex, setPrimaryContactIndex] = useState(null);
     const [walkAroundContactIndex, setWalkAroundContactIndex] = useState(null);
 
+    // Simple flag to track initial render
+    const initialRenderCompleted = useRef(false);
+
     // Auto-generate REF ID for new surveys
     useEffect(() => {
         const autoGenerateRef = async () => {
-            // Skip if we're editing an existing survey (surveyId is present)
-            // or if refValue is already set
+            // Skip if we're editing an existing survey or if refValue is already set
             if (surveyId || refValue) {
                 console.log(
-                    "Skip REF generation - editing mode or REF already set:",
-                    {
-                        surveyId,
-                        refValue,
-                    }
+                    "Skip REF generation - editing mode or REF already set"
                 );
                 return;
             }
@@ -300,7 +320,7 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
         };
 
         autoGenerateRef();
-    }, []); // Only run once on initial mount, not when refValue changes
+    }, []); // Only run once on initial mount
 
     // Load site by ID if provided in URL
     useEffect(() => {
@@ -332,7 +352,7 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
         }
     }, [siteIdParam, toast]);
 
-    // Load existing survey if ID is provided
+    // Load existing survey if ID is provided - simplified with better image handling
     useEffect(() => {
         if (!surveyId) return;
 
@@ -392,151 +412,175 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
                     );
                 }
 
-                // Load images from standardized location only
+                // SIMPLIFIED: Load images from standardized location with consistent URL handling
                 if (survey.images) {
+                    console.log("Loading images from standardized location");
+
+                    // Create standardized image structure
+                    const processedImages = {
+                        Structure: [],
+                        Equipment: [],
+                        Canopy: [],
+                        Ventilation: [],
+                    };
+
+                    // Process each category of images
+                    Object.keys(processedImages).forEach((category) => {
+                        if (
+                            survey.images[category] &&
+                            Array.isArray(survey.images[category])
+                        ) {
+                            // Map each image to our standard format
+                            processedImages[category] = survey.images[
+                                category
+                            ].map((img) => {
+                                // Ensure we have a valid URL
+                                const imageUrl =
+                                    img.url ||
+                                    (img.publicId
+                                        ? getCloudinaryUrl(img.publicId)
+                                        : null);
+
+                                return {
+                                    id:
+                                        img.id ||
+                                        `${Date.now()}-${Math.random()
+                                            .toString(36)
+                                            .substr(2, 9)}`,
+                                    publicId: img.publicId,
+                                    url: imageUrl,
+                                    category: category,
+                                    uploaded: true,
+                                    alt: img.alt || "",
+                                    title: img.title || "",
+                                };
+                            });
+                        }
+                    });
+
+                    // Count images for logging
+                    const totalImages =
+                        Object.values(processedImages).flat().length;
+
                     console.log(
-                        "Loading images from standardized location:",
-                        Object.keys(survey.images).map(
-                            (cat) =>
-                                `${cat}: ${survey.images[cat].length} images`
-                        )
+                        `Loaded ${totalImages} images from survey data`
                     );
-                    setSurveyImages(survey.images);
+
+                    if (totalImages > 0) {
+                        // Show success message
+                        toast.current?.show({
+                            severity: "success",
+                            summary: "Images Loaded",
+                            detail: `Successfully loaded ${totalImages} images`,
+                            life: 3000,
+                        });
+                    }
+
+                    // Set the processed images to state
+                    setSurveyImages(processedImages);
                 }
 
-                // CRITICAL FIX: Set equipment data with comments and notes
-                // Start with a clean merged equipment object
-                let updatedEquipment = { ...equipment };
-
-                // Process regular equipment survey data
+                // Set equipment data with clear separation of fields
                 if (survey.equipmentSurvey) {
                     // Set equipment entries
                     if (survey.equipmentSurvey.entries) {
                         setSurveyData(survey.equipmentSurvey.entries);
                     }
 
-                    // Process equipment subcategory comments
-                    if (survey.equipmentSurvey.subcategoryComments) {
-                        console.log(
-                            "Loading equipment subcategoryComments:",
-                            survey.equipmentSurvey.subcategoryComments
-                        );
-                        updatedEquipment.subcategoryComments =
-                            survey.equipmentSurvey.subcategoryComments;
-                    }
+                    // Initialize equipment state with empty values first
+                    let updatedEquipment = { ...equipment };
 
-                    // Process equipment notes
-                    if (survey.equipmentSurvey.notes) {
-                        console.log(
-                            "Loading equipment notes:",
-                            survey.equipmentSurvey.notes
-                        );
-                        updatedEquipment.notes = survey.equipmentSurvey.notes;
-                    }
-                }
+                    // Set subcategory comments
+                    updatedEquipment.subcategoryComments =
+                        survey.equipmentSurvey.subcategoryComments || {};
 
-                // Process specialist equipment data
-                if (survey.specialistEquipmentSurvey) {
-                    // Set specialist equipment entries if they exist
-                    if (survey.specialistEquipmentSurvey.entries) {
-                        setSpecialistEquipmentData(
-                            survey.specialistEquipmentSurvey.entries
-                        );
-                    }
+                    // Process specialist equipment data
+                    if (survey.specialistEquipmentSurvey) {
+                        // Set specialist equipment entries if they exist
+                        if (survey.specialistEquipmentSurvey.entries) {
+                            setSpecialistEquipmentData(
+                                survey.specialistEquipmentSurvey.entries
+                            );
+                        }
 
-                    // CRITICAL FIX: Process specialist equipment notes as specialistNotes
-                    if (survey.specialistEquipmentSurvey.notes) {
-                        console.log(
-                            "Loading specialist equipment notes:",
-                            survey.specialistEquipmentSurvey.notes
+                        // NEW: Set the full specialistEquipmentSurvey object
+                        setInitialSpecialistEquipmentSurvey(
+                            survey.specialistEquipmentSurvey
                         );
-                        updatedEquipment.specialistNotes =
-                            survey.specialistEquipmentSurvey.notes;
-                    }
 
-                    // Process category comments
-                    if (survey.specialistEquipmentSurvey.categoryComments) {
-                        console.log(
-                            "Loading specialist equipment categoryComments:",
-                            survey.specialistEquipmentSurvey.categoryComments
-                        );
+                        // Set category comments
                         updatedEquipment.categoryComments =
-                            survey.specialistEquipmentSurvey.categoryComments;
+                            survey.specialistEquipmentSurvey.categoryComments ||
+                            {};
+
+                        // Log the specialist equipment survey data for debugging
+                        console.log(
+                            "Loaded specialistEquipmentSurvey:",
+                            survey.specialistEquipmentSurvey
+                        );
                     }
+
+                    // Set equipment toggles and fields from the specialist equipment section
+                    if (survey.specialistEquipment) {
+                        updatedEquipment = {
+                            ...updatedEquipment,
+                            acroPropsToggle:
+                                survey.specialistEquipment.acroPropsToggle ||
+                                "No",
+                            loftBoardsToggle:
+                                survey.specialistEquipment.loftBoardsToggle ||
+                                "No",
+                            scaffBoardsToggle:
+                                survey.specialistEquipment.scaffBoardsToggle ||
+                                "No",
+                            laddersToggle:
+                                survey.specialistEquipment.laddersToggle ||
+                                "No",
+                            mobileScaffoldTower:
+                                survey.specialistEquipment
+                                    .mobileScaffoldTower || "No",
+                            flexiHose:
+                                survey.specialistEquipment.flexiHose || "No",
+                            flexiHoseCircumference:
+                                survey.specialistEquipment
+                                    .flexiHoseCircumference || "",
+                            flexiHoseLength:
+                                survey.specialistEquipment.flexiHoseLength ||
+                                "",
+                            mewp: survey.specialistEquipment.mewp || "No",
+                        };
+                    }
+
+                    // Set the updated equipment state
+                    setEquipment(updatedEquipment);
                 }
 
-                // ADDED: Additional debugging for equipment fields
-                console.log("Final equipment object:", {
-                    notes: updatedEquipment.notes,
-                    specialistNotes: updatedEquipment.specialistNotes,
-                    // Show the first 20 chars for debugging
-                    subcategoryCommentsKeys: Object.keys(
-                        updatedEquipment.subcategoryComments || {}
-                    ),
-                    categoryCommentsKeys: Object.keys(
-                        updatedEquipment.categoryComments || {}
-                    ),
-                });
-
-                // Update equipment with ALL data
-                setEquipment(updatedEquipment);
-
-                // Set canopy data
-                if (survey.canopySurvey?.entries) {
-                    if (survey.canopySurvey.entries.length > 0) {
+                // Simplified canopy data loading
+                if (survey.canopySurvey) {
+                    // Set canopy entries and total
+                    if (
+                        survey.canopySurvey.entries &&
+                        survey.canopySurvey.entries.length > 0
+                    ) {
                         // Extract total from first entry if available
                         setCanopyTotal(
                             survey.canopySurvey.entries[0].canopyTotal || 0
                         );
 
-                        // Process entries to ensure they have the proper structure
+                        // Process entries with cleaner structure
                         const processedEntries =
                             survey.canopySurvey.entries.map((entry) => {
-                                // If entry already has the right structure, use it
-                                if (entry.canopy && entry.filter) {
-                                    return {
-                                        ...entry,
-                                        id: entry.id || Date.now(), // Ensure ID exists
-                                    };
-                                }
-
-                                // If it's just a total value, create default structure
-                                if (entry.canopyTotal !== undefined) {
-                                    return {
-                                        id: entry.id || Date.now(),
-                                        canopy: {
-                                            type: "Canopy",
-                                            item:
-                                                entry.item || "Standard Canopy",
-                                            grade: entry.grade || "Standard",
-                                            length: entry.length || 1,
-                                            width: entry.width || 1,
-                                            height: entry.height || 1,
-                                        },
-                                        filter: {
-                                            type: "Filter",
-                                            item: "Standard Filter",
-                                            grade: "Standard",
-                                            number: 1,
-                                            length: null,
-                                            width: null,
-                                            height: null,
-                                        },
-                                    };
-                                }
-
-                                // Fallback for any other structure
                                 return {
-                                    id: Date.now(),
-                                    canopy: {
+                                    id: entry.id || Date.now(),
+                                    canopy: entry.canopy || {
                                         type: "Canopy",
-                                        item: "Standard Canopy",
-                                        grade: "Standard",
-                                        length: 1,
-                                        width: 1,
-                                        height: 1,
+                                        item: entry.item || "Standard Canopy",
+                                        grade: entry.grade || "Standard",
+                                        length: entry.length || 1,
+                                        width: entry.width || 1,
+                                        height: entry.height || 1,
                                     },
-                                    filter: {
+                                    filter: entry.filter || {
                                         type: "Filter",
                                         item: "Standard Filter",
                                         grade: "Standard",
@@ -548,15 +592,15 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
                                 };
                             });
 
-                        // Store the processed entries array
                         setCanopyEntries(processedEntries);
                     } else {
-                        // Initialize with empty array if no entries
                         setCanopyEntries([]);
                     }
-                } else {
-                    // Initialize with empty array if no canopySurvey.entries
-                    setCanopyEntries([]);
+
+                    // Set canopy comments
+                    if (survey.canopySurvey.comments) {
+                        setCanopyComments(survey.canopySurvey.comments);
+                    }
                 }
 
                 // Set schematic data
@@ -571,71 +615,27 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
                     );
                     setSelectedGroupId(survey.schematic.selectedGroupId || "");
 
-                    // Add schematic visual data loading
-                    // MAJOR UPDATE: Now directly load placed items with their dimensions
+                    // Visual data loading with direct dimensions
                     if (survey.schematic.placedItems?.length > 0) {
-                        // Process the placed items to ensure dimensions are properly preserved
+                        // Ensure dimensions are properly maintained
                         const processedItems = survey.schematic.placedItems.map(
-                            (item) => {
-                                // Start with a direct copy of the item
-                                const newItem = { ...item };
-
-                                // Convert dimensions to strings to ensure consistent typing
-                                newItem.length =
-                                    item.length !== undefined &&
-                                    item.length !== null
+                            (item) => ({
+                                ...item,
+                                length:
+                                    item.length !== undefined
                                         ? String(item.length)
-                                        : "";
-                                newItem.width =
-                                    item.width !== undefined &&
-                                    item.width !== null
+                                        : "",
+                                width:
+                                    item.width !== undefined
                                         ? String(item.width)
-                                        : "";
-                                newItem.height =
-                                    item.height !== undefined &&
-                                    item.height !== null
+                                        : "",
+                                height:
+                                    item.height !== undefined
                                         ? String(item.height)
-                                        : "";
-
-                                // Log item dimensions for debugging
-                                if (
-                                    newItem.length ||
-                                    newItem.width ||
-                                    newItem.height
-                                ) {
-                                    console.log(
-                                        `Loading dimensions for item ${
-                                            item.name || item.id
-                                        }:`,
-                                        {
-                                            length: newItem.length,
-                                            width: newItem.width,
-                                            height: newItem.height,
-                                        }
-                                    );
-                                }
-
-                                return newItem;
-                            }
+                                        : "",
+                            })
                         );
 
-                        // Log the first few items for verification
-                        if (processedItems.length > 0) {
-                            console.log(
-                                "Sample of processed items with dimensions:",
-                                processedItems.slice(0, 3).map((item) => ({
-                                    id: item.id,
-                                    name: item.name,
-                                    length: item.length,
-                                    width: item.width,
-                                    height: item.height,
-                                }))
-                            );
-                        }
-
-                        console.log(
-                            "Setting placed items with dimensions directly on items"
-                        );
                         setPlacedItems(processedItems);
                     }
 
@@ -651,83 +651,33 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
                         setCellSize(survey.schematic.cellSize);
                     }
 
-                    if (
-                        survey.schematic.flexiDuctSelections &&
-                        Object.keys(survey.schematic.flexiDuctSelections)
-                            .length > 0
-                    ) {
+                    // Set selections
+                    if (survey.schematic.flexiDuctSelections) {
                         setFlexiDuctSelections(
                             survey.schematic.flexiDuctSelections
                         );
                     }
 
-                    // Load access door selections with better error logging
-                    if (
-                        survey.schematic.accessDoorSelections &&
-                        Object.keys(survey.schematic.accessDoorSelections)
-                            .length > 0
-                    ) {
-                        console.log(
-                            "Loading access door selections:",
+                    if (survey.schematic.accessDoorSelections) {
+                        setAccessDoorSelections(
                             survey.schematic.accessDoorSelections
                         );
-
-                        try {
-                            // Make sure the structure is what we expect
-                            const processedSelections = {};
-
-                            Object.entries(
-                                survey.schematic.accessDoorSelections
-                            ).forEach(([itemId, doorData]) => {
-                                processedSelections[itemId] = {
-                                    // Store MongoDB ID with proper format
-                                    mongoId: doorData.mongoId || doorData.id,
-                                    id: doorData.mongoId || doorData.id,
-                                    name: doorData.name || "Selected Door",
-                                    type: doorData.type || "",
-                                    dimensions: doorData.dimensions || "",
-                                    price: doorData.price || 0,
-                                };
-                            });
-
-                            console.log(
-                                "Processed access door selections:",
-                                processedSelections
-                            );
-
-                            setAccessDoorSelections(processedSelections);
-                        } catch (error) {
-                            console.error(
-                                "Error processing access door selections:",
-                                error
-                            );
-                            // Fallback to using raw selections
-                            setAccessDoorSelections(
-                                survey.schematic.accessDoorSelections
-                            );
-                        }
                     }
 
-                    // REMOVED: No longer loading a separate groupDimensions object
-                    // All dimensions are directly on the placed items now
-
-                    if (
-                        survey.schematic.fanGradeSelections &&
-                        Object.keys(survey.schematic.fanGradeSelections)
-                            .length > 0
-                    ) {
+                    if (survey.schematic.fanGradeSelections) {
                         setFanGradeSelections(
                             survey.schematic.fanGradeSelections
                         );
                     }
                 }
 
-                // FIXED: Set ventilation info with proper options arrays
+                // Simplified ventilation info loading
                 if (survey.ventilationInfo) {
-                    // Make a normalized copy of ventilation info
+                    // Create normalized ventilation data
                     const normalizedVentilation = {
-                        ...survey.ventilationInfo,
-                        // Ensure all options arrays exist with proper defaults
+                        ...ventilation, // Start with defaults
+                        ...survey.ventilationInfo, // Override with loaded data
+                        // Ensure arrays exist
                         obstructionsOptions: Array.isArray(
                             survey.ventilationInfo.obstructionsOptions
                         )
@@ -750,12 +700,6 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
                             : [],
                     };
 
-                    // Add debugging to verify normalized ventilation data
-                    console.log("Setting normalized ventilation data:", {
-                        original: survey.ventilationInfo,
-                        normalized: normalizedVentilation,
-                    });
-
                     setVentilation(normalizedVentilation);
                 }
 
@@ -764,131 +708,64 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
                     setAccess(survey.access);
                 }
 
-                // Handle operations data with maximum reliability
+                // Set operations data
                 if (survey.operations) {
-                    // Extract operations data from survey
-                    console.log(
-                        "SurveyDataLoading: Processing operations data:",
-                        survey.operations
-                    );
+                    // Create a normalized version
+                    const normalizedOperations = {
+                        ...operations, // Start with defaults
+                        ...survey.operations, // Override with loaded data
+                    };
 
-                    try {
-                        // Create a direct but clean copy
-                        const directOperations = JSON.parse(
-                            JSON.stringify(survey.operations)
-                        );
+                    // Normalize Yes/No values
+                    normalizedOperations.patronDisruption =
+                        normalizedOperations.patronDisruption === true ||
+                        normalizedOperations.patronDisruption === "true" ||
+                        normalizedOperations.patronDisruption === "yes" ||
+                        normalizedOperations.patronDisruption === "Yes" ||
+                        normalizedOperations.patronDisruption === 1 ||
+                        normalizedOperations.patronDisruption === "1"
+                            ? "Yes"
+                            : "No";
 
-                        // Create a explicitly normalized copy with exact "Yes"/"No" strings for toggles
-                        const normalizedOperations = { ...directOperations };
+                    normalizedOperations.eightHoursAvailable =
+                        normalizedOperations.eightHoursAvailable === true ||
+                        normalizedOperations.eightHoursAvailable === "true" ||
+                        normalizedOperations.eightHoursAvailable === "yes" ||
+                        normalizedOperations.eightHoursAvailable === "Yes" ||
+                        normalizedOperations.eightHoursAvailable === 1 ||
+                        normalizedOperations.eightHoursAvailable === "1"
+                            ? "Yes"
+                            : "No";
 
-                        // Directly map toggle values to correct strings
-                        // For patronDisruption
-                        const patronValue = directOperations.patronDisruption;
-                        if (
-                            patronValue === true ||
-                            patronValue === "true" ||
-                            patronValue === "yes" ||
-                            patronValue === "Yes" ||
-                            patronValue === 1 ||
-                            patronValue === "1"
-                        ) {
-                            normalizedOperations.patronDisruption = "Yes";
-                        } else {
-                            normalizedOperations.patronDisruption = "No";
-                        }
-
-                        // For eightHoursAvailable
-                        const hoursValue = directOperations.eightHoursAvailable;
-                        if (
-                            hoursValue === true ||
-                            hoursValue === "true" ||
-                            hoursValue === "yes" ||
-                            hoursValue === "Yes" ||
-                            hoursValue === 1 ||
-                            hoursValue === "1"
-                        ) {
-                            normalizedOperations.eightHoursAvailable = "Yes";
-                        } else {
-                            normalizedOperations.eightHoursAvailable = "No";
-                        }
-
-                        // Ensure operational hours structure exists
-                        if (!normalizedOperations.operationalHours) {
-                            normalizedOperations.operationalHours = {
-                                weekdays: { start: "", end: "" },
-                                weekend: { start: "", end: "" },
+                    // Ensure operational hours structure exists
+                    if (!normalizedOperations.operationalHours) {
+                        normalizedOperations.operationalHours = {
+                            weekdays: { start: "", end: "" },
+                            weekend: { start: "", end: "" },
+                        };
+                    } else {
+                        // Ensure weekdays structure exists
+                        if (!normalizedOperations.operationalHours.weekdays) {
+                            normalizedOperations.operationalHours.weekdays = {
+                                start: "",
+                                end: "",
                             };
-                        } else {
-                            // Ensure weekdays structure exists
-                            if (
-                                !normalizedOperations.operationalHours.weekdays
-                            ) {
-                                normalizedOperations.operationalHours.weekdays =
-                                    { start: "", end: "" };
-                            }
-                            // Ensure weekend structure exists
-                            if (
-                                !normalizedOperations.operationalHours.weekend
-                            ) {
-                                normalizedOperations.operationalHours.weekend =
-                                    { start: "", end: "" };
-                            }
                         }
-
-                        // Format serviceDue as Date if it exists
-                        if (normalizedOperations.serviceDue) {
-                            try {
-                                normalizedOperations.serviceDue = new Date(
-                                    normalizedOperations.serviceDue
-                                );
-                            } catch (e) {
-                                console.error(
-                                    "Error parsing serviceDue date:",
-                                    e
-                                );
-                                normalizedOperations.serviceDue = null;
-                            }
+                        // Ensure weekend structure exists
+                        if (!normalizedOperations.operationalHours.weekend) {
+                            normalizedOperations.operationalHours.weekend = {
+                                start: "",
+                                end: "",
+                            };
                         }
-
-                        // Set default values for optional fields if not present
-                        if (normalizedOperations.bestServiceDay === undefined) {
-                            normalizedOperations.bestServiceDay = "Weekdays";
-                        }
-
-                        if (
-                            normalizedOperations.bestServiceTime === undefined
-                        ) {
-                            normalizedOperations.bestServiceTime = "";
-                        }
-
-                        console.log(
-                            "SurveyDataLoading: Normalized operations:",
-                            normalizedOperations
-                        );
-                        console.log(
-                            "SurveyDataLoading: Patron Disruption:",
-                            normalizedOperations.patronDisruption
-                        );
-                        console.log(
-                            "SurveyDataLoading: Eight Hours Available:",
-                            normalizedOperations.eightHoursAvailable
-                        );
-
-                        // Set operations state with the normalized data
-                        setOperations(normalizedOperations);
-                    } catch (error) {
-                        console.error(
-                            "Error normalizing operations data:",
-                            error
-                        );
-                        // Fallback to direct assignment if normalization fails
-                        setOperations(survey.operations);
                     }
+
+                    // Set operations state
+                    setOperations(normalizedOperations);
                 }
 
                 // Set notes
                 if (survey.notes) {
-                    // Create a processed version of notes
                     const processedNotes = { ...survey.notes };
 
                     // Ensure obstructions is an array
@@ -908,13 +785,8 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
                     setNotes(processedNotes);
                 }
 
-                // Set contacts with better handling of primary and walk around indices
+                // Set contacts
                 if (survey.contacts && Array.isArray(survey.contacts)) {
-                    console.log(
-                        "Setting contacts from survey:",
-                        survey.contacts
-                    );
-
                     // Map contacts to ensure they have the correct structure
                     const processedContacts = survey.contacts.map(
                         (contact) => ({
@@ -926,38 +798,19 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
 
                     setContacts(processedContacts);
 
-                    // Find primary contact by isPrimaryContact flag
+                    // Find primary contact and walk around contact
                     const primaryIndex = processedContacts.findIndex(
                         (c) => c.isPrimaryContact === true
                     );
-                    console.log(
-                        "Found primary contact at index:",
-                        primaryIndex
-                    );
-
                     if (primaryIndex !== -1) {
                         setPrimaryContactIndex(primaryIndex);
-                        console.log(
-                            "Setting primary contact index to:",
-                            primaryIndex
-                        );
                     }
 
-                    // Find walk around contact by isWalkAroundContact flag
                     const walkAroundIndex = processedContacts.findIndex(
                         (c) => c.isWalkAroundContact === true
                     );
-                    console.log(
-                        "Found walk around contact at index:",
-                        walkAroundIndex
-                    );
-
                     if (walkAroundIndex !== -1) {
                         setWalkAroundContactIndex(walkAroundIndex);
-                        console.log(
-                            "Setting walk around contact index to:",
-                            walkAroundIndex
-                        );
                     }
                 }
 
@@ -979,29 +832,21 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
                             ) {
                                 processedArea.schematic.placedItems =
                                     processedArea.schematic.placedItems.map(
-                                        (item) => {
-                                            // Start with a copy of the item
-                                            const processedItem = { ...item };
-
-                                            // Ensure dimensions are strings for consistency
-                                            processedItem.length =
-                                                item.length !== undefined &&
-                                                item.length !== null
+                                        (item) => ({
+                                            ...item,
+                                            length:
+                                                item.length !== undefined
                                                     ? String(item.length)
-                                                    : "";
-                                            processedItem.width =
-                                                item.width !== undefined &&
-                                                item.width !== null
+                                                    : "",
+                                            width:
+                                                item.width !== undefined
                                                     ? String(item.width)
-                                                    : "";
-                                            processedItem.height =
-                                                item.height !== undefined &&
-                                                item.height !== null
+                                                    : "",
+                                            height:
+                                                item.height !== undefined
                                                     ? String(item.height)
-                                                    : "";
-
-                                            return processedItem;
-                                        }
+                                                    : "",
+                                        })
                                     );
                             }
 
@@ -1014,6 +859,7 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
                             id: area.id || Date.now(),
                         }))
                     );
+
                     setAreasState(processedAreas);
                 }
 
@@ -1076,7 +922,16 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
                 console.error("Error fetching equipment items:", error);
             }
         };
+
         fetchEquipmentItems();
+    }, []); // Load only once
+
+    // Mark initialization as complete
+    useEffect(() => {
+        if (!initialRenderCompleted.current) {
+            console.log("Initial render completed");
+            initialRenderCompleted.current = true;
+        }
     }, []);
 
     // Return all the state variables and setters
@@ -1110,6 +965,8 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
         setSpecialistEquipmentData,
         specialistEquipmentId,
         setSpecialistEquipmentId,
+        // NEW: Add the initialSpecialistEquipmentSurvey to the return
+        initialSpecialistEquipmentSurvey,
 
         // Structure data
         structureTotal,
@@ -1126,6 +983,8 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
         setCanopyTotal,
         canopyEntries,
         setCanopyEntries,
+        canopyComments,
+        setCanopyComments,
 
         // Schematic costs
         accessDoorPrice,

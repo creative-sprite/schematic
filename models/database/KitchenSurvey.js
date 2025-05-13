@@ -191,7 +191,7 @@ const SpecialistEquipmentInfoSchema = new Schema({
   flexiHoseCircumference: { type: String },
   flexiHoseLength: { type: String },
   mewp: { type: String },
-  notes: { type: String }, // Added field for specialist equipment notes
+  // REMOVED: notes field for specialist equipment
   categoryComments: { type: Schema.Types.Mixed }, // Store category-specific comments as a key-value object
 });
 
@@ -349,23 +349,23 @@ const KitchenSurveySchema = new Schema(
     // Structure Section
     structure: StructureSchema,
 
-    // Equipment Section - MODIFIED: Added subcategoryComments and notes fields
+    // Equipment Section - MODIFIED: Removed notes field
     equipmentSurvey: {
       entries: [EquipmentEntrySchema],
       subcategoryComments: { type: Schema.Types.Mixed }, // Store subcategory-specific comments as a key-value object
-      notes: { type: String } // Added notes field for equipment section
     },
 
-    // Specialist Equipment Survey - MODIFIED: Added categoryComments and notes fields
+    // Specialist Equipment Survey
     specialistEquipmentSurvey: {
       entries: [SpecialistEquipmentEntrySchema],
       categoryComments: { type: Schema.Types.Mixed }, // Store category-specific comments as a key-value object
-      notes: { type: String } // Added notes field for better organization
+      // REMOVED: notes field here too
     },
 
     // Canopy Section
     canopySurvey: {
       entries: [CanopyEntrySchema],
+      comments: { type: Schema.Types.Mixed }, // Add this field for storing comments
     },
 
     // Schematic Section
