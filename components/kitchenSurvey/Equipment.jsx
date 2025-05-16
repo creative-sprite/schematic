@@ -2,8 +2,6 @@
 "use client";
 
 import React, { useEffect, useRef } from "react";
-import { InputText } from "primereact/inputtext";
-import { Button } from "primereact/button";
 import "../../styles/surveyForm.css";
 
 // Import subcomponents
@@ -245,43 +243,9 @@ export default function Equipment({
         }
     }, [surveyList, onSurveyListChange, onEquipmentIdChange, structureIds]);
 
-    // ADDED: Effect to forward subcategory comments to parent when they change
-    useEffect(() => {
-        // Skip first render
-        if (!initialized) return;
-
-        // Debounce timer for comments updates
-        const timer = setTimeout(() => {
-            if (
-                typeof onEquipmentChange === "function" &&
-                Object.keys(subcategoryComments).length > 0
-            ) {
-                console.log(
-                    "Equipment: Sending subcategory comments to parent:",
-                    Object.keys(subcategoryComments).length > 0
-                        ? `(${
-                              Object.keys(subcategoryComments).length
-                          } comments)`
-                        : "(empty)"
-                );
-
-                // Track updates in debug ref
-                commentsUpdateRef.current = {
-                    lastUpdated: Date.now(),
-                    count: commentsUpdateRef.current.count + 1,
-                    lastValue: { ...subcategoryComments },
-                };
-
-                // Send to parent
-                onEquipmentChange({
-                    subcategoryComments: { ...subcategoryComments },
-                });
-            }
-        }, 300);
-
-        // Cleanup timer
-        return () => clearTimeout(timer);
-    }, [subcategoryComments, onEquipmentChange, initialized]);
+    // REMOVED: This useEffect was causing the infinite loop
+    // It was redundant with the handleSubcategoryCommentsChange function
+    // which already updates the parent component
 
     // Build unique subcategories (trimmed).
     const uniqueSubcategories = Array.from(

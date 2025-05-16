@@ -4,7 +4,7 @@ import React from "react";
 import { calculateGrandTotal } from "./PricingUtils";
 
 /**
- * Component to display the grand total section that combines all areas
+ * Component to display the grand total section for the main area only
  */
 export default function GrandTotalSection({
     structureTotal,
@@ -17,6 +17,7 @@ export default function GrandTotalSection({
     fanPartsPrice,
     airInExTotal,
     schematicItemsTotal,
+    // Keep areasState parameter but it will be empty
     areasState,
     modify,
     specialistEquipmentData = [],
@@ -25,13 +26,12 @@ export default function GrandTotalSection({
     if (
         structureTotal <= 0 &&
         computedEquipmentTotal <= 0 &&
-        canopyTotal <= 0 &&
-        areasState.length === 0
+        canopyTotal <= 0
     ) {
         return null;
     }
 
-    // Calculate the grand total
+    // Calculate the grand total for main area only
     const grandTotal = calculateGrandTotal(
         structureTotal,
         computedEquipmentTotal,
@@ -42,7 +42,7 @@ export default function GrandTotalSection({
         fanPartsPrice,
         airInExTotal,
         schematicItemsTotal,
-        areasState,
+        [], // Empty array for child areas
         modify,
         specialistEquipmentData
     );
@@ -111,63 +111,6 @@ export default function GrandTotalSection({
                             ).toFixed(2)}
                         </td>
                     </tr>
-
-                    {/* Duplicated Areas rows */}
-                    {areasState.map((area, index) => {
-                        // Ensure all values are properly converted to numbers
-                        const structureTotal = Number(area.structureTotal) || 0;
-                        const equipmentTotal = Number(area.equipmentTotal) || 0;
-                        const canopyTotal = Number(area.canopyTotal) || 0;
-                        const accessDoorPrice =
-                            Number(area.accessDoorPrice) || 0;
-                        const ventilationPrice =
-                            Number(area.ventilationPrice) || 0;
-                        const airPrice = Number(area.airPrice) || 0;
-                        const fanPartsPrice = Number(area.fanPartsPrice) || 0;
-                        const airInExTotal = Number(area.airInExTotal) || 0;
-
-                        // Handle schematicItemsTotal which might be an object
-                        let schematicItemsTotal = 0;
-                        if (
-                            typeof area.schematicItemsTotal === "object" &&
-                            area.schematicItemsTotal !== null
-                        ) {
-                            schematicItemsTotal =
-                                Number(area.schematicItemsTotal.overall) || 0;
-                        } else {
-                            schematicItemsTotal =
-                                Number(area.schematicItemsTotal) || 0;
-                        }
-
-                        const areaTotal =
-                            structureTotal +
-                            equipmentTotal +
-                            canopyTotal +
-                            accessDoorPrice +
-                            ventilationPrice +
-                            airPrice +
-                            fanPartsPrice +
-                            airInExTotal +
-                            schematicItemsTotal;
-
-                        // Skip areas with no data
-                        if (areaTotal === 0) return null;
-
-                        return (
-                            <tr key={index}>
-                                <td>
-                                    {area.structure?.structureId ||
-                                        `Area ${index + 2}`}
-                                </td>
-                                <td style={{ textAlign: "right" }}>
-                                    {(
-                                        areaTotal *
-                                        (1 + (Number(modify) || 0) / 100)
-                                    ).toFixed(2)}
-                                </td>
-                            </tr>
-                        );
-                    })}
 
                     {/* Grand Total row */}
                     <tr

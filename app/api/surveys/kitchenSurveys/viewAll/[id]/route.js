@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import dbConnect from "../../../../../../lib/dbConnect";
 import KitchenSurvey from "../../../../../../models/database/KitchenSurvey";
+import SurveyCollection from "../../../../../../models/database/SurveyCollection";
 
 // Helper function to generate the next alphabetic version
 // Examples: A -> B -> C -> ... -> Z -> AA -> AB -> ... -> ZZ -> AAA -> etc.
@@ -46,16 +47,38 @@ export async function GET(request, { params }) {
   
   await dbConnect();
   try {
+    // Get the survey with populated site data
     const survey = await KitchenSurvey.findById(id).populate("site");
+    
     if (!survey) {
       return NextResponse.json(
         { success: false, message: "Survey not found" },
         { status: 404 }
       );
     }
+    
+    // If this survey is part of a collection, fetch collection info
+    if (survey.collectionId) {
+      const collection = await SurveyCollection.findById(survey.collectionId)
+        .select('collectionRef name totalAreas');
+      
+      // If collection exists, attach info to response
+      if (collection) {
+        // Attach collection data to the survey response
+        const surveyData = survey.toObject();
+        surveyData.collectionInfo = {
+          name: collection.name,
+          totalAreas: collection.totalAreas,
+          collectionRef: collection.collectionRef
+        };
+        
+        return NextResponse.json({ success: true, data: surveyData });
+      }
+    }
 
     return NextResponse.json({ success: true, data: survey });
   } catch (error) {
+    console.error(`Error fetching survey ${id}:`, error);
     return NextResponse.json(
       { success: false, message: error.message },
       { status: 400 }
@@ -77,18 +100,40 @@ export async function PUT(request, { params }) {
       body.images = {};
     }
     
+    // Remove any child areas references from body if they exist
+    if (body.childAreas) {
+      delete body.childAreas;
+    }
+    
+    // Update the survey
     const updatedSurvey = await KitchenSurvey.findByIdAndUpdate(id, body, {
       new: true,
       runValidators: true,
     });
+    
     if (!updatedSurvey) {
       return NextResponse.json(
         { success: false, message: "Survey not found" },
         { status: 404 }
       );
     }
+    
+    // If this is part of a collection and structureId changed, update collection
+    if (body.structure?.structureId && updatedSurvey.collectionId) {
+      // Check if collection needs updating
+      const collection = await SurveyCollection.findById(updatedSurvey.collectionId);
+      if (collection) {
+        // If this is the first survey (areaIndex 0), update collection name
+        if (updatedSurvey.areaIndex === 0) {
+          collection.name = `${body.structure.structureId} Collection`;
+          await collection.save();
+        }
+      }
+    }
+    
     return NextResponse.json({ success: true, data: updatedSurvey });
   } catch (error) {
+    console.error(`Error updating survey ${id}:`, error);
     return NextResponse.json(
       { success: false, message: error.message },
       { status: 400 }
@@ -103,15 +148,61 @@ export async function DELETE(request, { params }) {
   
   await dbConnect();
   try {
-    const deletedSurvey = await KitchenSurvey.findByIdAndDelete(id);
-    if (!deletedSurvey) {
+    // Find the survey first to check if it's in a collection
+    const survey = await KitchenSurvey.findById(id);
+    
+    if (!survey) {
       return NextResponse.json(
         { success: false, message: "Survey not found" },
         { status: 404 }
       );
     }
-    return NextResponse.json({ success: true, data: {} });
+    
+    // If survey is part of a collection, remove it from the collection
+    if (survey.collectionId) {
+      const collection = await SurveyCollection.findById(survey.collectionId);
+      
+      if (collection) {
+        // Remove the survey from the collection's surveys array
+        collection.surveys = collection.surveys.filter(
+          surveyId => surveyId.toString() !== id
+        );
+        
+        // Update total areas count
+        collection.totalAreas = collection.surveys.length;
+        
+        // If this was the last survey, delete the collection
+        if (collection.surveys.length === 0) {
+          await SurveyCollection.findByIdAndDelete(survey.collectionId);
+        } 
+        // Otherwise save the updated collection
+        else {
+          await collection.save();
+          
+          // Reindex the remaining surveys
+          const remainingSurveys = await KitchenSurvey.find({
+            _id: { $in: collection.surveys }
+          }).sort({ areaIndex: 1 });
+          
+          for (let i = 0; i < remainingSurveys.length; i++) {
+            await KitchenSurvey.findByIdAndUpdate(remainingSurveys[i]._id, {
+              areaIndex: i
+            });
+          }
+        }
+      }
+    }
+    
+    // Now delete the survey
+    const deletedSurvey = await KitchenSurvey.findByIdAndDelete(id);
+    
+    return NextResponse.json({ 
+      success: true, 
+      data: {},
+      message: "Survey deleted successfully" 
+    });
   } catch (error) {
+    console.error(`Error deleting survey ${id}:`, error);
     return NextResponse.json(
       { success: false, message: error.message },
       { status: 400 }
@@ -119,7 +210,7 @@ export async function DELETE(request, { params }) {
   }
 }
 
-// New PATCH handler for creating a new version of a survey
+// PATCH handler for creating a new version of a survey - keep this functionality
 export async function PATCH(request, { params }) {
   // Await params object in Next.js App Router to avoid dynamic route param access errors
   const resolvedParams = await params;
@@ -178,6 +269,7 @@ export async function PATCH(request, { params }) {
       }
       
       // Create a new survey object based on the original
+      // Remove any parent/child fields
       const newSurveyData = {
           ...originalSurvey,
           _id: undefined, // Remove the original ID to create a new document
@@ -187,8 +279,37 @@ export async function PATCH(request, { params }) {
           updatedAt: new Date(), // Set current timestamp for last update
       };
       
+      // Remove any child area references
+      if (newSurveyData.childAreas) {
+          delete newSurveyData.childAreas;
+      }
+      if (newSurveyData.parentSurvey) {
+          delete newSurveyData.parentSurvey;
+      }
+      
       // Create the new survey
       const newSurvey = await KitchenSurvey.create(newSurveyData);
+      
+      // If the original survey was part of a collection, add this one too
+      if (originalSurvey.collectionId) {
+        const collection = await SurveyCollection.findById(originalSurvey.collectionId);
+        
+        if (collection) {
+          // Add the new survey to the collection
+          collection.surveys.push(newSurvey._id);
+          collection.totalAreas = collection.surveys.length;
+          await collection.save();
+          
+          // Update the new survey with collection info
+          await KitchenSurvey.findByIdAndUpdate(newSurvey._id, {
+            collectionId: collection._id,
+            areaIndex: collection.surveys.length - 1,
+            collectionRef: collection.collectionRef
+          });
+          
+          console.log(`Added new version to collection ${collection._id}`);
+        }
+      }
       
       // Return the new survey with populated data
       const populatedSurvey = await KitchenSurvey.findById(newSurvey._id)

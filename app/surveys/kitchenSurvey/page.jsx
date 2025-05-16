@@ -1,15 +1,21 @@
-// app\surveys\kitchenSurvey\page.jsx
+// app/surveys/kitchenSurvey/page.jsx
 "use client";
 
 import React, { useRef, useState, useEffect } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Toast } from "primereact/toast";
 import { ProgressSpinner } from "primereact/progressspinner";
+import { ProgressBar } from "primereact/progressbar";
+import { Button } from "primereact/button";
 import ExportPDF from "@/components/PDF/export";
 import SurveyInfo from "@/components/kitchenSurvey/surveyInfo";
 import Area1Logic from "@/components/kitchenSurvey/Area1Logic";
-import DuplicationLogic from "@/components/kitchenSurvey/DuplicationLogic";
-import SurveySteps from "@/components/kitchenSurvey/SurveySteps";
+// Removed SurveySteps import
+
+// Import our new extracted components
+import AreaPagination from "@/components/kitchenSurvey/pagination/AreaPagination";
+import { SurveyActionButtonsConsolidated } from "@/components/kitchenSurvey/actions/SurveyActionButtons";
+import CollectionInfoBanner from "@/components/kitchenSurvey/collection/CollectionInfoBanner";
 
 // Import pricing components
 import PriceTables from "@/components/kitchenSurvey/pricing/PriceTables";
@@ -30,40 +36,77 @@ export default function SurveyForm() {
     const searchParams = useSearchParams();
     const surveyId = searchParams.get("id");
     const siteIdParam = searchParams.get("site");
+    const collectionIdParam = searchParams.get("collection");
+    // Add a refreshFlag parameter to detect explicit refreshes
+    const refreshFlag = searchParams.get("refresh");
 
     const toast = useRef(null);
     const contentRef = useRef(null);
     const mainAreaRef = useRef(null); // Reference for main area
     const schematicRef = useRef(null); // Reference for capturing schematic in quotes
 
-    // ADDED: Track initialized state to prevent unnecessary updates
-    const initializedRef = useRef(false);
+    // Ref to track if we're creating a draft survey
+    const creatingDraftSurvey = useRef(false);
+    // State to help with router refreshes when survey ID changes
+    const [internalSurveyId, setInternalSurveyId] = useState(surveyId);
+    // Keep track of previous site ID to prevent unnecessary fetches
+    const prevSiteIdRef = useRef(siteIdParam);
+    // Add state to track navigation loading state
+    const [isNavigatingToNewArea, setIsNavigatingToNewArea] = useState(false);
 
-    // ADDED: Refs to track update status and prevent circular updates for elements
+    // State for pagination
+    const [areasPagination, setAreasPagination] = useState({
+        currentIndex: 0,
+        totalAreas: 1,
+        areasList: [],
+        collectionRef: null,
+        collectionId: collectionIdParam || null,
+    });
+
+    // Add this effect to catch navigation with refresh=true
+    useEffect(() => {
+        // If we have a refresh flag in the URL, this is a navigation from AddNewArea
+        if (refreshFlag === "true") {
+            setIsNavigatingToNewArea(true);
+
+            // Clear the flag after we detect it
+            const clearFlag = () => {
+                const url = new URL(window.location);
+                url.searchParams.delete("refresh");
+                window.history.replaceState({}, "", url);
+
+                // Give some extra time for everything to load
+                setTimeout(() => {
+                    setIsNavigatingToNewArea(false);
+                }, 1500);
+            };
+
+            // Delay to ensure page has fully loaded
+            setTimeout(clearFlag, 500);
+        }
+    }, [refreshFlag]);
+
+    // Refs to track update status and prevent circular updates for elements
     // that still need protection
+    const initializedRef = useRef(false);
     const updatingSurveyDataRef = useRef(false);
     const updatingSpecialistEquipmentRef = useRef(false);
     const updatingStructureTotalRef = useRef(false);
     const updatingCanopyTotalRef = useRef(false);
-    // REMOVED updatingEquipmentRef - no longer needed
     const updatingAccessRef = useRef(false);
     const updatingVentilationRef = useRef(false);
     const updatingNotesRef = useRef(false);
     const updatingOperationsRef = useRef(false);
 
-    // ADDED: Refs to store previous values for comparison
+    // Refs to store previous values for comparison
     const prevSurveyDataRef = useRef([]);
     const prevSpecialistEquipmentRef = useRef([]);
     const prevStructureTotalRef = useRef(0);
     const prevCanopyTotalRef = useRef(0);
-    // REMOVED prevEquipmentRef - no longer needed
     const prevAccessRef = useRef({});
     const prevVentilationRef = useRef({});
     const prevNotesRef = useRef({});
     const prevOperationsRef = useRef({});
-    const prevAreasStateRef = useRef([]);
-
-    const [areaRefs, setAreaRefs] = useState([]); // References for duplicated areas
 
     // Load all survey data using our custom hook
     const {
@@ -94,7 +137,7 @@ export default function SurveyForm() {
         setSpecialistEquipmentData,
         specialistEquipmentId,
         setSpecialistEquipmentId,
-        // NEW: Get the initialSpecialistEquipmentSurvey object
+        // Get the initialSpecialistEquipmentSurvey object
         initialSpecialistEquipmentSurvey,
 
         // Structure data
@@ -166,12 +209,6 @@ export default function SurveyForm() {
         fanGradeSelections,
         setFanGradeSelections,
 
-        // Areas
-        areasState,
-        setAreasState,
-        areas,
-        setAreas,
-
         // Form sections
         ventilation,
         setVentilation,
@@ -191,30 +228,583 @@ export default function SurveyForm() {
         setPrimaryContactIndex,
         walkAroundContactIndex,
         setWalkAroundContactIndex,
-    } = useSurveyDataLoader(surveyId, siteIdParam, toast);
+    } = useSurveyDataLoader(internalSurveyId, siteIdParam, toast);
 
-    // Debug the initialSpecialistEquipmentSurvey data to confirm we're getting it
+    // Track if we've already created a draft survey for this site
+    const [hasDraftSurvey, setHasDraftSurvey] = useState(!!surveyId);
+
+    // Effect to detect site selection and automatically create a survey
     useEffect(() => {
-        if (initialSpecialistEquipmentSurvey?.categoryComments) {
-            console.log(
-                "Page: Loaded specialist category comments:",
-                Object.keys(initialSpecialistEquipmentSurvey.categoryComments)
-                    .length,
-                "items",
-                JSON.stringify(
-                    initialSpecialistEquipmentSurvey.categoryComments
-                )
-            );
+        // Check if we already have a survey ID or are in the process of creating one
+        if (surveyId || creatingDraftSurvey.current || hasDraftSurvey) {
+            return;
         }
-    }, [initialSpecialistEquipmentSurvey]);
 
-    // Create area refs whenever the areas array changes
-    React.useEffect(() => {
-        // Create refs for each area
-        setAreaRefs(areas.map(() => React.createRef()));
-    }, [areas.length]);
+        // Check if we now have a site but no survey ID
+        if (siteDetails && (siteDetails._id || siteDetails.id) && !isLoading) {
+            // Automatically create the survey when a site is selected
+            console.log(
+                "Site selected but no survey exists - auto-creating survey"
+            );
+            createMainSurveyInBackground();
+        }
+    }, [siteDetails, surveyId, isLoading, hasDraftSurvey]);
 
-    // ADDED: Initialize tracking refs after data is loaded
+    // Check for fallback collection data in localStorage
+    useEffect(() => {
+        try {
+            const fallbackData = localStorage.getItem(
+                "surveyCollectionFallback"
+            );
+
+            if (fallbackData) {
+                const data = JSON.parse(fallbackData);
+
+                // Only use if recent (less than 30 seconds old) and matches current URL
+                const isRecent = Date.now() - data.timestamp < 30000;
+                const matchesUrl =
+                    data.newSurveyId === surveyId &&
+                    data.collectionId === collectionIdParam;
+
+                if (isRecent && matchesUrl) {
+                    console.log(
+                        "FALLBACK: Found valid collection data in localStorage",
+                        data
+                    );
+
+                    // Force set areasPagination with minimum data to show pagination
+                    setAreasPagination((prev) => ({
+                        ...prev,
+                        collectionId: data.collectionId,
+                        totalAreas: 2, // Force at least 2 to show pagination
+                        areasList: [
+                            {
+                                id: data.newSurveyId,
+                                name: structureId || "New Area",
+                                refValue: refValue,
+                            },
+                            // Add a dummy area to ensure totalAreas > 1
+                            {
+                                id: "placeholder",
+                                name: "Previous Area",
+                                refValue: "",
+                            },
+                        ],
+                        currentIndex: data.areaIndex || 0,
+                    }));
+
+                    // Clear the fallback data to avoid reuse
+                    localStorage.removeItem("surveyCollectionFallback");
+                } else if (isRecent) {
+                    console.log(
+                        "FALLBACK: Found localStorage data but URL mismatch"
+                    );
+                } else {
+                    console.log("FALLBACK: Found expired localStorage data");
+                    localStorage.removeItem("surveyCollectionFallback");
+                }
+            }
+        } catch (e) {
+            console.error("Error checking localStorage fallback:", e);
+        }
+    }, [surveyId, collectionIdParam, structureId, refValue]);
+
+    // ADDED FIX: Update internalSurveyId when the URL parameter changes
+    useEffect(() => {
+        if (surveyId !== internalSurveyId) {
+            console.log(
+                `Updating internal survey ID from ${internalSurveyId} to ${surveyId}`
+            );
+            setInternalSurveyId(surveyId);
+        }
+    }, [surveyId, internalSurveyId]);
+
+    // Add a fallback retry mechanism for collection loading
+    useEffect(() => {
+        if (
+            surveyId &&
+            collectionIdParam &&
+            areasPagination.areasList.length <= 1
+        ) {
+            console.log(
+                "FALLBACK: Setting up retry mechanism for collection data"
+            );
+
+            // Create multiple retry attempts with increasing delays
+            const retryDelays = [1000, 2000, 3000, 5000];
+
+            retryDelays.forEach((delay, index) => {
+                setTimeout(async () => {
+                    console.log(
+                        `FALLBACK: Retry attempt ${
+                            index + 1
+                        } for collection data`
+                    );
+
+                    try {
+                        // Direct fetch to the collection endpoint
+                        const res = await fetch(
+                            `/api/surveys/collections/${collectionIdParam}`
+                        );
+                        if (res.ok) {
+                            const json = await res.json();
+
+                            if (
+                                json.success &&
+                                json.data &&
+                                json.data.surveys &&
+                                json.data.surveys.length > 0
+                            ) {
+                                // Sort surveys by areaIndex
+                                const sortedSurveys = json.data.surveys.sort(
+                                    (a, b) =>
+                                        (a.areaIndex || 0) - (b.areaIndex || 0)
+                                );
+
+                                // Find current survey index
+                                const currentIndex = sortedSurveys.findIndex(
+                                    (area) => area._id === surveyId
+                                );
+
+                                console.log(
+                                    `FALLBACK: Found ${
+                                        sortedSurveys.length
+                                    } areas in retry ${index + 1}`
+                                );
+
+                                // Only update if we found more areas than currently stored
+                                if (
+                                    sortedSurveys.length >
+                                    areasPagination.areasList.length
+                                ) {
+                                    console.log(
+                                        `FALLBACK: Updating pagination data with ${sortedSurveys.length} areas`
+                                    );
+
+                                    setAreasPagination({
+                                        currentIndex:
+                                            currentIndex !== -1
+                                                ? currentIndex
+                                                : 0,
+                                        totalAreas: sortedSurveys.length,
+                                        areasList: sortedSurveys.map(
+                                            (area) => ({
+                                                id: area._id,
+                                                name:
+                                                    area.structure
+                                                        ?.structureId ||
+                                                    `Area ${
+                                                        area.areaIndex + 1
+                                                    }`,
+                                                refValue: area.refValue || "",
+                                            })
+                                        ),
+                                        collectionRef: json.data.collectionRef,
+                                        collectionId: collectionIdParam,
+                                    });
+                                }
+                            }
+                        }
+                    } catch (error) {
+                        console.error(
+                            `FALLBACK: Error in retry ${index + 1}:`,
+                            error
+                        );
+                    }
+                }, delay);
+            });
+        }
+    }, [surveyId, collectionIdParam, areasPagination.areasList.length]);
+
+    // Add this effect to force collection refresh when the refresh flag is present
+    useEffect(() => {
+        // If we have a refresh flag in the URL, force refresh collection data
+        if (
+            refreshFlag === "true" &&
+            !isLoading &&
+            surveyId &&
+            areasPagination.collectionId
+        ) {
+            console.log("Force refreshing collection data from refresh flag");
+
+            const forceRefreshCollection = async () => {
+                try {
+                    // Direct fetch to get up-to-date collection data
+                    const res = await fetch(
+                        `/api/surveys/collections/${areasPagination.collectionId}`
+                    );
+                    if (res.ok) {
+                        const json = await res.json();
+                        if (json.success && json.data) {
+                            // Get all surveys in this collection and sort them
+                            const sortedSurveys = Array.isArray(
+                                json.data.surveys
+                            )
+                                ? json.data.surveys.sort(
+                                      (a, b) =>
+                                          (a.areaIndex || 0) -
+                                          (b.areaIndex || 0)
+                                  )
+                                : [];
+
+                            // Find current survey index
+                            const currentIndex = sortedSurveys.findIndex(
+                                (area) => area._id === surveyId
+                            );
+
+                            console.log(
+                                `Found ${sortedSurveys.length} areas in collection after force refresh`
+                            );
+
+                            // Update pagination state with fresh data
+                            setAreasPagination({
+                                currentIndex:
+                                    currentIndex !== -1 ? currentIndex : 0,
+                                totalAreas: sortedSurveys.length,
+                                areasList: sortedSurveys.map((area) => ({
+                                    id: area._id,
+                                    name:
+                                        area.structure?.structureId ||
+                                        `Area ${area.areaIndex + 1}`,
+                                    refValue: area.refValue || "",
+                                })),
+                                collectionRef: json.data.collectionRef,
+                                collectionId: areasPagination.collectionId,
+                            });
+
+                            // Remove refresh flag from URL after processing
+                            const url = new URL(window.location);
+                            url.searchParams.delete("refresh");
+                            window.history.replaceState({}, "", url);
+                        }
+                    }
+                } catch (error) {
+                    console.error("Error in force refresh:", error);
+                }
+            };
+
+            // Delay to ensure page has fully loaded
+            setTimeout(forceRefreshCollection, 500);
+        }
+    }, [refreshFlag, surveyId, areasPagination.collectionId, isLoading]);
+
+    // Fetch collection info when survey ID or collection ID changes
+    useEffect(() => {
+        if (!isLoading && (surveyId || collectionIdParam)) {
+            console.log("PAGINATION DEBUG: Starting fetch with params:", {
+                surveyId,
+                collectionIdParam,
+                isLoading,
+            });
+
+            const fetchCollectionInfo = async () => {
+                try {
+                    console.log("[page] Fetching collection info...");
+                    // Try both approaches to get collection data:
+
+                    // 1. First try: Get info from survey if we have a survey ID
+                    if (surveyId) {
+                        const res = await fetch(
+                            `/api/surveys/kitchenSurveys/viewAll/${surveyId}`
+                        );
+
+                        if (res.ok) {
+                            const json = await res.json();
+                            if (json.success && json.data) {
+                                // If this survey is part of a collection, get that collection ID
+                                if (json.data.collectionId) {
+                                    // Get all surveys in this collection
+                                    const collRes = await fetch(
+                                        `/api/surveys/kitchenSurveys/viewAll?collectionId=${json.data.collectionId}`
+                                    );
+
+                                    if (collRes.ok) {
+                                        const collJson = await collRes.json();
+                                        if (
+                                            collJson.success &&
+                                            Array.isArray(collJson.data)
+                                        ) {
+                                            // Sort by areaIndex
+                                            const sortedAreas =
+                                                collJson.data.sort(
+                                                    (a, b) =>
+                                                        (a.areaIndex || 0) -
+                                                        (b.areaIndex || 0)
+                                                );
+
+                                            // Find current survey's index in collection
+                                            const currentIndex =
+                                                sortedAreas.findIndex(
+                                                    (area) =>
+                                                        area._id === surveyId
+                                                );
+
+                                            console.log(
+                                                "[page] Found collection with",
+                                                sortedAreas.length,
+                                                "areas"
+                                            );
+
+                                            setAreasPagination({
+                                                currentIndex:
+                                                    currentIndex !== -1
+                                                        ? currentIndex
+                                                        : 0,
+                                                totalAreas: sortedAreas.length,
+                                                areasList: sortedAreas.map(
+                                                    (area) => ({
+                                                        id: area._id,
+                                                        name:
+                                                            area.structure
+                                                                ?.structureId ||
+                                                            `Area ${
+                                                                area.areaIndex +
+                                                                1
+                                                            }`,
+                                                        refValue: area.refValue,
+                                                    })
+                                                ),
+                                                collectionRef:
+                                                    json.data.collectionRef,
+                                                collectionId:
+                                                    json.data.collectionId,
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // 2. Second try: Use collection ID parameter directly
+                    else if (collectionIdParam) {
+                        console.log(
+                            "[page] Using collection ID param:",
+                            collectionIdParam
+                        );
+
+                        const collRes = await fetch(
+                            `/api/surveys/kitchenSurveys/viewAll?collectionId=${collectionIdParam}`
+                        );
+
+                        if (collRes.ok) {
+                            const collJson = await collRes.json();
+                            if (
+                                collJson.success &&
+                                Array.isArray(collJson.data)
+                            ) {
+                                // Sort by areaIndex
+                                const sortedAreas = collJson.data.sort(
+                                    (a, b) =>
+                                        (a.areaIndex || 0) - (b.areaIndex || 0)
+                                );
+
+                                console.log(
+                                    "[page] Found collection with",
+                                    sortedAreas.length,
+                                    "areas from param"
+                                );
+
+                                setAreasPagination({
+                                    currentIndex: 0, // Default to first area if no surveyId
+                                    totalAreas: sortedAreas.length,
+                                    areasList: sortedAreas.map((area) => ({
+                                        id: area._id,
+                                        name:
+                                            area.structure?.structureId ||
+                                            `Area ${area.areaIndex + 1}`,
+                                        refValue: area.refValue,
+                                    })),
+                                    collectionRef:
+                                        sortedAreas[0]?.collectionRef ||
+                                        "Collection",
+                                    collectionId: collectionIdParam,
+                                });
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.error(
+                        "[page] Error fetching collection info:",
+                        error
+                    );
+                }
+            };
+
+            fetchCollectionInfo();
+        } else {
+            console.log("PAGINATION DEBUG: Skipping fetch with params:", {
+                surveyId,
+                collectionIdParam,
+                isLoading,
+            });
+        }
+    }, [isLoading, surveyId, collectionIdParam]);
+
+    // Force-refresh pagination if we detect we're in a collection but don't have areas loaded
+    useEffect(() => {
+        // If we have a collection ID but no areas list, fetch the collection data
+        const needsRefresh =
+            !isLoading &&
+            surveyId &&
+            ((collectionIdParam && areasPagination.areasList.length <= 1) ||
+                (areasPagination.collectionId &&
+                    areasPagination.areasList.length <= 1));
+
+        if (needsRefresh) {
+            console.log("[page] Collection needs refresh - fetching areas");
+
+            const refreshCollection = async () => {
+                try {
+                    const targetCollectionId =
+                        areasPagination.collectionId || collectionIdParam;
+
+                    if (!targetCollectionId) return;
+
+                    const res = await fetch(
+                        `/api/surveys/kitchenSurveys/viewAll?collectionId=${targetCollectionId}`
+                    );
+
+                    if (res.ok) {
+                        const json = await res.json();
+                        if (
+                            json.success &&
+                            Array.isArray(json.data) &&
+                            json.data.length > 0
+                        ) {
+                            // Sort by areaIndex
+                            const sortedAreas = json.data.sort(
+                                (a, b) =>
+                                    (a.areaIndex || 0) - (b.areaIndex || 0)
+                            );
+
+                            // Find current survey's index in collection
+                            const currentIndex = sortedAreas.findIndex(
+                                (area) => area._id === surveyId
+                            );
+
+                            console.log(
+                                "[page] Refreshed collection with",
+                                sortedAreas.length,
+                                "areas"
+                            );
+
+                            if (sortedAreas.length > 1) {
+                                setAreasPagination({
+                                    currentIndex:
+                                        currentIndex !== -1 ? currentIndex : 0,
+                                    totalAreas: sortedAreas.length,
+                                    areasList: sortedAreas.map((area) => ({
+                                        id: area._id,
+                                        name:
+                                            area.structure?.structureId ||
+                                            `Area ${area.areaIndex + 1}`,
+                                        refValue: area.refValue,
+                                    })),
+                                    collectionRef:
+                                        sortedAreas[0]?.collectionRef ||
+                                        "Collection",
+                                    collectionId: targetCollectionId,
+                                });
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.error("[page] Error refreshing collection:", error);
+                }
+            };
+
+            refreshCollection();
+        }
+    }, [
+        isLoading,
+        surveyId,
+        collectionIdParam,
+        areasPagination.collectionId,
+        areasPagination.areasList.length,
+    ]);
+
+    // This effect will run whenever surveyId changes (after navigation to a new area)
+    useEffect(() => {
+        if (surveyId && areasPagination.collectionId) {
+            console.log(
+                "PAGINATION: Refreshing after navigation, surveyId:",
+                surveyId
+            );
+
+            const refreshCollectionData = async () => {
+                try {
+                    // First, fetch the collection info to get all surveys
+                    const res = await fetch(
+                        `/api/surveys/collections/${areasPagination.collectionId}`
+                    );
+
+                    if (res.ok) {
+                        const json = await res.json();
+                        if (json.success && json.data) {
+                            // Get all surveys in collection
+                            const sortedSurveys = Array.isArray(
+                                json.data.surveys
+                            )
+                                ? json.data.surveys.sort(
+                                      (a, b) =>
+                                          (a.areaIndex || 0) -
+                                          (b.areaIndex || 0)
+                                  )
+                                : [];
+
+                            console.log(
+                                "PAGINATION: Found",
+                                sortedSurveys.length,
+                                "areas in collection"
+                            );
+
+                            // Find current survey index
+                            const currentIndex = sortedSurveys.findIndex(
+                                (area) => area._id === surveyId
+                            );
+
+                            // Only update if we have valid data
+                            if (sortedSurveys.length > 0) {
+                                setAreasPagination((prev) => ({
+                                    ...prev,
+                                    currentIndex:
+                                        currentIndex !== -1 ? currentIndex : 0,
+                                    totalAreas: sortedSurveys.length,
+                                    areasList: sortedSurveys.map((area) => ({
+                                        id: area._id,
+                                        name:
+                                            area.structure?.structureId ||
+                                            `Area ${area.areaIndex + 1}`,
+                                        refValue: area.refValue || "",
+                                    })),
+                                }));
+
+                                console.log(
+                                    "PAGINATION: Updated pagination data, current area index:",
+                                    currentIndex
+                                );
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.error(
+                        "PAGINATION: Error refreshing collection data:",
+                        error
+                    );
+                }
+            };
+
+            // Add a small delay to ensure React has completed its update cycle
+            const timeoutId = setTimeout(() => {
+                refreshCollectionData();
+            }, 300);
+
+            return () => clearTimeout(timeoutId);
+        }
+    }, [surveyId, areasPagination.collectionId]);
+
+    // Initialize tracking refs after data is loaded
     useEffect(() => {
         if (!initializedRef.current && !isLoading) {
             // Initialize refs with initial data for comparison
@@ -226,7 +816,6 @@ export default function SurveyForm() {
             prevVentilationRef.current = ventilation ? { ...ventilation } : {};
             prevNotesRef.current = notes ? { ...notes } : {};
             prevOperationsRef.current = operations ? { ...operations } : {};
-            prevAreasStateRef.current = [...areasState];
 
             initializedRef.current = true;
         }
@@ -240,8 +829,155 @@ export default function SurveyForm() {
         ventilation,
         notes,
         operations,
-        areasState,
     ]);
+
+    // Function to handle site details change
+    const handleSiteDetailsChange = (newSiteDetails) => {
+        // First, update the site details in state
+        setSiteDetails(newSiteDetails);
+
+        // If we don't have a survey ID yet, and we just selected a site,
+        // we'll soon trigger the auto-creation of a survey via the effect above
+        if (
+            !surveyId &&
+            !hasDraftSurvey &&
+            newSiteDetails &&
+            (newSiteDetails._id || newSiteDetails.id)
+        ) {
+            console.log("Site details updated, survey will be auto-created");
+            // No need to call createMainSurveyInBackground here, the effect will trigger it
+        }
+    };
+
+    // Function to manually create a survey - only called when needed
+    const createMainSurveyInBackground = async () => {
+        // Set flag to prevent multiple creations
+        if (creatingDraftSurvey.current) return;
+        creatingDraftSurvey.current = true;
+
+        try {
+            console.log(
+                "Creating main survey with collection in background..."
+            );
+
+            // 1. First create a collection
+            const collectionData = {
+                collectionRef: refValue || "Survey Collection",
+                name: `${structureId || "Area"} Collection`,
+                site: siteDetails._id || siteDetails.id,
+                surveys: [], // Will add survey after it's created
+                totalAreas: 0,
+            };
+
+            const collRes = await fetch("/api/surveys/collections", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(collectionData),
+            });
+
+            if (!collRes.ok) {
+                throw new Error("Failed to create collection");
+            }
+
+            const collJson = await collRes.json();
+            const collectionId = collJson.data._id;
+
+            // 2. Now create the survey with reference to collection
+            const initialSurveyData = {
+                refValue: refValue,
+                surveyDate: surveyDate || new Date(),
+                site: {
+                    _id: siteDetails._id || siteDetails.id,
+                },
+                structure: {
+                    structureId: structureId || "Area 1",
+                    structureTotal: 0,
+                },
+                collectionId: collectionId, // Reference the collection we just created
+                areaIndex: 0, // First survey is index 0
+                // FIXED: Initialize with empty objects for comments
+                equipmentSurvey: {
+                    entries: [],
+                    subcategoryComments: {},
+                },
+                specialistEquipmentSurvey: {
+                    entries: [],
+                    categoryComments: {},
+                },
+                equipment: {
+                    subcategoryComments: {},
+                    categoryComments: {},
+                },
+            };
+
+            const saveRes = await fetch("/api/surveys/kitchenSurveys", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(initialSurveyData),
+            });
+
+            if (!saveRes.ok) {
+                const errorText = await saveRes.text();
+                console.error(
+                    `Failed to create survey: Status ${saveRes.status}`,
+                    errorText
+                );
+                throw new Error(`Failed to create survey: ${saveRes.status}`);
+            }
+
+            const saveData = await saveRes.json();
+
+            // Get the new survey ID
+            const newSurveyId = saveData.data._id;
+
+            // Mark that we've created a draft survey for this site
+            setHasDraftSurvey(true);
+
+            // Update URL with both parameters
+            const url = new URL(window.location);
+            url.searchParams.set("id", newSurveyId);
+            url.searchParams.set("collection", collectionId);
+            window.history.pushState({}, "", url);
+
+            // Show a subtle notification
+            toast.current?.show({
+                severity: "success",
+                summary: "Survey Created",
+                detail: "Survey document created successfully.",
+                life: 2000,
+            });
+
+            // Update the internal state
+            setInternalSurveyId(newSurveyId);
+
+            // Update pagination to show the new collection
+            setAreasPagination({
+                collectionId: collectionId,
+                areasList: [
+                    {
+                        id: newSurveyId,
+                        name: structureId || "Area 1",
+                        refValue: refValue,
+                    },
+                ],
+                currentIndex: 0,
+                totalAreas: 1,
+                collectionRef: refValue || "Survey Collection",
+            });
+        } catch (error) {
+            console.error("Error creating survey:", error);
+            toast.current?.show({
+                severity: "error",
+                summary: "Error",
+                detail: `Failed to create survey: ${error.message}`,
+            });
+        } finally {
+            // Reset flag after a short delay
+            setTimeout(() => {
+                creatingDraftSurvey.current = false;
+            }, 500);
+        }
+    };
 
     // Toggle accordion sections
     const [accordion, setAccordion] = useState({
@@ -263,183 +999,113 @@ export default function SurveyForm() {
         "images",
     ]);
 
-    // ADDED: Safe handlers with circular update protection
-
-    // Safe setter for surveyData
+    // Safe handlers with circular update protection
     const handleSurveyDataChange = (newData) => {
-        // Skip if already updating
-        if (updatingSurveyDataRef.current) {
-            return;
-        }
+        if (updatingSurveyDataRef.current) return;
 
-        // Skip if no actual change
         const newDataStr = JSON.stringify(newData);
         const prevDataStr = JSON.stringify(prevSurveyDataRef.current);
-        if (newDataStr === prevDataStr) {
-            return;
-        }
+        if (newDataStr === prevDataStr) return;
 
-        // Set flag to prevent circular updates
         updatingSurveyDataRef.current = true;
-
-        // Update reference
         prevSurveyDataRef.current = JSON.parse(newDataStr);
-
-        // Update state
         setSurveyData(newData);
 
-        // Reset flag after a short delay
         setTimeout(() => {
             updatingSurveyDataRef.current = false;
         }, 0);
     };
 
-    // Safe setter for specialist equipment data
     const handleSpecialistEquipmentDataChange = (newData) => {
-        // Skip if already updating
-        if (updatingSpecialistEquipmentRef.current) {
-            return;
-        }
+        if (updatingSpecialistEquipmentRef.current) return;
 
-        // Skip if no actual change
         const newDataStr = JSON.stringify(newData);
         const prevDataStr = JSON.stringify(prevSpecialistEquipmentRef.current);
-        if (newDataStr === prevDataStr) {
-            return;
-        }
+        if (newDataStr === prevDataStr) return;
 
-        // Set flag to prevent circular updates
         updatingSpecialistEquipmentRef.current = true;
-
-        // Update reference
         prevSpecialistEquipmentRef.current = JSON.parse(newDataStr);
-
-        // Update state
         setSpecialistEquipmentData(newData);
 
-        // Reset flag after a short delay
         setTimeout(() => {
             updatingSpecialistEquipmentRef.current = false;
         }, 0);
     };
 
-    // Safe setter for structure total
     const handleStructureTotalChange = (total) => {
-        // Skip if already updating
-        if (updatingStructureTotalRef.current) {
-            return;
-        }
+        if (updatingStructureTotalRef.current) return;
+        if (total === prevStructureTotalRef.current) return;
 
-        // Skip if no actual change
-        if (total === prevStructureTotalRef.current) {
-            return;
-        }
-
-        // Set flag to prevent circular updates
         updatingStructureTotalRef.current = true;
-
-        // Update reference
         prevStructureTotalRef.current = total;
-
-        // Update state
         setStructureTotal(total);
 
-        // Reset flag after a short delay
         setTimeout(() => {
             updatingStructureTotalRef.current = false;
         }, 0);
     };
 
-    // Safe setter for canopy total
     const handleCanopyTotalChange = (total) => {
-        // Skip if already updating
-        if (updatingCanopyTotalRef.current) {
-            return;
-        }
+        if (updatingCanopyTotalRef.current) return;
+        if (total === prevCanopyTotalRef.current) return;
 
-        // Skip if no actual change
-        if (total === prevCanopyTotalRef.current) {
-            return;
-        }
-
-        // Set flag to prevent circular updates
         updatingCanopyTotalRef.current = true;
-
-        // Update reference
         prevCanopyTotalRef.current = total;
-
-        // Update state
         setCanopyTotal(total);
 
-        // Reset flag after a short delay
         setTimeout(() => {
             updatingCanopyTotalRef.current = false;
         }, 0);
     };
 
-    // SIMPLIFIED: Direct canopy comments handler with no circular update protection
     const handleCanopyCommentsChange = (comments) => {
-        // Simply update the state directly - no circular protection needed
         setCanopyComments(comments);
     };
 
-    // IMPROVED: Equipment change handler with special handling for categoryComments
     const handleEquipmentChange = (newEquipment) => {
         console.log(
             "Page: Received equipment update:",
             Object.keys(newEquipment).join(", ")
         );
 
-        // Direct state update that preserves all fields
         setEquipment((prev) => {
-            // Create a new object to avoid mutation
             const updatedEquipment = { ...prev };
 
-            // Copy all properties from newEquipment to updatedEquipment
             Object.keys(newEquipment).forEach((key) => {
                 updatedEquipment[key] = newEquipment[key];
             });
 
-            // Special handling for subcategoryComments
+            // FIXED: Create deep copies of objects to avoid reference issues
             if (newEquipment.subcategoryComments) {
                 console.log(
                     "Page: Updating subcategoryComments with",
                     Object.keys(newEquipment.subcategoryComments).length,
                     "entries"
                 );
-                updatedEquipment.subcategoryComments =
-                    newEquipment.subcategoryComments;
+                updatedEquipment.subcategoryComments = {};
+                Object.entries(newEquipment.subcategoryComments).forEach(
+                    ([key, value]) => {
+                        updatedEquipment.subcategoryComments[key] = value;
+                    }
+                );
             }
 
-            // Special handling for categoryComments
             if (newEquipment.categoryComments) {
                 console.log(
                     "Page: Updating categoryComments with",
                     Object.keys(newEquipment.categoryComments).length,
                     "entries"
                 );
-                updatedEquipment.categoryComments =
-                    newEquipment.categoryComments;
+                updatedEquipment.categoryComments = {};
+                Object.entries(newEquipment.categoryComments).forEach(
+                    ([key, value]) => {
+                        updatedEquipment.categoryComments[key] = value;
+                    }
+                );
             }
 
             return updatedEquipment;
         });
-    };
-
-    // Safe setter for areas state
-    const handleAreasStateChange = (newState) => {
-        // Skip if no actual change
-        const newStateStr = JSON.stringify(newState);
-        const prevStateStr = JSON.stringify(prevAreasStateRef.current);
-        if (newStateStr === prevStateStr) {
-            return;
-        }
-
-        // Update reference
-        prevAreasStateRef.current = JSON.parse(newStateStr);
-
-        // Update state
-        setAreasState(newState);
     };
 
     // Compute equipment total from main area's surveyData
@@ -447,7 +1113,7 @@ export default function SurveyForm() {
         return computeEquipmentTotal(surveyData, equipmentItems);
     };
 
-    // Function to compute grand totals from main area and all duplicated areas
+    // Function to compute grand totals for main area only
     const computedGrandTotals = () => {
         // Create object with main area totals
         const mainTotals = {
@@ -462,11 +1128,10 @@ export default function SurveyForm() {
             schematicItemsTotal: schematicItemsTotal,
         };
 
-        // Use utility function to compute combined totals
-        return computeGrandTotals(mainTotals, areasState);
+        // Use utility function to compute totals (with empty child areas array)
+        return computeGrandTotals(mainTotals, []);
     };
 
-    // Handle ventilation price change
     const handleVentilationPriceChange = (price) => {
         console.log(`Main page: Setting ventilation price to ${price}`);
         setVentilationPrice(price);
@@ -488,404 +1153,426 @@ export default function SurveyForm() {
         );
     }
 
+    // Add this check for navigation between areas with the refresh flag
+    if (isNavigatingToNewArea) {
+        return (
+            <div
+                style={{
+                    position: "fixed",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    height: "100%",
+                    backgroundColor: "rgba(0, 0, 0, 0.6)",
+                    display: "flex",
+                    flexDirection: "column",
+                    justifyContent: "center",
+                    alignItems: "center",
+                    zIndex: 9999,
+                }}
+            >
+                <div
+                    style={{
+                        backgroundColor: "white",
+                        padding: "2rem",
+                        borderRadius: "8px",
+                        width: "60%",
+                        maxWidth: "500px",
+                    }}
+                >
+                    <h2>Loading New Area</h2>
+                    <p>Finalizing area setup and loading resources...</p>
+                    <ProgressBar
+                        mode="indeterminate"
+                        style={{ height: "20px", marginBottom: "1rem" }}
+                    />
+                    <p style={{ textAlign: "center", fontStyle: "italic" }}>
+                        Please wait while we prepare your new area...
+                    </p>
+                </div>
+            </div>
+        );
+    }
+
+    // Create a consolidated survey data object to pass to components
+    const surveyDataForComponents = {
+        // Basic info
+        surveyId: internalSurveyId,
+        refValue,
+        surveyDate,
+        parking,
+        siteDetails,
+
+        // Contacts
+        contacts,
+        primaryContactIndex,
+        walkAroundContactIndex,
+
+        // Structure data
+        structureId,
+        structureTotal,
+        structureSelectionData,
+        structureDimensions,
+        structureComments,
+
+        // Equipment data
+        surveyData,
+        equipmentItems,
+        specialistEquipmentData,
+
+        // Canopy data
+        canopyTotal,
+        canopyEntries,
+        canopyComments,
+
+        // Pricing data
+        accessDoorPrice,
+        ventilationPrice,
+        airPrice,
+        fanPartsPrice,
+        airInExTotal,
+        schematicItemsTotal,
+        selectedGroupId,
+        modify,
+
+        // Form sections
+        operations,
+        access,
+        equipment,
+        notes,
+        ventilation,
+
+        // Images and visual data
+        surveyImages,
+
+        // Schematic visual data
+        placedItems,
+        specialItems,
+        gridSpaces,
+        cellSize,
+        flexiDuctSelections,
+        accessDoorSelections,
+        groupDimensions,
+        fanGradeSelections,
+    };
+
     return (
         <div className="survey-container">
             <Toast ref={toast} />
-            {/* Survey Steps Navigation */}
-            <SurveySteps
-                areas={areasState}
-                mainAreaRef={mainAreaRef}
-                areaRefs={areaRefs}
-            />
-            {/* Use a single contentRef to wrap ALL content for the PDF, including price tables */}
-            <div ref={contentRef}>
-                <SurveyInfo
-                    initialSiteDetails={siteDetails}
-                    initialContacts={contacts}
-                    initialPrimaryContactIndex={primaryContactIndex}
-                    initialWalkAroundContactIndex={walkAroundContactIndex}
-                    initialRefValue={refValue} // Pass the refValue directly
-                    initialSurveyDate={surveyDate}
-                    initialParking={parking} // Pass parking to SurveyInfo
-                    initialOperations={operations} // Pass operations for initialization
-                    initialEquipment={equipment} // Pass equipment for initialization
-                    initialNotes={notes} // Pass notes for initialization
-                    onRefValueChange={(value) => {
-                        // Only update if we're not in edit mode or if the value has changed
-                        if (value !== refValue) {
-                            setRefValue(value);
-                        }
+
+            {/* Initial Site Information Section - Always Visible */}
+            <div className="initial-setup-container">
+                {/* Site Selection Section */}
+                <div
+                    className="site-selection-container"
+                    style={{
+                        marginBottom: "2rem",
+                        padding: "1rem",
+                        border: "1px solid #ddd",
+                        borderRadius: "4px",
+                        background: "#f9f9f9",
                     }}
-                    onSurveyDateChange={setSurveyDate}
-                    onParkingChange={setParking} // Add parking change handler
-                    onContactsChange={setContacts}
-                    onPrimaryContactChange={setPrimaryContactIndex}
-                    onWalkAroundContactChange={setWalkAroundContactIndex}
-                    onSiteDetailsChange={setSiteDetails}
-                    onOperationsChange={(newOps) => {
-                        // Skip if already updating
-                        if (updatingOperationsRef.current) {
-                            return;
-                        }
+                >
+                    <h2>Site Information</h2>
+                    <p style={{ fontWeight: "bold", color: "#555" }}>
+                        {!siteDetails || (!siteDetails._id && !siteDetails.id)
+                            ? "Please select a site"
+                            : `Selected site: ${
+                                  siteDetails.siteName || siteDetails.name
+                              }`}
+                    </p>
 
-                        // Skip if no actual change
-                        const newOpsStr = JSON.stringify(newOps);
-                        const prevOpsStr = JSON.stringify(
-                            prevOperationsRef.current
-                        );
-                        if (newOpsStr === prevOpsStr) {
-                            return;
-                        }
-
-                        // Set flag to prevent circular updates
-                        updatingOperationsRef.current = true;
-
-                        // Update reference
-                        prevOperationsRef.current = JSON.parse(newOpsStr);
-
-                        // Update state
-                        setOperations(newOps);
-
-                        // Reset flag after a short delay
-                        setTimeout(() => {
-                            updatingOperationsRef.current = false;
-                        }, 0);
-                    }}
-                    onEquipmentChange={handleEquipmentChange}
-                    onNotesChange={(newNotes) => {
-                        // Skip if already updating
-                        if (updatingNotesRef.current) {
-                            return;
-                        }
-
-                        // Skip if no actual change
-                        const newNotesStr = JSON.stringify(newNotes);
-                        const prevNotesStr = JSON.stringify(
-                            prevNotesRef.current
-                        );
-                        if (newNotesStr === prevNotesStr) {
-                            return;
-                        }
-
-                        // Set flag to prevent circular updates
-                        updatingNotesRef.current = true;
-
-                        // Update reference
-                        prevNotesRef.current = JSON.parse(newNotesStr);
-
-                        // Update state
-                        setNotes(newNotes);
-
-                        // Reset flag after a short delay
-                        setTimeout(() => {
-                            updatingNotesRef.current = false;
-                        }, 0);
-                    }}
-                    isEditingMode={!!surveyId} // Pass whether we're in edit mode
-                />
-
-                {/* Area 1 Component */}
-                <div ref={mainAreaRef}>
-                    {" "}
-                    {/* Added ref for main area */}
-                    <div ref={schematicRef}>
-                        <Area1Logic
-                            visibleSections={visibleSections}
-                            setVisibleSections={setVisibleSections}
-                            structureTotal={structureTotal}
-                            setStructureTotal={handleStructureTotalChange}
-                            structureId={structureId}
-                            setStructureId={setStructureId}
-                            structureSelectionData={structureSelectionData}
-                            setStructureSelectionData={
-                                setStructureSelectionData
+                    {/* SurveyInfo component */}
+                    <SurveyInfo
+                        initialSiteDetails={siteDetails}
+                        initialContacts={contacts}
+                        initialPrimaryContactIndex={primaryContactIndex}
+                        initialWalkAroundContactIndex={walkAroundContactIndex}
+                        initialRefValue={refValue}
+                        initialSurveyDate={surveyDate}
+                        initialParking={parking}
+                        initialOperations={operations}
+                        initialEquipment={equipment}
+                        initialNotes={notes}
+                        onRefValueChange={(value) => {
+                            if (value !== refValue) {
+                                setRefValue(value);
                             }
-                            structureDimensions={structureDimensions}
-                            setStructureDimensions={setStructureDimensions}
-                            structureComments={structureComments}
-                            setStructureComments={setStructureComments}
-                            surveyData={surveyData}
-                            setSurveyData={handleSurveyDataChange}
-                            equipmentId={equipmentId}
-                            setEquipmentId={setEquipmentId}
-                            canopyTotal={canopyTotal}
-                            setCanopyTotal={handleCanopyTotalChange}
-                            canopyId={canopyId}
-                            setCanopyId={setCanopyId}
-                            canopyEntries={canopyEntries}
-                            setCanopyEntries={setCanopyEntries}
-                            canopyComments={canopyComments}
-                            setCanopyComments={handleCanopyCommentsChange}
-                            specialistEquipmentData={specialistEquipmentData}
-                            setSpecialistEquipmentData={
-                                handleSpecialistEquipmentDataChange
-                            }
-                            specialistEquipmentId={specialistEquipmentId}
-                            setSpecialistEquipmentId={setSpecialistEquipmentId}
-                            selectedGroupId={selectedGroupId}
-                            setSelectedGroupId={setSelectedGroupId}
-                            accessDoorPrice={accessDoorPrice}
-                            setAccessDoorPrice={setAccessDoorPrice}
-                            ventilationPrice={ventilationPrice}
-                            setVentilationPrice={handleVentilationPriceChange}
-                            airPrice={airPrice}
-                            setAirPrice={setAirPrice}
-                            fanPartsPrice={fanPartsPrice}
-                            setFanPartsPrice={setFanPartsPrice}
-                            airInExTotal={airInExTotal}
-                            setAirInExTotal={setAirInExTotal}
-                            schematicItemsTotal={schematicItemsTotal}
-                            setSchematicItemsTotal={setSchematicItemsTotal}
-                            ventilation={ventilation}
-                            setVentilation={(newVent) => {
-                                // Skip if already updating
-                                if (updatingVentilationRef.current) {
-                                    return;
+                        }}
+                        onSurveyDateChange={setSurveyDate}
+                        onParkingChange={setParking}
+                        onContactsChange={setContacts}
+                        onPrimaryContactChange={setPrimaryContactIndex}
+                        onWalkAroundContactChange={setWalkAroundContactIndex}
+                        onSiteDetailsChange={handleSiteDetailsChange}
+                        onOperationsChange={(newOps) => {
+                            if (updatingOperationsRef.current) return;
+
+                            const newOpsStr = JSON.stringify(newOps);
+                            const prevOpsStr = JSON.stringify(
+                                prevOperationsRef.current
+                            );
+                            if (newOpsStr === prevOpsStr) return;
+
+                            updatingOperationsRef.current = true;
+                            prevOperationsRef.current = JSON.parse(newOpsStr);
+                            setOperations(newOps);
+
+                            setTimeout(() => {
+                                updatingOperationsRef.current = false;
+                            }, 0);
+                        }}
+                        onEquipmentChange={handleEquipmentChange}
+                        onNotesChange={(newNotes) => {
+                            if (updatingNotesRef.current) return;
+
+                            const newNotesStr = JSON.stringify(newNotes);
+                            const prevNotesStr = JSON.stringify(
+                                prevNotesRef.current
+                            );
+                            if (newNotesStr === prevNotesStr) return;
+
+                            updatingNotesRef.current = true;
+                            prevNotesRef.current = JSON.parse(newNotesStr);
+                            setNotes(newNotes);
+
+                            setTimeout(() => {
+                                updatingNotesRef.current = false;
+                            }, 0);
+                        }}
+                        isEditingMode={!!internalSurveyId}
+                    />
+                </div>
+            </div>
+
+            {/* Main Survey Content */}
+            <>
+                {/* Collection information display if in a collection - USING NEW COMPONENT */}
+                {areasPagination.totalAreas > 1 && (
+                    <CollectionInfoBanner
+                        areasPagination={areasPagination}
+                        structureId={structureId}
+                    />
+                )}
+
+                {/* Main content area */}
+                <div ref={contentRef}>
+                    {/* Main Area */}
+                    <div ref={mainAreaRef}>
+                        <div ref={schematicRef}>
+                            <Area1Logic
+                                isMainArea={true}
+                                visibleSections={visibleSections}
+                                setVisibleSections={setVisibleSections}
+                                structureTotal={structureTotal}
+                                setStructureTotal={handleStructureTotalChange}
+                                structureId={structureId}
+                                setStructureId={setStructureId}
+                                structureSelectionData={structureSelectionData}
+                                setStructureSelectionData={
+                                    setStructureSelectionData
                                 }
-
-                                // Skip if no actual change
-                                const newVentStr = JSON.stringify(newVent);
-                                const prevVentStr = JSON.stringify(
-                                    prevVentilationRef.current
-                                );
-                                if (newVentStr === prevVentStr) {
-                                    return;
+                                structureDimensions={structureDimensions}
+                                setStructureDimensions={setStructureDimensions}
+                                structureComments={structureComments}
+                                setStructureComments={setStructureComments}
+                                surveyData={surveyData}
+                                setSurveyData={handleSurveyDataChange}
+                                equipmentId={equipmentId}
+                                setEquipmentId={setEquipmentId}
+                                canopyTotal={canopyTotal}
+                                setCanopyTotal={handleCanopyTotalChange}
+                                canopyId={canopyId}
+                                setCanopyId={setCanopyId}
+                                canopyEntries={canopyEntries}
+                                setCanopyEntries={setCanopyEntries}
+                                canopyComments={canopyComments}
+                                setCanopyComments={handleCanopyCommentsChange}
+                                specialistEquipmentData={
+                                    specialistEquipmentData
                                 }
-
-                                // Set flag to prevent circular updates
-                                updatingVentilationRef.current = true;
-
-                                // Update reference
-                                prevVentilationRef.current =
-                                    JSON.parse(newVentStr);
-
-                                // Update state
-                                setVentilation(newVent);
-
-                                // Reset flag after a short delay
-                                setTimeout(() => {
-                                    updatingVentilationRef.current = false;
-                                }, 0);
-                            }}
-                            access={access}
-                            setAccess={(newAccess) => {
-                                // Skip if already updating
-                                if (updatingAccessRef.current) {
-                                    return;
+                                setSpecialistEquipmentData={
+                                    handleSpecialistEquipmentDataChange
                                 }
-
-                                // Skip if no actual change
-                                const newAccessStr = JSON.stringify(newAccess);
-                                const prevAccessStr = JSON.stringify(
-                                    prevAccessRef.current
-                                );
-                                if (newAccessStr === prevAccessStr) {
-                                    return;
+                                specialistEquipmentId={specialistEquipmentId}
+                                setSpecialistEquipmentId={
+                                    setSpecialistEquipmentId
                                 }
-
-                                // Set flag to prevent circular updates
-                                updatingAccessRef.current = true;
-
-                                // Update reference
-                                prevAccessRef.current =
-                                    JSON.parse(newAccessStr);
-
-                                // Update state
-                                setAccess(newAccess);
-
-                                // Reset flag after a short delay
-                                setTimeout(() => {
-                                    updatingAccessRef.current = false;
-                                }, 0);
-                            }}
-                            accordion={accordion}
-                            toggleAccordion={toggleAccordion}
-                            equipment={equipment}
-                            setEquipment={handleEquipmentChange}
-                            operations={operations}
-                            setOperations={setOperations}
-                            notes={notes}
-                            setNotes={setNotes}
-                            // Pass schematic visual data to Area1Logic
-                            placedItems={placedItems}
-                            setPlacedItems={setPlacedItems}
-                            specialItems={specialItems}
-                            setSpecialItems={setSpecialItems}
-                            gridSpaces={gridSpaces}
-                            setGridSpaces={setGridSpaces}
-                            cellSize={cellSize}
-                            setCellSize={setCellSize}
-                            flexiDuctSelections={flexiDuctSelections}
-                            setFlexiDuctSelections={setFlexiDuctSelections}
-                            accessDoorSelections={accessDoorSelections}
-                            setAccessDoorSelections={setAccessDoorSelections}
-                            groupDimensions={groupDimensions}
-                            setGroupDimensions={setGroupDimensions}
-                            fanGradeSelections={fanGradeSelections}
-                            setFanGradeSelections={setFanGradeSelections}
-                            // Pass survey images explicitly from standardized location
-                            surveyImages={surveyImages}
-                            setSurveyImages={(images) => {
-                                // Skip if no actual change
-                                const imagesStr = JSON.stringify(images);
-                                const currImagesStr =
-                                    JSON.stringify(surveyImages);
-                                if (imagesStr !== currImagesStr) {
-                                    setSurveyImages(images);
+                                selectedGroupId={selectedGroupId}
+                                setSelectedGroupId={setSelectedGroupId}
+                                accessDoorPrice={accessDoorPrice}
+                                setAccessDoorPrice={setAccessDoorPrice}
+                                ventilationPrice={ventilationPrice}
+                                setVentilationPrice={
+                                    handleVentilationPriceChange
                                 }
-                            }}
-                            // Pass site details and reference for proper image organization
-                            siteDetails={siteDetails}
-                            refValue={refValue}
-                            // IMPROVED: Pass the comments directly from specialistEquipmentSurvey
-                            initialSpecialistEquipmentSurvey={
-                                initialSpecialistEquipmentSurvey
-                            }
-                        />
+                                airPrice={airPrice}
+                                setAirPrice={setAirPrice}
+                                fanPartsPrice={fanPartsPrice}
+                                setFanPartsPrice={setFanPartsPrice}
+                                airInExTotal={airInExTotal}
+                                setAirInExTotal={setAirInExTotal}
+                                schematicItemsTotal={schematicItemsTotal}
+                                setSchematicItemsTotal={setSchematicItemsTotal}
+                                ventilation={ventilation}
+                                setVentilation={(newVent) => {
+                                    if (updatingVentilationRef.current) return;
+
+                                    const newVentStr = JSON.stringify(newVent);
+                                    const prevVentStr = JSON.stringify(
+                                        prevVentilationRef.current
+                                    );
+                                    if (newVentStr === prevVentStr) return;
+
+                                    updatingVentilationRef.current = true;
+                                    prevVentilationRef.current =
+                                        JSON.parse(newVentStr);
+                                    setVentilation(newVent);
+
+                                    setTimeout(() => {
+                                        updatingVentilationRef.current = false;
+                                    }, 0);
+                                }}
+                                access={access}
+                                setAccess={(newAccess) => {
+                                    if (updatingAccessRef.current) return;
+
+                                    const newAccessStr =
+                                        JSON.stringify(newAccess);
+                                    const prevAccessStr = JSON.stringify(
+                                        prevAccessRef.current
+                                    );
+                                    if (newAccessStr === prevAccessStr) return;
+
+                                    updatingAccessRef.current = true;
+                                    prevAccessRef.current =
+                                        JSON.parse(newAccessStr);
+                                    setAccess(newAccess);
+
+                                    setTimeout(() => {
+                                        updatingAccessRef.current = false;
+                                    }, 0);
+                                }}
+                                accordion={accordion}
+                                toggleAccordion={toggleAccordion}
+                                equipment={equipment}
+                                setEquipment={handleEquipmentChange}
+                                operations={operations}
+                                setOperations={setOperations}
+                                notes={notes}
+                                setNotes={setNotes}
+                                // Schematic visual data
+                                placedItems={placedItems}
+                                setPlacedItems={setPlacedItems}
+                                specialItems={specialItems}
+                                setSpecialItems={setSpecialItems}
+                                gridSpaces={gridSpaces}
+                                setGridSpaces={setGridSpaces}
+                                cellSize={cellSize}
+                                setCellSize={setCellSize}
+                                flexiDuctSelections={flexiDuctSelections}
+                                setFlexiDuctSelections={setFlexiDuctSelections}
+                                accessDoorSelections={accessDoorSelections}
+                                setAccessDoorSelections={
+                                    setAccessDoorSelections
+                                }
+                                groupDimensions={groupDimensions}
+                                setGroupDimensions={setGroupDimensions}
+                                fanGradeSelections={fanGradeSelections}
+                                setFanGradeSelections={setFanGradeSelections}
+                                // Survey images
+                                surveyImages={surveyImages}
+                                setSurveyImages={(images) => {
+                                    const imagesStr = JSON.stringify(images);
+                                    const currImagesStr =
+                                        JSON.stringify(surveyImages);
+                                    if (imagesStr !== currImagesStr) {
+                                        setSurveyImages(images);
+                                    }
+                                }}
+                                // Site details and reference
+                                siteDetails={siteDetails}
+                                refValue={refValue}
+                                // Specialist equipment survey
+                                initialSpecialistEquipmentSurvey={
+                                    initialSpecialistEquipmentSurvey
+                                }
+                                equipmentItems={equipmentItems}
+                            />
+                        </div>
                     </div>
+
+                    {/* PriceTables for the main area */}
+                    <PriceTables
+                        structureTotal={structureTotal}
+                        structureId={structureId}
+                        equipmentTotal={computedEquipmentTotal()}
+                        equipmentId={equipmentId}
+                        canopyTotal={canopyTotal}
+                        canopyId={canopyId}
+                        accessDoorPrice={accessDoorPrice}
+                        ventilationPrice={ventilationPrice}
+                        airPrice={airPrice}
+                        fanPartsPrice={fanPartsPrice}
+                        airInExTotal={airInExTotal}
+                        modify={modify}
+                        setModify={setModify}
+                        groupingId={selectedGroupId}
+                        schematicItemsTotal={schematicItemsTotal}
+                        specialistEquipmentData={specialistEquipmentData}
+                        areaLabel={structureId}
+                    />
+
+                    {/* Grand Total Section with main area only */}
+                    <GrandTotalSection
+                        structureTotal={structureTotal}
+                        structureId={structureId}
+                        computedEquipmentTotal={computedEquipmentTotal()}
+                        canopyTotal={canopyTotal}
+                        accessDoorPrice={accessDoorPrice}
+                        ventilationPrice={ventilationPrice}
+                        airPrice={airPrice}
+                        fanPartsPrice={fanPartsPrice}
+                        airInExTotal={airInExTotal}
+                        schematicItemsTotal={schematicItemsTotal}
+                        areasState={[]} // Empty array since we're removing child areas
+                        modify={modify}
+                        specialistEquipmentData={specialistEquipmentData}
+                    />
                 </div>
 
-                {/* Duplicated Areas Component with refs passed to it */}
-                <DuplicationLogic
-                    areas={areas}
-                    setAreas={setAreas}
-                    areasState={areasState}
-                    setAreasState={handleAreasStateChange}
-                    equipmentItems={equipmentItems}
-                    initialAreas={surveyId ? areasState : []}
-                    areaRefs={areaRefs}
-                />
-
-                {/* IMPORTANT: Include price tables in the contentRef so they appear in the quote PDF */}
-                {/* PriceTables for the main area (Area 1) */}
-                <PriceTables
-                    structureTotal={structureTotal}
-                    structureId={structureId}
-                    equipmentTotal={computedEquipmentTotal()}
-                    equipmentId={equipmentId}
-                    canopyTotal={canopyTotal}
-                    canopyId={canopyId}
-                    accessDoorPrice={accessDoorPrice}
-                    ventilationPrice={ventilationPrice}
-                    airPrice={airPrice}
-                    fanPartsPrice={fanPartsPrice}
-                    airInExTotal={airInExTotal}
-                    modify={modify}
-                    setModify={setModify}
-                    groupingId={selectedGroupId}
-                    schematicItemsTotal={schematicItemsTotal}
-                    specialistEquipmentData={specialistEquipmentData}
-                    areaLabel={structureId}
-                />
-
-                {/* PriceTables for duplicated areas, each with its own totals */}
-                {areasState.map((areaTotals, index) => (
-                    <div key={index}>
-                        <PriceTables
-                            structureTotal={areaTotals.structureTotal || 0}
-                            structureId={
-                                areaTotals.structure?.structureId || ""
-                            }
-                            equipmentTotal={areaTotals.equipmentTotal || 0}
-                            equipmentId={""}
-                            canopyTotal={areaTotals.canopyTotal || 0}
-                            canopyId={""}
-                            accessDoorPrice={areaTotals.accessDoorPrice || 0}
-                            ventilationPrice={areaTotals.ventilationPrice || 0}
-                            airPrice={areaTotals.airPrice || 0}
-                            fanPartsPrice={areaTotals.fanPartsPrice || 0}
-                            airInExTotal={areaTotals.airInExTotal || 0}
-                            modify={modify}
-                            setModify={setModify}
-                            groupingId={areaTotals.groupingId || ""}
-                            schematicItemsTotal={
-                                areaTotals.schematicItemsTotal || 0
-                            }
-                            specialistEquipmentData={
-                                areaTotals.specialistEquipmentData || []
-                            }
-                            areaLabel={`Area ${index + 2}`}
+                {/* Bottom section with area pagination and save buttons */}
+                <div style={{ position: "relative", marginBottom: "4rem" }}>
+                    {/* Area Pagination - UPDATED TO PASS SURVEY DATA */}
+                    {areasPagination.totalAreas > 1 && (
+                        <AreaPagination
+                            paginationData={areasPagination}
+                            currentSurveyId={internalSurveyId}
+                            surveyData={surveyDataForComponents}
+                            fixedPosition={true}
                         />
-                    </div>
-                ))}
+                    )}
 
-                {/* Grand Total Section - now included in the contentRef */}
-                <GrandTotalSection
-                    structureTotal={structureTotal}
-                    structureId={structureId}
-                    computedEquipmentTotal={computedEquipmentTotal()}
-                    canopyTotal={canopyTotal}
-                    accessDoorPrice={accessDoorPrice}
-                    ventilationPrice={ventilationPrice}
-                    airPrice={airPrice}
-                    fanPartsPrice={fanPartsPrice}
-                    airInExTotal={airInExTotal}
-                    schematicItemsTotal={schematicItemsTotal}
-                    areasState={areasState}
-                    modify={modify}
-                    specialistEquipmentData={specialistEquipmentData}
-                />
-            </div>
-            {/* Properly close the contentRef div */}
+                    {/* Save and Add New Area buttons - USING NEW COMPONENT */}
+                    <SurveyActionButtonsConsolidated
+                        contentRef={contentRef}
+                        schematicRef={schematicRef}
+                        surveyData={surveyDataForComponents}
+                        internalSurveyId={internalSurveyId}
+                        areasPagination={areasPagination}
+                        createSurveyIfNeeded={createMainSurveyInBackground}
+                        fixedPosition={true}
+                    />
+                </div>
 
-            {/* Save Survey Component - outside contentRef */}
-            <div>
-                <SaveSurvey
-                    targetRef={contentRef}
-                    schematicRef={schematicRef}
-                    surveyId={surveyId}
-                    refValue={refValue}
-                    surveyDate={surveyDate}
-                    parking={parking} // Dedicated parking prop
-                    siteDetails={siteDetails}
-                    contacts={contacts}
-                    primaryContactIndex={primaryContactIndex}
-                    walkAroundContactIndex={walkAroundContactIndex}
-                    structureId={structureId}
-                    structureTotal={structureTotal}
-                    structureSelectionData={structureSelectionData}
-                    structureDimensions={structureDimensions}
-                    structureComments={structureComments}
-                    surveyData={surveyData}
-                    equipmentItems={equipmentItems}
-                    specialistEquipmentData={specialistEquipmentData}
-                    canopyTotal={canopyTotal}
-                    canopyEntries={canopyEntries}
-                    canopyComments={canopyComments} // Add canopyComments here
-                    accessDoorPrice={accessDoorPrice}
-                    ventilationPrice={ventilationPrice}
-                    airPrice={airPrice}
-                    fanPartsPrice={fanPartsPrice}
-                    airInExTotal={airInExTotal}
-                    schematicItemsTotal={schematicItemsTotal}
-                    selectedGroupId={selectedGroupId}
-                    operations={operations}
-                    access={access}
-                    equipment={equipment}
-                    notes={notes}
-                    ventilation={ventilation}
-                    areasState={areasState}
-                    modify={modify}
-                    // Pass survey images from standardized location only
-                    surveyImages={surveyImages}
-                    // Pass schematic data from children components
-                    placedItems={placedItems}
-                    specialItems={specialItems}
-                    gridSpaces={gridSpaces}
-                    cellSize={cellSize}
-                    flexiDuctSelections={flexiDuctSelections}
-                    accessDoorSelections={accessDoorSelections}
-                    groupDimensions={groupDimensions}
-                    fanGradeSelections={fanGradeSelections}
-                />
-            </div>
-            <div style={{ marginTop: "1rem" }}>
-                <ExportPDF
-                    targetRef={contentRef}
-                    fileName="kitchen_survey.pdf"
-                    buttonText="Save as PDF"
-                />
-            </div>
+                <div style={{ marginTop: "1rem" }}>
+                    <ExportPDF
+                        targetRef={contentRef}
+                        fileName="kitchen_survey.pdf"
+                        buttonText="Save as PDF"
+                    />
+                </div>
+            </>
         </div>
     );
 }

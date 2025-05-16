@@ -11,11 +11,13 @@ import RelationshipsTab from "@/components/database/clients/common/Relationships
 import NotesTab from "@/components/database/clients/common/NotesTab";
 import useEntityData from "@/components/database/clients/common/useEntityData";
 import KitchenSurveyList from "@/components/kitchenSurvey/storedSiteSurveys/KitchenSurveyList";
+import AreaSurveyList from "@/components/kitchenSurvey/storedAreaSurveys/AreaSurveyList";
 import QuotesList from "@/components/kitchenSurvey/storedQuotes/QuotesList";
 
 export default function SiteDetail() {
     const { id } = useParams();
     const [surveyCount, setSurveyCount] = useState(0);
+    const [areaCount, setAreaCount] = useState(0);
     const [quoteCount, setQuoteCount] = useState(0);
     const {
         entity: site,
@@ -46,6 +48,22 @@ export default function SiteDetail() {
                 }
             };
 
+            const fetchAreaCount = async () => {
+                try {
+                    const res = await fetch(
+                        `/api/surveys/kitchenSurveys/viewAll?siteId=${site._id}`
+                    );
+                    if (res.ok) {
+                        const json = await res.json();
+                        if (json.success && Array.isArray(json.data)) {
+                            setAreaCount(json.data.length);
+                        }
+                    }
+                } catch (error) {
+                    console.error("Error fetching area count:", error);
+                }
+            };
+
             const fetchQuoteCount = async () => {
                 try {
                     const res = await fetch(`/api/quotes?siteId=${site._id}`);
@@ -61,6 +79,7 @@ export default function SiteDetail() {
             };
 
             fetchSurveyCount();
+            fetchAreaCount();
             fetchQuoteCount();
         }
     }, [site]);
@@ -78,6 +97,24 @@ export default function SiteDetail() {
                 <span>Kitchen Surveys</span>
                 <span style={{ fontSize: "0.9rem", color: "#666" }}>
                     {surveyCount} {surveyCount === 1 ? "Survey" : "Surveys"}
+                </span>
+            </div>
+        );
+    };
+
+    // Custom header renderer for Areas card
+    const renderAreasHeader = () => {
+        return (
+            <div
+                style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                }}
+            >
+                <span>Areas</span>
+                <span style={{ fontSize: "0.9rem", color: "#666" }}>
+                    {areaCount} {areaCount === 1 ? "Area" : "Areas"}
                 </span>
             </div>
         );
@@ -129,9 +166,7 @@ export default function SiteDetail() {
                     <Card
                         title={renderSurveyHeader()}
                         style={{
-                            flex: "1 1 300px",
-                            minWidth: "300px",
-                            maxWidth: "100%",
+                            width: "100%",
                             marginBottom: "1rem",
                         }}
                     >
@@ -144,11 +179,24 @@ export default function SiteDetail() {
                     </Card>
 
                     <Card
+                        title={renderAreasHeader()}
+                        style={{
+                            width: "100%",
+                            marginBottom: "1rem",
+                        }}
+                    >
+                        {site && site._id && (
+                            <AreaSurveyList
+                                siteId={site._id}
+                                onCountChange={setAreaCount}
+                            />
+                        )}
+                    </Card>
+
+                    <Card
                         title={renderQuotesHeader()}
                         style={{
-                            flex: "1 1 300px",
-                            minWidth: "300px",
-                            maxWidth: "100%",
+                            width: "100%",
                             marginBottom: "1rem",
                         }}
                     >

@@ -4,6 +4,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { MultiSelect } from "primereact/multiselect";
 import { InputText } from "primereact/inputtext";
+import { Toast } from "primereact/toast";
 import Equipment from "@/components/kitchenSurvey/Equipment";
 import Schematic from "@/components/kitchenSurvey/Schematic/Schematic.jsx";
 import Structure from "@/components/kitchenSurvey/Structure";
@@ -14,6 +15,7 @@ import AccessRequirementsAccordion from "@/components/kitchenSurvey/surveyInfo/A
 import Images from "@/components/kitchenSurvey/Images";
 
 export default function Area1Logic({
+    // All original props
     visibleSections,
     setVisibleSections,
     structureTotal,
@@ -91,56 +93,38 @@ export default function Area1Logic({
     // Site details and reference props
     siteDetails,
     refValue,
-    // NEW: Add initialSpecialistEquipmentSurvey prop
+    // Specialist equipment survey
     initialSpecialistEquipmentSurvey,
+    // Equipment items data (for calculations)
+    equipmentItems,
 }) {
+    // Toast for notifications
+    const toast = useRef(null);
+
     // State to track if Area ID has been filled
     const [areaIdFilled, setAreaIdFilled] = useState(!!structureId);
 
-    // Log the initial specialist equipment survey data for debugging
-    useEffect(() => {
-        if (initialSpecialistEquipmentSurvey?.categoryComments) {
-            console.log(
-                "Area1Logic: Received specialist category comments:",
-                Object.keys(initialSpecialistEquipmentSurvey.categoryComments)
-                    .length,
-                "items",
-                JSON.stringify(
-                    initialSpecialistEquipmentSurvey.categoryComments
-                )
-            );
-        }
-    }, [initialSpecialistEquipmentSurvey]);
-
-    // Check if Area ID has been filled
-    useEffect(() => {
-        if (structureId && structureId.trim() !== "") {
-            setAreaIdFilled(true);
-        } else {
-            setAreaIdFilled(false);
-        }
-    }, [structureId]);
-
-    // Register the global instance for component method access
+    // Register global instance for component access
     useEffect(() => {
         if (typeof window !== "undefined") {
-            window.area1LogicInstance = {
+            // Create an instance reference
+            const instanceRef = {
                 syncCanopyComments: () => {
                     console.log("Area1Logic: Force syncing canopy comments");
-
-                    // Check if canopy comments exist and if we have a valid setter
                     if (
                         canopyComments &&
                         Object.keys(canopyComments).length > 0 &&
                         typeof setCanopyComments === "function"
                     ) {
-                        // This triggers a re-render with the current comments
                         setCanopyComments({ ...canopyComments });
                         return true;
                     }
                     return false;
                 },
             };
+
+            // Store in window for global access
+            window.area1LogicInstance = instanceRef;
         }
 
         // Cleanup on unmount
@@ -151,7 +135,76 @@ export default function Area1Logic({
         };
     }, [canopyComments, setCanopyComments]);
 
-    // Simplified handler functions
+    // Check if Area ID has been filled
+    useEffect(() => {
+        if (structureId && structureId.trim() !== "") {
+            setAreaIdFilled(true);
+        } else {
+            setAreaIdFilled(false);
+        }
+    }, [structureId]);
+
+    // Equipment change handler
+    const handleEquipmentChange = useCallback(
+        (newEquipment) => {
+            console.log("Main area: Updating equipment state");
+
+            setEquipment((prev) => {
+                const updatedEquipment = { ...prev };
+
+                // Copy non-comment properties
+                Object.keys(newEquipment).forEach((key) => {
+                    if (
+                        key !== "subcategoryComments" &&
+                        key !== "categoryComments"
+                    ) {
+                        updatedEquipment[key] = newEquipment[key];
+                    }
+                });
+
+                // Special handling for subcategoryComments - create a new object
+                if (newEquipment.subcategoryComments) {
+                    console.log(
+                        "Main area: Updating subcategoryComments with",
+                        Object.keys(newEquipment.subcategoryComments).length,
+                        "entries"
+                    );
+
+                    // Initialize or reset the comments object
+                    updatedEquipment.subcategoryComments = {};
+
+                    // Copy each comment individually to avoid reference issues
+                    Object.entries(newEquipment.subcategoryComments).forEach(
+                        ([key, value]) => {
+                            updatedEquipment.subcategoryComments[key] = value;
+                        }
+                    );
+                }
+
+                // Special handling for categoryComments - create a new object
+                if (newEquipment.categoryComments) {
+                    console.log(
+                        "Main area: Updating categoryComments with",
+                        Object.keys(newEquipment.categoryComments).length,
+                        "entries"
+                    );
+
+                    // Initialize or reset the comments object
+                    updatedEquipment.categoryComments = {};
+
+                    // Copy each comment individually to avoid reference issues
+                    Object.entries(newEquipment.categoryComments).forEach(
+                        ([key, value]) => {
+                            updatedEquipment.categoryComments[key] = value;
+                        }
+                    );
+                }
+
+                return updatedEquipment;
+            });
+        },
+        [setEquipment]
+    );
 
     // Survey data handler (Equipment)
     const handleSurveyDataChange = useCallback(
@@ -159,66 +212,6 @@ export default function Area1Logic({
             setSurveyData(newData);
         },
         [setSurveyData]
-    );
-
-    // IMPROVED: Equipment change handler with enhanced tracking for both comment types
-    const handleEquipmentChange = useCallback(
-        (newEquipment) => {
-            // Improved logging with detection of both comment types
-            console.log(
-                "Area1Logic: Equipment update received:",
-                Object.keys(newEquipment).includes("subcategoryComments")
-                    ? `Including ${
-                          Object.keys(newEquipment.subcategoryComments || {})
-                              .length
-                      } subcategory comments`
-                    : "No subcategory comments",
-                Object.keys(newEquipment).includes("categoryComments")
-                    ? `Including ${
-                          Object.keys(newEquipment.categoryComments || {})
-                              .length
-                      } category comments`
-                    : "No category comments"
-            );
-
-            // Update equipment state directly without circular protection
-            setEquipment((prev) => {
-                // Create the new state object
-                const updatedEquipment = { ...prev };
-
-                // Copy all properties from newEquipment to updatedEquipment
-                Object.keys(newEquipment).forEach((key) => {
-                    updatedEquipment[key] = newEquipment[key];
-                });
-
-                // Special handling for subcategoryComments
-                if (newEquipment.subcategoryComments) {
-                    console.log(
-                        "Area1Logic: Updating subcategoryComments with",
-                        Object.keys(newEquipment.subcategoryComments).length,
-                        "entries"
-                    );
-                    updatedEquipment.subcategoryComments = {
-                        ...newEquipment.subcategoryComments,
-                    };
-                }
-
-                // Special handling for categoryComments
-                if (newEquipment.categoryComments) {
-                    console.log(
-                        "Area1Logic: Updating categoryComments with",
-                        Object.keys(newEquipment.categoryComments).length,
-                        "entries"
-                    );
-                    updatedEquipment.categoryComments = {
-                        ...newEquipment.categoryComments,
-                    };
-                }
-
-                return updatedEquipment;
-            });
-        },
-        [setEquipment]
     );
 
     // Specialist equipment data handler
@@ -324,18 +317,9 @@ export default function Area1Logic({
     // Direct canopy comments handler with no intermediary processing
     const handleCanopyCommentsChange = useCallback(
         (updatedComments) => {
-            // Simply pass the updated comments object to the parent component
             setCanopyComments(updatedComments);
         },
         [setCanopyComments]
-    );
-
-    // General notes handler
-    const handleNotesUpdate = useCallback(
-        (newNotes) => {
-            setNotes(newNotes);
-        },
-        [setNotes]
     );
 
     // Ventilation price handler
@@ -356,7 +340,9 @@ export default function Area1Logic({
 
     const handleVisibleSectionsChange = useCallback(
         (newSections) => {
-            setVisibleSections(newSections);
+            if (typeof setVisibleSections === "function") {
+                setVisibleSections(newSections);
+            }
         },
         [setVisibleSections]
     );
@@ -414,12 +400,15 @@ export default function Area1Logic({
     return (
         <>
             <style>{areaInputStyles}</style>
+            <Toast ref={toast} />
+
             <div
                 style={{
                     marginBottom: "3rem",
                     marginTop: "2rem",
                     border: "3px solid #ddd",
                     padding: "1rem",
+                    position: "relative",
                 }}
             >
                 <h1 style={{ textAlign: "center", marginBottom: "1rem" }}>
@@ -442,7 +431,7 @@ export default function Area1Logic({
                         }`}
                     >
                         <InputText
-                            placeholder="Enter Area ID example: kitchen, survery."
+                            placeholder="Enter Area ID example: kitchen, survey, area 1."
                             value={structureId}
                             onChange={(e) => {
                                 handleStructureIdChange(e.target.value);
@@ -553,6 +542,7 @@ export default function Area1Logic({
                             equipment?.subcategoryComments || {}
                         }
                         onEquipmentChange={handleEquipmentChange}
+                        areaIndex={1}
                     />
                 )}
             </div>
@@ -569,15 +559,19 @@ export default function Area1Logic({
                         structureIds={structureId ? [structureId] : []}
                         groupingId={selectedGroupId}
                         onGroupIdChange={handleSelectedGroupIdChange}
-                        onAccessDoorPriceChange={(price) =>
-                            setAccessDoorPrice((prev) => prev + price)
-                        }
+                        onAccessDoorPriceChange={(price) => {
+                            setAccessDoorPrice((prev) => prev + price);
+                        }}
                         onVentilationPriceChange={handleVentilationPriceChange}
-                        onFanPartsPriceChange={setFanPartsPrice}
-                        onAirInExPriceChange={setAirInExTotal}
-                        onSchematicItemsTotalChange={(val) =>
-                            setSchematicItemsTotal(val)
-                        }
+                        onFanPartsPriceChange={(price) => {
+                            setFanPartsPrice(price);
+                        }}
+                        onAirInExPriceChange={(price) => {
+                            setAirInExTotal(price);
+                        }}
+                        onSchematicItemsTotalChange={(val) => {
+                            setSchematicItemsTotal(val);
+                        }}
                         initialAccessDoorPrice={accessDoorPrice}
                         initialVentilationPrice={ventilationPrice}
                         initialAirPrice={airPrice}
@@ -590,8 +584,8 @@ export default function Area1Logic({
                         specialItems={specialItems}
                         setSpecialItems={setSpecialItems}
                         gridSpaces={gridSpaces}
-                        setGridSpaces={setGridSpaces}
                         cellSize={cellSize}
+                        setGridSpaces={setGridSpaces}
                         setCellSize={setCellSize}
                         flexiDuctSelections={flexiDuctSelections}
                         setFlexiDuctSelections={setFlexiDuctSelections}
@@ -608,7 +602,9 @@ export default function Area1Logic({
                 ventilation={ventilation}
                 setVentilation={setVentilation}
                 isOpen={accordion.ventilation}
-                toggleAccordion={() => toggleAccordion("ventilation")}
+                toggleAccordion={() => {
+                    toggleAccordion("ventilation");
+                }}
             />
 
             <div style={{ marginBottom: "3rem" }} />
@@ -627,12 +623,13 @@ export default function Area1Logic({
                         initialSpecialistEquipmentData={specialistEquipmentData}
                         initialSpecialistEquipmentId={specialistEquipmentId}
                         equipment={equipment}
-                        // IMPROVED: Pass the comments directly from the survey data
+                        // Pass the comments directly from the survey data
                         initialCategoryComments={
                             initialSpecialistEquipmentSurvey?.categoryComments ||
                             {}
                         }
                         onEquipmentChange={handleEquipmentChange}
+                        areaIndex={1}
                     />
                 )}
             </div>
@@ -644,7 +641,9 @@ export default function Area1Logic({
                 access={access}
                 setAccess={setAccess}
                 isOpen={accordion.access}
-                toggleAccordion={() => toggleAccordion("access")}
+                toggleAccordion={() => {
+                    toggleAccordion("access");
+                }}
             />
 
             <div style={{ marginBottom: "3rem" }} />
@@ -677,8 +676,8 @@ export default function Area1Logic({
                         <Images
                             initialImages={surveyImages}
                             onImagesChange={handleImagesChange}
-                            surveyRef={refValue || ""} // Use the actual survey reference
-                            siteName={siteDetails?.siteName || ""} // Use the actual site name
+                            surveyRef={refValue || ""}
+                            siteName={siteDetails?.siteName || ""}
                         />
                     </div>
                 )}

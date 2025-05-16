@@ -20,8 +20,10 @@ const getCloudinaryUrl = (publicId) => {
  * Component for handling survey saving functionality with automatic quote generation
  */
 export default function SaveSurvey({
-    targetRef, // Reference to the form content for PDF capture
-    schematicRef, // Reference to the schematic for image capture
+    // Reference to the form content for PDF capture
+    targetRef,
+    // Reference for capturing schematic in quotes
+    schematicRef,
     surveyId,
     refValue,
     surveyDate,
@@ -53,7 +55,6 @@ export default function SaveSurvey({
     equipment = {}, // Add default empty object to prevent undefined errors
     notes,
     ventilation,
-    areasState,
     modify,
     // Survey images directly passed from parent - standardized location only
     surveyImages = {},
@@ -65,6 +66,14 @@ export default function SaveSurvey({
     accessDoorSelections = {},
     fanGradeSelections = {},
     flexiDuctSelections = {},
+    // Collection-related props
+    collectionId = null,
+    areaIndex = 0,
+    totalAreas = 1,
+    // Survey creation function
+    createSurveyIfNeeded = null,
+    // Optional function to update parent pagination
+    updateParentPagination = null,
 }) {
     const router = useRouter();
     const toast = useRef(null);
@@ -141,12 +150,12 @@ export default function SaveSurvey({
         });
     }, []);
 
-    // Memoized grand totals calculation
+    // Memoized grand totals calculation - main area only
     const computedGrandTotals = () => {
         // Create object with main area totals
         const mainTotals = {
             structureTotal: structureTotal,
-            equipmentTotal: computedEquipmentTotal(), // computed from main area's surveyData
+            equipmentTotal: computedEquipmentTotal(),
             canopyTotal: canopyTotal,
             accessDoorPrice: accessDoorPrice,
             ventilationPrice: ventilationPrice,
@@ -155,11 +164,11 @@ export default function SaveSurvey({
             airInExTotal: airInExTotal,
             schematicItemsTotal: schematicItemsTotal,
             modify: modify,
-            groupingId: selectedGroupId, // main area's groupingId
+            groupingId: selectedGroupId,
         };
 
-        // Use utility function to compute combined totals
-        return computeGrandTotals(mainTotals, areasState);
+        // Use utility function to compute totals for main area only
+        return computeGrandTotals(mainTotals, []);
     };
 
     /**
@@ -869,6 +878,12 @@ export default function SaveSurvey({
                 const commentTextareas = document.querySelectorAll(
                     '[id^="subcategory-comment-"]'
                 );
+
+                // Log the total found
+                console.log(
+                    `[SaveSurvey] Found ${commentTextareas.length} equipment comment textareas in DOM`
+                );
+
                 commentTextareas.forEach((textarea) => {
                     if (textarea.value && textarea.value.trim()) {
                         // Extract subcategory from ID by removing the prefix and converting hyphens back to spaces
@@ -881,6 +896,10 @@ export default function SaveSurvey({
                             );
                             capturedComments[subcategory] =
                                 textarea.value.trim();
+
+                            console.log(
+                                `[SaveSurvey] Captured comment for subcategory: "${subcategory}"`
+                            );
                         }
                     }
                 });
@@ -889,6 +908,11 @@ export default function SaveSurvey({
                 const orphanedCommentTextareas = document.querySelectorAll(
                     '[id^="orphaned-comment-"]'
                 );
+
+                console.log(
+                    `[SaveSurvey] Found ${orphanedCommentTextareas.length} orphaned comment textareas in DOM`
+                );
+
                 orphanedCommentTextareas.forEach((textarea) => {
                     if (textarea.value && textarea.value.trim()) {
                         const idParts = textarea.id.split("-");
@@ -900,6 +924,10 @@ export default function SaveSurvey({
                             );
                             capturedComments[subcategory] =
                                 textarea.value.trim();
+
+                            console.log(
+                                `[SaveSurvey] Captured orphaned comment for subcategory: "${subcategory}"`
+                            );
                         }
                     }
                 });
@@ -1048,9 +1076,12 @@ export default function SaveSurvey({
     };
 
     /**
-     * Simplified save survey function with better comment handling
+     * FIXED: Simplified save survey function
      */
-    const handleSaveSurvey = async () => {
+    const handleSaveSurvey = async (
+        shouldRedirect = true,
+        manualCollectionId = null
+    ) => {
         // Protect against double submission
         if (isSubmitting) {
             console.log("[SaveSurvey] Already submitting - ignoring click");
@@ -1075,7 +1106,7 @@ export default function SaveSurvey({
             await syncComponentStates();
 
             // Short pause to ensure all state updates have been processed
-            await new Promise((resolve) => setTimeout(resolve, 200));
+            await new Promise((resolve) => setTimeout(resolve, 500));
 
             // Extract site info for folder structure
             const siteName =
@@ -1182,6 +1213,9 @@ export default function SaveSurvey({
                     : "Empty object"
             );
 
+            // Use provided collection ID if available
+            const effectiveCollectionId = manualCollectionId || collectionId;
+
             // 5. Create the survey payload with simplified structure
             const surveyPayload = {
                 // Basic info
@@ -1189,6 +1223,14 @@ export default function SaveSurvey({
                 surveyDate: surveyDate,
                 site: { _id: siteId },
                 contacts: processedContacts,
+
+                // Include collection information if this is part of a collection
+                ...(effectiveCollectionId
+                    ? {
+                          collectionId: effectiveCollectionId,
+                          areaIndex: areaIndex,
+                      }
+                    : {}),
 
                 // General info
                 general: {
@@ -1303,7 +1345,7 @@ export default function SaveSurvey({
                 operations: operations,
                 notes: notes,
 
-                // Areas and totals
+                // UPDATED: Simplified totals with main area only
                 totals: {
                     mainArea: {
                         structureTotal,
@@ -1321,11 +1363,9 @@ export default function SaveSurvey({
                         modify,
                         groupingId: selectedGroupId,
                     },
-                    duplicatedAreas: areasState,
                     grandTotal: computedGrandTotals(),
                     modify: modify,
                 },
-                duplicatedAreas: areasState,
             };
 
             // Log critical parts of the payload
@@ -1349,6 +1389,13 @@ export default function SaveSurvey({
 
             // 6. Save the survey
             let res;
+
+            console.log(
+                `[SaveSurvey] ${
+                    surveyId ? "Updating" : "Creating"
+                } survey with payload`
+            );
+
             // If editing existing, use PUT; otherwise POST
             if (surveyId) {
                 res = await fetch(
@@ -1367,9 +1414,28 @@ export default function SaveSurvey({
                 });
             }
 
+            // FIXED: Enhanced error handling for the API response
+            if (!res.ok) {
+                const errorText = await res.text();
+                console.error(
+                    `[SaveSurvey] HTTP Error: ${res.status} ${res.statusText}`,
+                    errorText
+                );
+                throw new Error(
+                    `Failed to save survey: ${res.status} ${res.statusText}`
+                );
+            }
+
             const json = await res.json();
 
             if (json.success) {
+                console.log(
+                    `[SaveSurvey] Survey ${
+                        surveyId ? "updated" : "created"
+                    } successfully:`,
+                    json.data
+                );
+
                 toast.current.show({
                     severity: "success",
                     summary: "Success",
@@ -1402,16 +1468,25 @@ export default function SaveSurvey({
                     }, 500);
                 }
 
-                // Redirect after a delay
-                setTimeout(() => {
-                    if (siteDetails && siteDetails._id) {
-                        router.push(
-                            `/database/clients/site/${siteDetails._id}`
-                        );
-                    } else {
-                        router.push("/surveys");
-                    }
-                }, 3000);
+                // Only redirect if shouldRedirect is true
+                if (shouldRedirect) {
+                    // Redirect after a delay
+                    setTimeout(() => {
+                        if (siteDetails && siteDetails._id) {
+                            router.push(
+                                `/database/clients/site/${siteDetails._id}`
+                            );
+                        } else {
+                            router.push("/surveys");
+                        }
+                    }, 3000);
+                } else {
+                    // Reset the submitting state when not redirecting
+                    setIsSubmitting(false);
+                }
+
+                // Return success info
+                return { success: true, data: json.data };
             } else {
                 // Enhanced error handling
                 console.error("[SaveSurvey] API Error:", json);
@@ -1424,7 +1499,6 @@ export default function SaveSurvey({
                 summary: "Error",
                 detail: error.message || "Error saving survey",
             });
-        } finally {
             setIsSubmitting(false);
             setUploadProgress({
                 active: false,
@@ -1432,6 +1506,17 @@ export default function SaveSurvey({
                 completed: 0,
                 message: "",
             });
+            return { success: false, error };
+        } finally {
+            if (shouldRedirect) {
+                setIsSubmitting(false);
+                setUploadProgress({
+                    active: false,
+                    total: 0,
+                    completed: 0,
+                    message: "",
+                });
+            }
         }
     };
 
@@ -1471,44 +1556,35 @@ export default function SaveSurvey({
                 </div>
             )}
 
-            {/* Save button */}
-            <div
+            {/* Save Survey button */}
+            <button
+                onClick={() => handleSaveSurvey(true)}
+                onMouseEnter={() => setIsHovered(true)}
+                onMouseLeave={() => setIsHovered(false)}
+                disabled={isSubmitting}
                 style={{
-                    position: "fixed",
-                    bottom: "1rem",
-                    right: "1rem",
-                    zIndex: 1000,
+                    padding: "0.75rem 1.5rem",
+                    fontSize: "1rem",
+                    backgroundColor: isHovered ? "#F9C400" : "#7e7e7e",
+                    color: "#fff",
+                    border: "none",
+                    borderRadius: "4px",
+                    cursor: isSubmitting ? "not-allowed" : "pointer",
+                    transition: "background-color 0.2s ease",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.5rem",
+                    opacity: isSubmitting ? 0.7 : 1,
                 }}
             >
-                <button
-                    onClick={handleSaveSurvey}
-                    onMouseEnter={() => setIsHovered(true)}
-                    onMouseLeave={() => setIsHovered(false)}
-                    disabled={isSubmitting}
-                    style={{
-                        padding: "0.75rem 1.5rem",
-                        fontSize: "1rem",
-                        backgroundColor: isHovered ? "#F9C400" : "#7e7e7e",
-                        color: "#fff",
-                        border: "none",
-                        borderRadius: "4px",
-                        cursor: isSubmitting ? "not-allowed" : "pointer",
-                        transition: "background-color 0.2s ease",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "0.5rem",
-                        opacity: isSubmitting ? 0.7 : 1,
-                    }}
-                >
-                    {isSubmitting && (
-                        <i
-                            className="pi pi-spin pi-spinner"
-                            style={{ fontSize: "1.2rem" }}
-                        ></i>
-                    )}
-                    {surveyId ? "Update Survey" : "Save Survey"}
-                </button>
-            </div>
+                {isSubmitting && (
+                    <i
+                        className="pi pi-spin pi-spinner"
+                        style={{ fontSize: "1.2rem" }}
+                    ></i>
+                )}
+                {surveyId ? "Update Survey" : "Save Survey"}
+            </button>
         </>
     );
 }

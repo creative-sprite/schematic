@@ -277,6 +277,10 @@ const DuplicatedAreaSchema = new Schema({
 // Main KitchenSurvey schema
 const KitchenSurveySchema = new Schema(
   {
+    // REMOVED: Parent-child relationship fields
+    // parentSurvey: { type: Schema.Types.ObjectId, ref: "KitchenSurvey" },
+    // childAreas: [{ type: Schema.Types.ObjectId, ref: "KitchenSurvey" }],
+    
     // Basic Survey Information
     refValue: { type: String },
     surveyDate: { type: Date, default: Date.now },

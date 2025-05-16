@@ -48,14 +48,14 @@ export const ensureNumeric = (value) => {
 };
 
 /**
- * Compute grand totals from main area and all duplicated areas
+ * Compute grand totals for main area only
  * @param {Object} mainTotals - Main area totals
- * @param {Array} areasState - Array of duplicated areas
- * @returns {Object} - Combined totals
+ * @param {Array} childAreas - Empty array (kept for compatibility)
+ * @returns {Object} - Main area totals
  */
-export const computeGrandTotals = (mainTotals, areasState) => {
-    if (!mainTotals || !Array.isArray(areasState)) {
-        console.warn("Invalid inputs to computeGrandTotals", { mainTotals, areasState });
+export const computeGrandTotals = (mainTotals, childAreas) => {
+    if (!mainTotals) {
+        console.warn("Invalid inputs to computeGrandTotals", { mainTotals });
         return {
             structureTotal: 0,
             equipmentTotal: 0,
@@ -69,67 +69,23 @@ export const computeGrandTotals = (mainTotals, areasState) => {
         };
     }
     
-    const duplicateTotals = areasState.reduce(
-        (acc, area) => ({
-            structureTotal: acc.structureTotal + ensureNumeric(area.structureTotal),
-            equipmentTotal: acc.equipmentTotal + ensureNumeric(area.equipmentTotal),
-            canopyTotal: acc.canopyTotal + ensureNumeric(area.canopyTotal),
-            accessDoorPrice:
-                acc.accessDoorPrice + ensureNumeric(area.accessDoorPrice),
-            ventilationPrice:
-                acc.ventilationPrice + ensureNumeric(area.ventilationPrice),
-            airPrice: acc.airPrice + ensureNumeric(area.airPrice),
-            fanPartsPrice: acc.fanPartsPrice + ensureNumeric(area.fanPartsPrice),
-            airInExTotal: acc.airInExTotal + ensureNumeric(area.airInExTotal),
-            schematicItemsTotal:
-                acc.schematicItemsTotal + ensureNumeric(area.schematicItemsTotal),
-        }),
-        {
-            structureTotal: 0,
-            equipmentTotal: 0,
-            canopyTotal: 0,
-            accessDoorPrice: 0,
-            ventilationPrice: 0,
-            airPrice: 0,
-            fanPartsPrice: 0,
-            airInExTotal: 0,
-            schematicItemsTotal: 0,
-        }
-    );
-
+    // Return main area totals directly
     return {
-        structureTotal:
-            ensureNumeric(mainTotals.structureTotal) +
-            ensureNumeric(duplicateTotals.structureTotal),
-        equipmentTotal:
-            ensureNumeric(mainTotals.equipmentTotal) +
-            ensureNumeric(duplicateTotals.equipmentTotal),
-        canopyTotal:
-            ensureNumeric(mainTotals.canopyTotal) +
-            ensureNumeric(duplicateTotals.canopyTotal),
-        accessDoorPrice:
-            ensureNumeric(mainTotals.accessDoorPrice) +
-            ensureNumeric(duplicateTotals.accessDoorPrice),
-        ventilationPrice:
-            ensureNumeric(mainTotals.ventilationPrice) +
-            ensureNumeric(duplicateTotals.ventilationPrice),
-        airPrice:
-            ensureNumeric(mainTotals.airPrice) +
-            ensureNumeric(duplicateTotals.airPrice),
-        fanPartsPrice:
-            ensureNumeric(mainTotals.fanPartsPrice) +
-            ensureNumeric(duplicateTotals.fanPartsPrice),
-        airInExTotal:
-            ensureNumeric(mainTotals.airInExTotal) +
-            ensureNumeric(duplicateTotals.airInExTotal),
-        schematicItemsTotal:
-            ensureNumeric(mainTotals.schematicItemsTotal) +
-            ensureNumeric(duplicateTotals.schematicItemsTotal),
+        structureTotal: ensureNumeric(mainTotals.structureTotal),
+        equipmentTotal: ensureNumeric(mainTotals.equipmentTotal),
+        canopyTotal: ensureNumeric(mainTotals.canopyTotal),
+        accessDoorPrice: ensureNumeric(mainTotals.accessDoorPrice),
+        ventilationPrice: ensureNumeric(mainTotals.ventilationPrice),
+        airPrice: ensureNumeric(mainTotals.airPrice),
+        fanPartsPrice: ensureNumeric(mainTotals.fanPartsPrice),
+        airInExTotal: ensureNumeric(mainTotals.airInExTotal),
+        schematicItemsTotal: ensureNumeric(mainTotals.schematicItemsTotal),
     };
 };
 
 /**
  * Calculate the grand total for display with modification factor applied
+ * Simplified to only calculate for main area
  * @param {number} structureTotal - Structure total
  * @param {number} equipmentTotal - Equipment total
  * @param {number} canopyTotal - Canopy total
@@ -139,7 +95,7 @@ export const computeGrandTotals = (mainTotals, areasState) => {
  * @param {number} fanPartsPrice - Fan parts price 
  * @param {number} airInExTotal - Air in/out total
  * @param {any} schematicItemsTotal - Schematic items total
- * @param {Array} areasState - Duplicated areas state
+ * @param {Array} childAreas - Empty array (kept for compatibility)
  * @param {number} modify - Modification factor percentage
  * @param {Array} specialistEquipmentData - Specialist equipment items
  * @returns {number} - Grand total
@@ -154,7 +110,7 @@ export const calculateGrandTotal = (
     fanPartsPrice,
     airInExTotal,
     schematicItemsTotal,
-    areasState,
+    childAreas,
     modify,
     specialistEquipmentData = []
 ) => {
@@ -219,48 +175,9 @@ export const calculateGrandTotal = (
         mainArea.schematicItemsTotal +
         mainArea.specialistTotal;
 
-    // Calculate sums for each duplicated area
-    const duplicatedAreasSum = areasState.reduce((sum, area) => {
-        // Ensure each value is a valid number
-        const structureTotal = ensureNumeric(area.structureTotal);
-        const equipmentTotal = ensureNumeric(area.equipmentTotal);
-        const canopyTotal = ensureNumeric(area.canopyTotal);
-        const accessDoorPrice = ensureNumeric(area.accessDoorPrice);
-        const ventilationPrice = ensureNumeric(area.ventilationPrice);
-        const airPrice = ensureNumeric(area.airPrice);
-        const fanPartsPrice = ensureNumeric(area.fanPartsPrice);
-        const airInExTotal = ensureNumeric(area.airInExTotal);
-        const schematicItemsTotal = ensureNumeric(area.schematicItemsTotal);
-        
-        // Calculate specialist equipment total for this area
-        const areaSpecialistTotal = calculateSpecialistTotal(area.specialistEquipmentData);
-
-        const areaSum =
-            structureTotal +
-            equipmentTotal +
-            canopyTotal +
-            accessDoorPrice +
-            ventilationPrice +
-            airPrice +
-            fanPartsPrice +
-            airInExTotal +
-            schematicItemsTotal +
-            areaSpecialistTotal;
-
-        // Log each area's contribution to the total
-        if (areaSum > 0) {
-            console.log(`PricingUtils - Area total for ${area.structure?.structureId || 'unnamed area'}: ${areaSum}`);
-            if (ventilationPrice > 0) {
-                console.log(`PricingUtils - Area ventilation price: ${ventilationPrice}`);
-            }
-        }
-
-        return sum + areaSum;
-    }, 0);
-
     // Apply modification factor
     const factor = 1 + (ensureNumeric(modify) / 100);
-    const grandTotal = (mainAreaSum + duplicatedAreasSum) * factor;
+    const grandTotal = mainAreaSum * factor;
     
     console.log(`PricingUtils - Final grand total: ${grandTotal} (with ${modify}% modifier)`);
     

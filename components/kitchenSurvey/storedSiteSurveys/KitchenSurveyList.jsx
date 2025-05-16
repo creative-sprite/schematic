@@ -12,24 +12,71 @@ import { useRouter } from "next/navigation";
 import QuoteModal from "@/components/kitchenSurvey/quote/QuoteModal";
 
 export default function KitchenSurveyList({ siteId, onCountChange }) {
-    const [surveys, setSurveys] = useState([]);
+    const [collections, setCollections] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [creating, setCreating] = useState(false);
     const [deleting, setDeleting] = useState(false);
     const [quoteModalVisible, setQuoteModalVisible] = useState(false);
     const [selectedSurvey, setSelectedSurvey] = useState(null);
+    const [flippedCards, setFlippedCards] = useState({});
+    const [areasData, setAreasData] = useState({});
+    const [loadingAreas, setLoadingAreas] = useState({});
     const router = useRouter();
     const toast = useRef(null);
 
-    // Function to fetch surveys (can be called to refresh the list)
-    const fetchSurveys = async () => {
+    // Add CSS for card flip animation
+    useEffect(() => {
+        // Create style element for card flip animation
+        const style = document.createElement("style");
+        style.innerHTML = `
+            .card-container {
+                perspective: 1000px;
+                height: 200px;
+                margin-bottom: 1rem;
+            }
+            
+            .card-flipper {
+                position: relative;
+                width: 100%;
+                height: 100%;
+                transition: transform 0.6s;
+                transform-style: preserve-3d;
+            }
+            
+            .card-flipper.flipped {
+                transform: rotateY(180deg);
+            }
+            
+            .card-front, .card-back {
+                position: absolute;
+                width: 100%;
+                height: 100%;
+                backface-visibility: hidden;
+                -webkit-backface-visibility: hidden;
+            }
+            
+            .card-back {
+                transform: rotateY(180deg);
+                overflow-y: auto;
+            }
+        `;
+        document.head.appendChild(style);
+
+        return () => {
+            document.head.removeChild(style);
+        };
+    }, []);
+
+    // Function to fetch collections for a site (can be called to refresh the list)
+    const fetchCollections = async () => {
         if (!siteId) return;
 
         setLoading(true);
         try {
+            // Fetch collections for this site
             const res = await fetch(
-                `/api/surveys/kitchenSurveys/viewAll?siteId=${siteId}`
+                `/api/surveys/collections?siteId=${siteId}`
             );
 
             if (!res.ok) {
@@ -38,41 +85,179 @@ export default function KitchenSurveyList({ siteId, onCountChange }) {
 
             const json = await res.json();
             if (json.success) {
-                // Sort surveys by date (newest first)
-                const sortedSurveys = json.data.sort(
+                // Sort collections by creation date (newest first)
+                const sortedCollections = json.data.sort(
                     (a, b) =>
-                        new Date(b.surveyDate || b.createdAt || 0) -
-                        new Date(a.surveyDate || a.createdAt || 0)
+                        new Date(b.createdAt || 0) - new Date(a.createdAt || 0)
                 );
-                setSurveys(sortedSurveys);
+
+                // Populate with additional data if needed
+                const enhancedCollections = await Promise.all(
+                    sortedCollections.map(async (collection) => {
+                        // If the collection doesn't have populated surveys, fetch the first survey
+                        // to get basic information
+                        if (
+                            collection.surveys &&
+                            collection.surveys.length > 0
+                        ) {
+                            if (
+                                !collection.firstAreaName &&
+                                collection.surveys[0]
+                            ) {
+                                try {
+                                    // For collections with multiple surveys, fetch the first one to get its name
+                                    const surveyId =
+                                        typeof collection.surveys[0] ===
+                                        "string"
+                                            ? collection.surveys[0]
+                                            : collection.surveys[0]._id;
+
+                                    const surveyRes = await fetch(
+                                        `/api/surveys/kitchenSurveys/viewAll/${surveyId}`
+                                    );
+                                    if (surveyRes.ok) {
+                                        const surveyData =
+                                            await surveyRes.json();
+                                        if (
+                                            surveyData.success &&
+                                            surveyData.data
+                                        ) {
+                                            collection.firstAreaName =
+                                                surveyData.data.structure
+                                                    ?.structureId || "Area 1";
+                                            collection.surveyDate =
+                                                surveyData.data.surveyDate ||
+                                                surveyData.data.createdAt;
+                                            collection.surveyType =
+                                                surveyData.data.general
+                                                    ?.surveyType ||
+                                                "Kitchen Survey";
+                                        }
+                                    }
+                                } catch (err) {
+                                    console.error(
+                                        "Error fetching first survey:",
+                                        err
+                                    );
+                                }
+                            }
+                        }
+                        return collection;
+                    })
+                );
+
+                setCollections(enhancedCollections);
 
                 // Call the onCountChange prop with the count if it exists
                 if (onCountChange && typeof onCountChange === "function") {
-                    onCountChange(sortedSurveys.length);
+                    onCountChange(enhancedCollections.length);
                 }
             } else {
-                throw new Error(json.message || "Failed to fetch surveys");
+                throw new Error(json.message || "Failed to fetch collections");
             }
         } catch (error) {
-            console.error("Error fetching surveys:", error);
+            console.error("Error fetching collections:", error);
             setError(error.message);
         } finally {
             setLoading(false);
         }
     };
 
-    // Fetch surveys when component mounts or siteId changes
+    // Fetch collections when component mounts or siteId changes
     useEffect(() => {
-        fetchSurveys();
+        fetchCollections();
     }, [siteId]);
 
-    // Function to handle creating a new version of a survey
-    const handleCreateVersion = async (surveyId) => {
+    // Function to toggle card flip
+    const toggleCardFlip = async (collectionId) => {
+        // Toggle the flip state for this card
+        setFlippedCards((prev) => ({
+            ...prev,
+            [collectionId]: !prev[collectionId],
+        }));
+
+        // If we're flipping to show the back and we don't have the areas data yet,
+        // fetch the areas for this collection
+        if (!flippedCards[collectionId] && !areasData[collectionId]) {
+            await fetchCollectionAreas(collectionId);
+        }
+    };
+
+    // Function to fetch areas for a collection
+    const fetchCollectionAreas = async (collectionId) => {
+        setLoadingAreas((prev) => ({ ...prev, [collectionId]: true }));
+
+        try {
+            // Find the collection
+            const collection = collections.find((c) => c._id === collectionId);
+            if (
+                !collection ||
+                !collection.surveys ||
+                collection.surveys.length === 0
+            ) {
+                throw new Error("Collection not found or has no surveys");
+            }
+
+            // Fetch all areas in this collection
+            const areas = [];
+            for (const survey of collection.surveys) {
+                const surveyId =
+                    typeof survey === "string" ? survey : survey._id;
+                const res = await fetch(
+                    `/api/surveys/kitchenSurveys/viewAll/${surveyId}`
+                );
+
+                if (res.ok) {
+                    const json = await res.json();
+                    if (json.success && json.data) {
+                        const areaName =
+                            json.data.structure?.structureId ||
+                            json.data.structureId ||
+                            "Unnamed Area";
+                        areas.push({
+                            id: surveyId,
+                            name: areaName,
+                            date: json.data.surveyDate || json.data.createdAt,
+                        });
+                    }
+                }
+            }
+
+            // Update areas data
+            setAreasData((prev) => ({
+                ...prev,
+                [collectionId]: areas,
+            }));
+        } catch (error) {
+            console.error("Error fetching collection areas:", error);
+            toast.current.show({
+                severity: "error",
+                summary: "Error",
+                detail: "Failed to load areas for this collection",
+                life: 3000,
+            });
+        } finally {
+            setLoadingAreas((prev) => ({ ...prev, [collectionId]: false }));
+        }
+    };
+
+    // Function to create a new version of the first survey in a collection
+    const handleCreateVersion = async (collectionId, firstSurveyId) => {
+        if (!firstSurveyId) {
+            toast.current.show({
+                severity: "error",
+                summary: "Error",
+                detail: "Cannot find first survey in collection",
+                life: 3000,
+            });
+            return;
+        }
+
         setCreating(true);
         try {
             // Call the PATCH endpoint to create a new version
             const res = await fetch(
-                `/api/surveys/kitchenSurveys/viewAll/${surveyId}`,
+                `/api/surveys/kitchenSurveys/viewAll/${firstSurveyId}`,
                 {
                     method: "PATCH",
                     headers: {
@@ -95,8 +280,10 @@ export default function KitchenSurveyList({ siteId, onCountChange }) {
                     life: 3000,
                 });
 
-                // Navigate to edit the newly created version
-                router.push(`/surveys/kitchenSurvey?id=${json.data._id}`);
+                // Navigate to edit the newly created version, including collection parameter
+                router.push(
+                    `/surveys/kitchenSurvey?id=${json.data._id}&collection=${collectionId}`
+                );
             } else {
                 throw new Error(json.message || "Failed to create new version");
             }
@@ -113,50 +300,65 @@ export default function KitchenSurveyList({ siteId, onCountChange }) {
         }
     };
 
-    // Function to handle deleting a survey
-    const handleDeleteSurvey = async (surveyId) => {
+    // Function to handle deleting a collection
+    const handleDeleteCollection = async (collectionId) => {
         confirmDialog({
-            message: "Are you sure you want to delete this survey?",
-            header: "Delete Confirmation",
+            message:
+                "Are you sure you want to delete this entire collection? This will delete all areas within this collection.",
+            header: "Delete Collection Confirmation",
             icon: "pi pi-exclamation-triangle",
             acceptClassName: "p-button-danger",
             accept: async () => {
                 setDeleting(true);
                 try {
-                    const res = await fetch(
-                        `/api/surveys/kitchenSurveys/viewAll/${surveyId}`,
-                        {
-                            method: "DELETE",
-                        }
+                    // First, get all surveys in the collection
+                    const surveysRes = await fetch(
+                        `/api/surveys/kitchenSurveys/viewAll?collectionId=${collectionId}`
                     );
 
-                    if (!res.ok) {
-                        throw new Error(`HTTP error! Status: ${res.status}`);
+                    if (!surveysRes.ok) {
+                        throw new Error(
+                            `HTTP error! Status: ${surveysRes.status}`
+                        );
                     }
 
-                    const json = await res.json();
+                    const surveysJson = await surveysRes.json();
 
-                    if (json.success) {
+                    if (
+                        surveysJson.success &&
+                        Array.isArray(surveysJson.data)
+                    ) {
+                        // Delete each survey in the collection
+                        for (const survey of surveysJson.data) {
+                            await fetch(
+                                `/api/surveys/kitchenSurveys/viewAll/${survey._id}`,
+                                {
+                                    method: "DELETE",
+                                }
+                            );
+                        }
+
                         toast.current.show({
                             severity: "success",
                             summary: "Success",
-                            detail: "Survey deleted successfully",
+                            detail: "Collection and all areas deleted successfully",
                             life: 3000,
                         });
 
-                        // Refresh the survey list
-                        fetchSurveys();
+                        // Refresh the collections list
+                        fetchCollections();
                     } else {
                         throw new Error(
-                            json.message || "Failed to delete survey"
+                            surveysJson.message ||
+                                "Failed to find surveys in collection"
                         );
                     }
                 } catch (error) {
-                    console.error("Error deleting survey:", error);
+                    console.error("Error deleting collection:", error);
                     toast.current.show({
                         severity: "error",
                         summary: "Error",
-                        detail: error.message || "Failed to delete survey",
+                        detail: error.message || "Failed to delete collection",
                         life: 3000,
                     });
                 } finally {
@@ -166,88 +368,280 @@ export default function KitchenSurveyList({ siteId, onCountChange }) {
         });
     };
 
-    // Render a survey item in the list
-    const surveyTemplate = (survey) => {
-        // Extract the version part from the REF ID if possible
-        let versionPart = "";
-        if (survey.refValue) {
-            const parts = survey.refValue.split("/");
-            if (parts.length === 4) {
-                versionPart = parts[3];
-            }
-        }
+    // Render a collection item in the list
+    const collectionTemplate = (collection) => {
+        // Get first survey ID for editing
+        const firstSurveyId =
+            collection.surveys && collection.surveys.length > 0
+                ? typeof collection.surveys[0] === "string"
+                    ? collection.surveys[0]
+                    : collection.surveys[0]._id
+                : null;
+
+        // Get the area name for the first area in collection
+        const firstAreaName = collection.firstAreaName || "Area 1";
+
+        // Check if this card is flipped
+        const isFlipped = flippedCards[collection._id] || false;
+
+        // Check if areas are loading
+        const isLoadingAreas = loadingAreas[collection._id] || false;
+
+        // Get areas data for this collection
+        const areas = areasData[collection._id] || [];
 
         return (
-            <Card
-                key={survey._id}
-                className="survey-card"
-                style={{
-                    marginBottom: "1rem",
-                    position: "relative",
-                    height: "200px", // Fixed identical height to match QuotesList
-                }}
-            >
-                <div
-                    style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "flex-start",
-                    }}
-                >
-                    <div>
-                        <h3>
-                            {survey.refValue
-                                ? `REF: ${survey.refValue}`
-                                : "Survey"}
-                        </h3>
-                        <p>
-                            Date:{" "}
-                            {new Date(
-                                survey.surveyDate || survey.createdAt
-                            ).toLocaleDateString()}
-                        </p>
-                        <p>
-                            <strong>Type:</strong>{" "}
-                            {survey.general?.surveyType || "N/A"}
-                        </p>
-                    </div>
-                    <div style={{ display: "flex", gap: "0.5rem" }}>
-                        <Button
-                            tooltip="Edit This Version"
-                            icon="pi pi-file-edit"
-                            className="p-button-primary"
-                            onClick={() =>
-                                router.push(
-                                    `/surveys/kitchenSurvey?id=${survey._id}`
-                                )
-                            }
-                        />
-                        <Button
-                            tooltip="Create New Version"
-                            icon="pi pi-file-plus"
-                            className="p-button-success"
-                            onClick={() => handleCreateVersion(survey._id)}
-                            disabled={creating}
-                        />
-                        <Button
-                            tooltip="View Quotes"
-                            icon="pi pi-file-pdf"
-                            className="p-button-info"
-                            onClick={() => {
-                                setSelectedSurvey(survey);
-                                setQuoteModalVisible(true);
+            <div className="card-container">
+                <div className={`card-flipper ${isFlipped ? "flipped" : ""}`}>
+                    {/* FRONT OF CARD */}
+                    <div className="card-front">
+                        <Card
+                            key={collection._id}
+                            className="collection-card"
+                            style={{
+                                height: "100%",
+                                position: "relative",
                             }}
-                        />
-                        <Button
-                            tooltip="Delete Survey"
-                            icon="pi pi-trash"
-                            className="p-button-danger"
-                            onClick={() => handleDeleteSurvey(survey._id)}
-                            disabled={deleting}
-                        />
+                        >
+                            <div
+                                style={{
+                                    display: "flex",
+                                    justifyContent: "space-between",
+                                    alignItems: "flex-start",
+                                }}
+                            >
+                                <div>
+                                    <h3>
+                                        {collection.collectionRef
+                                            ? `Collection REF: ${collection.collectionRef}`
+                                            : "Collection"}
+                                    </h3>
+                                    <p
+                                        style={{
+                                            marginTop: "-10px",
+                                            color: "#666",
+                                            fontStyle: "italic",
+                                        }}
+                                    >
+                                        First Area: {firstAreaName}
+                                    </p>
+                                    <p>
+                                        {collection.surveyDate
+                                            ? `Date: ${new Date(
+                                                  collection.surveyDate
+                                              ).toLocaleDateString()}`
+                                            : `Areas: ${
+                                                  collection.totalAreas ||
+                                                  collection.surveys?.length ||
+                                                  0
+                                              }`}
+                                    </p>
+                                    <p>
+                                        <strong>Type:</strong>{" "}
+                                        {collection.surveyType ||
+                                            "Kitchen Survey"}
+                                    </p>
+
+                                    {/* Badge showing number of areas */}
+                                    <div
+                                        style={{
+                                            display: "inline-block",
+                                            background: "#2196F3",
+                                            color: "white",
+                                            borderRadius: "12px",
+                                            padding: "3px 8px",
+                                            fontSize: "0.85rem",
+                                            marginTop: "5px",
+                                        }}
+                                    >
+                                        {collection.totalAreas ||
+                                            collection.surveys?.length ||
+                                            0}{" "}
+                                        Areas
+                                    </div>
+                                </div>
+                                <div style={{ display: "flex", gap: "0.5rem" }}>
+                                    <Button
+                                        tooltip="View Areas"
+                                        icon="pi pi-info-circle"
+                                        className="p-button-secondary p-button-rounded"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            toggleCardFlip(collection._id);
+                                        }}
+                                    />
+                                    <Button
+                                        tooltip="Edit Collection"
+                                        icon="pi pi-file-edit"
+                                        className="p-button-primary"
+                                        onClick={() => {
+                                            if (firstSurveyId) {
+                                                router.push(
+                                                    `/surveys/kitchenSurvey?id=${firstSurveyId}&collection=${collection._id}`
+                                                );
+                                            } else {
+                                                toast.current.show({
+                                                    severity: "error",
+                                                    summary: "Error",
+                                                    detail: "Cannot find a survey in this collection",
+                                                    life: 3000,
+                                                });
+                                            }
+                                        }}
+                                        disabled={!firstSurveyId}
+                                    />
+                                    <Button
+                                        tooltip="Create New Version"
+                                        icon="pi pi-file-plus"
+                                        className="p-button-success"
+                                        onClick={() =>
+                                            handleCreateVersion(
+                                                collection._id,
+                                                firstSurveyId
+                                            )
+                                        }
+                                        disabled={creating || !firstSurveyId}
+                                    />
+                                    <Button
+                                        tooltip="View Quotes"
+                                        icon="pi pi-file-pdf"
+                                        className="p-button-info"
+                                        onClick={() => {
+                                            // For now, just show quotes for the first survey in the collection
+                                            if (firstSurveyId) {
+                                                setSelectedSurvey({
+                                                    _id: firstSurveyId,
+                                                    refValue:
+                                                        collection.collectionRef,
+                                                });
+                                                setQuoteModalVisible(true);
+                                            } else {
+                                                toast.current.show({
+                                                    severity: "error",
+                                                    summary: "Error",
+                                                    detail: "Cannot find a survey in this collection",
+                                                    life: 3000,
+                                                });
+                                            }
+                                        }}
+                                        disabled={!firstSurveyId}
+                                    />
+                                    <Button
+                                        tooltip="Delete Collection"
+                                        icon="pi pi-trash"
+                                        className="p-button-danger"
+                                        onClick={() =>
+                                            handleDeleteCollection(
+                                                collection._id
+                                            )
+                                        }
+                                        disabled={deleting}
+                                    />
+                                </div>
+                            </div>
+                        </Card>
+                    </div>
+
+                    {/* BACK OF CARD */}
+                    <div className="card-back">
+                        <Card
+                            key={`${collection._id}-back`}
+                            className="collection-card-back"
+                            title="Areas in Collection"
+                            style={{
+                                height: "100%",
+                                position: "relative",
+                            }}
+                            header={
+                                <div
+                                    style={{
+                                        display: "flex",
+                                        justifyContent: "space-between",
+                                        alignItems: "center",
+                                        padding: "0.5rem 1rem",
+                                        background: "#f4f4f4",
+                                    }}
+                                >
+                                    <h3 style={{ margin: 0 }}>
+                                        Areas in Collection
+                                    </h3>
+                                    <Button
+                                        icon="pi pi-times"
+                                        className="p-button-rounded p-button-text"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            toggleCardFlip(collection._id);
+                                        }}
+                                    />
+                                </div>
+                            }
+                        >
+                            {isLoadingAreas ? (
+                                <div
+                                    style={{
+                                        display: "flex",
+                                        justifyContent: "center",
+                                        padding: "1rem",
+                                    }}
+                                >
+                                    <ProgressSpinner
+                                        style={{
+                                            width: "50px",
+                                            height: "50px",
+                                        }}
+                                    />
+                                </div>
+                            ) : areas.length > 0 ? (
+                                <ul
+                                    style={{
+                                        padding: "0 1rem",
+                                        margin: 0,
+                                        listStyleType: "none",
+                                    }}
+                                >
+                                    {areas.map((area, index) => (
+                                        <li
+                                            key={area.id}
+                                            style={{
+                                                padding: "0.5rem 0",
+                                                borderBottom:
+                                                    index < areas.length - 1
+                                                        ? "1px solid #e0e0e0"
+                                                        : "none",
+                                                display: "flex",
+                                                justifyContent: "space-between",
+                                            }}
+                                        >
+                                            <div>
+                                                <strong>{area.name}</strong>
+                                            </div>
+                                            <div
+                                                style={{
+                                                    color: "#777",
+                                                    fontSize: "0.9rem",
+                                                }}
+                                            >
+                                                {new Date(
+                                                    area.date
+                                                ).toLocaleDateString()}
+                                            </div>
+                                        </li>
+                                    ))}
+                                </ul>
+                            ) : (
+                                <div
+                                    style={{
+                                        padding: "1rem",
+                                        textAlign: "center",
+                                    }}
+                                >
+                                    No area details available
+                                </div>
+                            )}
+                        </Card>
                     </div>
                 </div>
-            </Card>
+            </div>
         );
     };
 
@@ -266,11 +660,11 @@ export default function KitchenSurveyList({ siteId, onCountChange }) {
     }
 
     if (error) {
-        return <div>Error loading surveys: {error}</div>;
+        return <div>Error loading collections: {error}</div>;
     }
 
-    if (surveys.length === 0) {
-        return <div>No surveys found for this site.</div>;
+    if (collections.length === 0) {
+        return <div>No survey collections found for this site.</div>;
     }
 
     return (
@@ -278,12 +672,12 @@ export default function KitchenSurveyList({ siteId, onCountChange }) {
             <Toast ref={toast} />
             <ConfirmDialog />
             <DataScroller
-                value={surveys}
-                itemTemplate={surveyTemplate}
+                value={collections}
+                itemTemplate={collectionTemplate}
                 rows={5}
                 inline
                 scrollHeight="400px"
-                emptyMessage="No surveys found for this site."
+                emptyMessage="No survey collections found for this site."
             />
 
             {/* Quote Modal */}

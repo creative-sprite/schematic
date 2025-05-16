@@ -63,6 +63,7 @@ const getCloudinaryUrl = (publicId) => {
 
 /**
  * Custom hook for loading survey data with simplified image handling
+ * UPDATED to remove parent-child area structure
  */
 export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
     // Loading state
@@ -90,7 +91,7 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
     // State for specialist equipment
     const [specialistEquipmentData, setSpecialistEquipmentData] = useState([]);
     const [specialistEquipmentId, setSpecialistEquipmentId] = useState("");
-    // NEW: Added state to store the full specialistEquipmentSurvey object
+    // State to store the full specialistEquipmentSurvey object
     const [
         initialSpecialistEquipmentSurvey,
         setInitialSpecialistEquipmentSurvey,
@@ -154,10 +155,6 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
     const [accessDoorSelections, setAccessDoorSelections] = useState({});
     const [groupDimensions, setGroupDimensions] = useState({});
     const [fanGradeSelections, setFanGradeSelections] = useState({});
-
-    // An array to store each duplicated area's state for final calculations
-    const [areasState, setAreasState] = useState([]); // array of totals
-    const [areas, setAreas] = useState([]);
 
     // Simplified Ventilation Information state
     const [ventilation, setVentilation] = useState({
@@ -352,7 +349,7 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
         }
     }, [siteIdParam, toast]);
 
-    // Load existing survey if ID is provided - simplified with better image handling
+    // Load existing survey if ID is provided
     useEffect(() => {
         if (!surveyId) return;
 
@@ -478,6 +475,14 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
 
                     // Set the processed images to state
                     setSurveyImages(processedImages);
+                } else {
+                    // Reset images if none exist in survey
+                    setSurveyImages({
+                        Structure: [],
+                        Equipment: [],
+                        Canopy: [],
+                        Ventilation: [],
+                    });
                 }
 
                 // Set equipment data with clear separation of fields
@@ -485,6 +490,9 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
                     // Set equipment entries
                     if (survey.equipmentSurvey.entries) {
                         setSurveyData(survey.equipmentSurvey.entries);
+                    } else {
+                        // Reset to empty array if no entries
+                        setSurveyData([]);
                     }
 
                     // Initialize equipment state with empty values first
@@ -501,9 +509,12 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
                             setSpecialistEquipmentData(
                                 survey.specialistEquipmentSurvey.entries
                             );
+                        } else {
+                            // Reset to empty array if no entries
+                            setSpecialistEquipmentData([]);
                         }
 
-                        // NEW: Set the full specialistEquipmentSurvey object
+                        // Set the full specialistEquipmentSurvey object
                         setInitialSpecialistEquipmentSurvey(
                             survey.specialistEquipmentSurvey
                         );
@@ -518,6 +529,14 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
                             "Loaded specialistEquipmentSurvey:",
                             survey.specialistEquipmentSurvey
                         );
+                    } else {
+                        // Reset specialist equipment data if not present
+                        setSpecialistEquipmentData([]);
+                        setInitialSpecialistEquipmentSurvey({
+                            entries: [],
+                            categoryComments: {},
+                        });
+                        updatedEquipment.categoryComments = {}; // Reset category comments
                     }
 
                     // Set equipment toggles and fields from the specialist equipment section
@@ -553,6 +572,14 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
 
                     // Set the updated equipment state
                     setEquipment(updatedEquipment);
+                } else {
+                    // Reset equipment data if not present
+                    setSurveyData([]);
+                    setEquipment({
+                        ...equipment,
+                        subcategoryComments: {},
+                        categoryComments: {},
+                    });
                 }
 
                 // Simplified canopy data loading
@@ -595,12 +622,20 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
                         setCanopyEntries(processedEntries);
                     } else {
                         setCanopyEntries([]);
+                        setCanopyTotal(0);
                     }
 
-                    // Set canopy comments
-                    if (survey.canopySurvey.comments) {
-                        setCanopyComments(survey.canopySurvey.comments);
-                    }
+                    // FIXED: Always set canopy comments, even if empty
+                    setCanopyComments(survey.canopySurvey.comments || {});
+                    console.log(
+                        "Setting canopy comments to:",
+                        survey.canopySurvey.comments || {}
+                    );
+                } else {
+                    // Reset canopy data if not present
+                    setCanopyEntries([]);
+                    setCanopyTotal(0);
+                    setCanopyComments({});
                 }
 
                 // Set schematic data
@@ -615,33 +650,30 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
                     );
                     setSelectedGroupId(survey.schematic.selectedGroupId || "");
 
-                    // Visual data loading with direct dimensions
-                    if (survey.schematic.placedItems?.length > 0) {
-                        // Ensure dimensions are properly maintained
-                        const processedItems = survey.schematic.placedItems.map(
-                            (item) => ({
-                                ...item,
-                                length:
-                                    item.length !== undefined
-                                        ? String(item.length)
-                                        : "",
-                                width:
-                                    item.width !== undefined
-                                        ? String(item.width)
-                                        : "",
-                                height:
-                                    item.height !== undefined
-                                        ? String(item.height)
-                                        : "",
-                            })
-                        );
+                    // FIXED: Always set placedItems, even if empty
+                    const processedItems =
+                        survey.schematic.placedItems?.length > 0
+                            ? survey.schematic.placedItems.map((item) => ({
+                                  ...item,
+                                  length:
+                                      item.length !== undefined
+                                          ? String(item.length)
+                                          : "",
+                                  width:
+                                      item.width !== undefined
+                                          ? String(item.width)
+                                          : "",
+                                  height:
+                                      item.height !== undefined
+                                          ? String(item.height)
+                                          : "",
+                              }))
+                            : [];
 
-                        setPlacedItems(processedItems);
-                    }
+                    setPlacedItems(processedItems);
 
-                    if (survey.schematic.specialItems?.length > 0) {
-                        setSpecialItems(survey.schematic.specialItems);
-                    }
+                    // FIXED: Always set specialItems, even if empty
+                    setSpecialItems(survey.schematic.specialItems || []);
 
                     if (survey.schematic.gridSpaces) {
                         setGridSpaces(survey.schematic.gridSpaces);
@@ -651,24 +683,40 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
                         setCellSize(survey.schematic.cellSize);
                     }
 
-                    // Set selections
-                    if (survey.schematic.flexiDuctSelections) {
-                        setFlexiDuctSelections(
-                            survey.schematic.flexiDuctSelections
-                        );
-                    }
+                    // FIXED: Always set selections, even if empty
+                    setFlexiDuctSelections(
+                        survey.schematic.flexiDuctSelections || {}
+                    );
+                    setAccessDoorSelections(
+                        survey.schematic.accessDoorSelections || {}
+                    );
+                    setFanGradeSelections(
+                        survey.schematic.fanGradeSelections || {}
+                    );
 
-                    if (survey.schematic.accessDoorSelections) {
-                        setAccessDoorSelections(
-                            survey.schematic.accessDoorSelections
-                        );
-                    }
-
-                    if (survey.schematic.fanGradeSelections) {
-                        setFanGradeSelections(
-                            survey.schematic.fanGradeSelections
-                        );
-                    }
+                    console.log(
+                        "Setting schematic data - placedItems:",
+                        processedItems.length,
+                        "specialItems:",
+                        (survey.schematic.specialItems || []).length,
+                        "accessDoorSelections:",
+                        Object.keys(survey.schematic.accessDoorSelections || {})
+                            .length
+                    );
+                } else {
+                    // Reset schematic data if not present
+                    setAccessDoorPrice(0);
+                    setVentilationPrice(0);
+                    setAirPrice(0);
+                    setFanPartsPrice(0);
+                    setAirInExTotal(0);
+                    setSchematicItemsTotal(0);
+                    setSelectedGroupId("");
+                    setPlacedItems([]);
+                    setSpecialItems([]);
+                    setFlexiDuctSelections({});
+                    setAccessDoorSelections({});
+                    setFanGradeSelections({});
                 }
 
                 // Simplified ventilation info loading
@@ -701,11 +749,56 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
                     };
 
                     setVentilation(normalizedVentilation);
+                } else {
+                    // Reset ventilation if not present
+                    setVentilation({
+                        obstructionsToggle: "No",
+                        obstructionsText: "",
+                        obstructionsManualText: "",
+                        obstructionsOptions: [],
+                        damageToggle: "No",
+                        damageText: "",
+                        damageManualText: "",
+                        damageOptions: [],
+                        inaccessibleAreasToggle: "No",
+                        inaccessibleAreasText: "",
+                        inaccessibleAreasManualText: "",
+                        inaccessibleAreasOptions: [],
+                        clientActionsToggle: "No",
+                        clientActionsText: "",
+                        clientActionsManualText: "",
+                        clientActionsOptions: [],
+                        description: "",
+                        accessLocations: [],
+                    });
                 }
 
                 // Set access requirements
                 if (survey.access) {
                     setAccess(survey.access);
+                } else {
+                    // Reset access if not present
+                    setAccess({
+                        inductionNeeded: "No",
+                        inductionDetails: "",
+                        maintenanceEngineer: "No",
+                        maintenanceContact: "",
+                        mechanicalEngineer: "No",
+                        mechanicalEngineerDetails: "",
+                        electricalEngineer: "No",
+                        electricalContact: "",
+                        systemIsolated: "No",
+                        roofAccess: "No",
+                        roofAccessDetails: "",
+                        wasteTankToggle: "No",
+                        wasteTankSelection: "No",
+                        wasteTankDetails: "",
+                        keysrequired: "No",
+                        keysContact: "",
+                        permitToWork: "No",
+                        ppeToggle: "No",
+                        frequencyOfService: "",
+                    });
                 }
 
                 // Set operations data
@@ -762,6 +855,24 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
 
                     // Set operations state
                     setOperations(normalizedOperations);
+                } else {
+                    // Reset operations if not present
+                    setOperations({
+                        patronDisruption: "No",
+                        patronDisruptionDetails: "",
+                        operationalHours: {
+                            weekdays: { start: "", end: "" },
+                            weekend: { start: "", end: "" },
+                        },
+                        typeOfCooking: "",
+                        coversPerDay: "",
+                        bestServiceTime: "",
+                        bestServiceDay: "Weekdays",
+                        eightHoursAvailable: "No",
+                        eightHoursAvailableDetails: "",
+                        serviceDue: "",
+                        approxServiceDue: false,
+                    });
                 }
 
                 // Set notes
@@ -783,6 +894,19 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
                     }
 
                     setNotes(processedNotes);
+                } else {
+                    // Reset notes if not present
+                    setNotes({
+                        obstructions: [],
+                        comments: "",
+                        previousIssues: "",
+                        damage: "",
+                        inaccessibleAreas: "",
+                        clientActions: "",
+                        accessLocations: "",
+                        clientNeedsDocument: "No",
+                        documentDetails: "",
+                    });
                 }
 
                 // Set contacts
@@ -812,60 +936,18 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
                     if (walkAroundIndex !== -1) {
                         setWalkAroundContactIndex(walkAroundIndex);
                     }
-                }
-
-                // Set duplicated areas
-                if (
-                    survey.duplicatedAreas &&
-                    Array.isArray(survey.duplicatedAreas)
-                ) {
-                    // Process duplicate areas to ensure placedItems have dimensions directly on them
-                    const processedAreas = survey.duplicatedAreas.map(
-                        (area) => {
-                            // Make a copy to avoid modifying the original
-                            const processedArea = { ...area };
-
-                            // If area has a schematic with placedItems, ensure dimensions are on them
-                            if (
-                                processedArea.schematic &&
-                                processedArea.schematic.placedItems
-                            ) {
-                                processedArea.schematic.placedItems =
-                                    processedArea.schematic.placedItems.map(
-                                        (item) => ({
-                                            ...item,
-                                            length:
-                                                item.length !== undefined
-                                                    ? String(item.length)
-                                                    : "",
-                                            width:
-                                                item.width !== undefined
-                                                    ? String(item.width)
-                                                    : "",
-                                            height:
-                                                item.height !== undefined
-                                                    ? String(item.height)
-                                                    : "",
-                                        })
-                                    );
-                            }
-
-                            return processedArea;
-                        }
-                    );
-
-                    setAreas(
-                        processedAreas.map((area) => ({
-                            id: area.id || Date.now(),
-                        }))
-                    );
-
-                    setAreasState(processedAreas);
+                } else {
+                    // Reset contacts if not present
+                    setContacts([]);
+                    setPrimaryContactIndex(null);
+                    setWalkAroundContactIndex(null);
                 }
 
                 // Set modification factor
                 if (survey.totals?.modify !== undefined) {
                     setModify(survey.totals.modify);
+                } else {
+                    setModify(0);
                 }
 
                 // Show success message
@@ -965,7 +1047,7 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
         setSpecialistEquipmentData,
         specialistEquipmentId,
         setSpecialistEquipmentId,
-        // NEW: Add the initialSpecialistEquipmentSurvey to the return
+        // Add the initialSpecialistEquipmentSurvey to the return
         initialSpecialistEquipmentSurvey,
 
         // Structure data
@@ -1035,12 +1117,6 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
         setAccessDoorSelections,
         fanGradeSelections,
         setFanGradeSelections,
-
-        // Areas
-        areasState,
-        setAreasState,
-        areas,
-        setAreas,
 
         // Form sections
         ventilation,
