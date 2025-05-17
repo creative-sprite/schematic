@@ -57,26 +57,64 @@ export async function GET(request, { params }) {
       );
     }
     
-    // If this survey is part of a collection, fetch collection info
-    if (survey.collectionId) {
-      const collection = await SurveyCollection.findById(survey.collectionId)
-        .select('collectionRef name totalAreas');
+    // Convert to object for manipulation
+    const surveyData = survey.toObject();
+    
+    // Handle collections information
+    if (survey.collections && survey.collections.length > 0) {
+      // Find the primary collection
+      const primaryCollection = survey.collections.find(c => c.isPrimary) || survey.collections[0];
+      const collectionId = primaryCollection.collectionId;
       
-      // If collection exists, attach info to response
-      if (collection) {
-        // Attach collection data to the survey response
-        const surveyData = survey.toObject();
-        surveyData.collectionInfo = {
-          name: collection.name,
-          totalAreas: collection.totalAreas,
-          collectionRef: collection.collectionRef
-        };
+      // Fetch additional information about collections
+      const collectionInfoList = [];
+      
+      for (const collectionEntry of survey.collections) {
+        if (!collectionEntry.collectionId) continue;
         
-        return NextResponse.json({ success: true, data: surveyData });
+        try {
+          const collection = await SurveyCollection.findById(collectionEntry.collectionId)
+            .select('collectionRef name totalAreas');
+          
+          if (collection) {
+            collectionInfoList.push({
+              id: collection._id,
+              name: collection.name,
+              totalAreas: collection.totalAreas,
+              collectionRef: collection.collectionRef,
+              areaIndex: collectionEntry.areaIndex,
+              isPrimary: collectionEntry.isPrimary
+            });
+          }
+        } catch (err) {
+          console.warn(`Could not fetch info for collection ${collectionEntry.collectionId}:`, err);
+        }
+      }
+      
+      // Attach collection data to the survey response
+      surveyData.collectionsInfo = collectionInfoList;
+      
+      // For backward compatibility, also include the primary collection info directly
+      if (primaryCollection && primaryCollection.collectionId) {
+        const collection = await SurveyCollection.findById(primaryCollection.collectionId)
+          .select('collectionRef name totalAreas');
+        
+        if (collection) {
+          surveyData.collectionInfo = {
+            name: collection.name,
+            totalAreas: collection.totalAreas,
+            collectionRef: collection.collectionRef
+          };
+          
+          // For backward compatibility, also add these direct fields
+          surveyData.collectionId = primaryCollection.collectionId;
+          surveyData.areaIndex = primaryCollection.areaIndex;
+          surveyData.collectionRef = primaryCollection.collectionRef;
+        }
       }
     }
 
-    return NextResponse.json({ success: true, data: survey });
+    return NextResponse.json({ success: true, data: surveyData });
   } catch (error) {
     console.error(`Error fetching survey ${id}:`, error);
     return NextResponse.json(
@@ -100,6 +138,22 @@ export async function PUT(request, { params }) {
       body.images = {};
     }
     
+    // Handle backward compatibility for collection data
+    if (body.collectionId && !body.collections) {
+      // Add to collections array if only collectionId provided
+      body.collections = [{
+        collectionId: body.collectionId,
+        areaIndex: body.areaIndex !== undefined ? body.areaIndex : 0,
+        collectionRef: body.collectionRef || "",
+        isPrimary: true
+      }];
+      
+      // Remove old fields to avoid conflicts
+      delete body.collectionId;
+      delete body.areaIndex;
+      delete body.collectionRef;
+    }
+    
     // Remove any child areas references from body if they exist
     if (body.childAreas) {
       delete body.childAreas;
@@ -118,15 +172,20 @@ export async function PUT(request, { params }) {
       );
     }
     
-    // If this is part of a collection and structureId changed, update collection
-    if (body.structure?.structureId && updatedSurvey.collectionId) {
-      // Check if collection needs updating
-      const collection = await SurveyCollection.findById(updatedSurvey.collectionId);
-      if (collection) {
-        // If this is the first survey (areaIndex 0), update collection name
-        if (updatedSurvey.areaIndex === 0) {
-          collection.name = `${body.structure.structureId} Collection`;
-          await collection.save();
+    // Update collection information if structure ID changed
+    if (body.structure?.structureId && updatedSurvey.collections) {
+      // Loop through all collections
+      for (const collectionEntry of updatedSurvey.collections) {
+        if (!collectionEntry.collectionId) continue;
+        
+        // Check if collection needs updating
+        const collection = await SurveyCollection.findById(collectionEntry.collectionId);
+        if (collection) {
+          // If this is the first survey (areaIndex 0), update collection name
+          if (collectionEntry.areaIndex === 0) {
+            collection.name = `${body.structure.structureId} Collection`;
+            await collection.save();
+          }
         }
       }
     }
@@ -148,7 +207,7 @@ export async function DELETE(request, { params }) {
   
   await dbConnect();
   try {
-    // Find the survey first to check if it's in a collection
+    // Find the survey first to check if it's in collections
     const survey = await KitchenSurvey.findById(id);
     
     if (!survey) {
@@ -158,36 +217,58 @@ export async function DELETE(request, { params }) {
       );
     }
     
-    // If survey is part of a collection, remove it from the collection
-    if (survey.collectionId) {
-      const collection = await SurveyCollection.findById(survey.collectionId);
-      
-      if (collection) {
-        // Remove the survey from the collection's surveys array
-        collection.surveys = collection.surveys.filter(
-          surveyId => surveyId.toString() !== id
-        );
+    // If survey is part of collections, remove it from all collections
+    if (survey.collections && survey.collections.length > 0) {
+      for (const collectionEntry of survey.collections) {
+        const collectionId = collectionEntry.collectionId;
+        if (!collectionId) continue;
         
-        // Update total areas count
-        collection.totalAreas = collection.surveys.length;
+        const collection = await SurveyCollection.findById(collectionId);
         
-        // If this was the last survey, delete the collection
-        if (collection.surveys.length === 0) {
-          await SurveyCollection.findByIdAndDelete(survey.collectionId);
-        } 
-        // Otherwise save the updated collection
-        else {
-          await collection.save();
+        if (collection) {
+          // Remove the survey from the collection's surveys array
+          collection.surveys = collection.surveys.filter(
+            surveyId => surveyId.toString() !== id
+          );
           
-          // Reindex the remaining surveys
-          const remainingSurveys = await KitchenSurvey.find({
-            _id: { $in: collection.surveys }
-          }).sort({ areaIndex: 1 });
+          // Update total areas count
+          collection.totalAreas = collection.surveys.length;
           
-          for (let i = 0; i < remainingSurveys.length; i++) {
-            await KitchenSurvey.findByIdAndUpdate(remainingSurveys[i]._id, {
-              areaIndex: i
-            });
+          // If this was the last survey, delete the collection
+          if (collection.surveys.length === 0) {
+            await SurveyCollection.findByIdAndDelete(collectionId);
+          } 
+          // Otherwise save the updated collection
+          else {
+            await collection.save();
+            
+            // Reindex the remaining surveys
+            const remainingSurveys = await KitchenSurvey.find({
+              _id: { $in: collection.surveys }
+            }).sort({ areaIndex: 1 });
+            
+            for (let i = 0; i < remainingSurveys.length; i++) {
+              // Look for this survey in the collections array
+              const survey = await KitchenSurvey.findById(remainingSurveys[i]._id);
+              
+              if (survey && survey.collections) {
+                // Find the specific collection entry for this collection
+                const collectionEntryIndex = survey.collections.findIndex(
+                  entry => entry.collectionId && entry.collectionId.toString() === collectionId.toString()
+                );
+                
+                if (collectionEntryIndex >= 0) {
+                  // Update the area index in this specific collection
+                  const updatedCollections = [...survey.collections];
+                  updatedCollections[collectionEntryIndex].areaIndex = i;
+                  
+                  // Save the updated collections array
+                  await KitchenSurvey.findByIdAndUpdate(remainingSurveys[i]._id, {
+                    collections: updatedCollections
+                  });
+                }
+              }
+            }
           }
         }
       }
@@ -290,24 +371,39 @@ export async function PATCH(request, { params }) {
       // Create the new survey
       const newSurvey = await KitchenSurvey.create(newSurveyData);
       
-      // If the original survey was part of a collection, add this one too
-      if (originalSurvey.collectionId) {
-        const collection = await SurveyCollection.findById(originalSurvey.collectionId);
-        
-        if (collection) {
-          // Add the new survey to the collection
-          collection.surveys.push(newSurvey._id);
-          collection.totalAreas = collection.surveys.length;
-          await collection.save();
+      // If the original survey was part of collections, add this one too
+      if (originalSurvey.collections && originalSurvey.collections.length > 0) {
+        for (const collectionEntry of originalSurvey.collections) {
+          const collectionId = collectionEntry.collectionId;
+          if (!collectionId) continue;
           
-          // Update the new survey with collection info
-          await KitchenSurvey.findByIdAndUpdate(newSurvey._id, {
-            collectionId: collection._id,
-            areaIndex: collection.surveys.length - 1,
-            collectionRef: collection.collectionRef
-          });
+          const collection = await SurveyCollection.findById(collectionId);
           
-          console.log(`Added new version to collection ${collection._id}`);
+          if (collection) {
+            // Add the new survey to the collection
+            collection.surveys.push(newSurvey._id);
+            collection.totalAreas = collection.surveys.length;
+            await collection.save();
+            
+            // Get the collections array from the new survey
+            const newSurveyObj = await KitchenSurvey.findById(newSurvey._id);
+            const updatedCollections = newSurveyObj.collections || [];
+            
+            // Add this collection to the new survey's collections array
+            updatedCollections.push({
+              collectionId: collection._id,
+              areaIndex: collection.surveys.length - 1,
+              collectionRef: collection.collectionRef,
+              isPrimary: collectionEntry.isPrimary
+            });
+            
+            // Save the updated collections array
+            await KitchenSurvey.findByIdAndUpdate(newSurvey._id, {
+              collections: updatedCollections
+            });
+            
+            console.log(`Added new version to collection ${collection._id}`);
+          }
         }
       }
       

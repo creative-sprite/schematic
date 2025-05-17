@@ -1,5 +1,6 @@
 // components/kitchenSurvey/actions/SurveyActionButtons.jsx
-import React from "react";
+import React, { useState, useRef } from "react";
+import { Toast } from "primereact/toast";
 import SaveSurvey from "@/components/kitchenSurvey/save/SaveSurvey";
 import AddNewArea from "@/components/kitchenSurvey/AddNewArea";
 
@@ -78,6 +79,8 @@ export default function SurveyActionButtons({
     // Position options
     fixedPosition = true,
 }) {
+    const toast = useRef(null);
+
     // Container style based on position preference
     const containerStyle = {
         display: "flex",
@@ -137,89 +140,93 @@ export default function SurveyActionButtons({
     };
 
     return (
-        <div style={containerStyle}>
-            {/* Add New Area button - Pass consolidated data */}
-            <AddNewArea
-                surveyId={surveyId}
-                surveyData={consolidatedSurveyData}
-                refValue={refValue}
-                structureId={structureId}
-                siteDetails={siteDetails}
-                collectionId={collectionId}
-                operations={operations}
-                access={access}
-                equipment={equipment}
-                notes={notes}
-                ventilation={ventilation}
-                surveyDate={surveyDate}
-                contacts={contacts}
-                primaryContactIndex={primaryContactIndex}
-                walkAroundContactIndex={walkAroundContactIndex}
-                parking={parking}
-                onAreaAdded={(newAreaInfo) => {
-                    console.log("New area will be added:", newAreaInfo);
-                    // Don't update state here - will be handled after navigation
-                }}
-            />
+        <>
+            <Toast ref={toast} />
 
-            {/* Save Survey button */}
-            <SaveSurvey
-                targetRef={contentRef}
-                schematicRef={schematicRef}
-                surveyId={surveyId}
-                refValue={refValue}
-                surveyDate={surveyDate}
-                parking={parking}
-                siteDetails={siteDetails}
-                contacts={contacts}
-                primaryContactIndex={primaryContactIndex}
-                walkAroundContactIndex={walkAroundContactIndex}
-                structureId={structureId}
-                structureTotal={structureTotal}
-                structureSelectionData={structureSelectionData}
-                structureDimensions={structureDimensions}
-                structureComments={structureComments}
-                surveyData={surveyData}
-                equipmentItems={equipmentItems}
-                specialistEquipmentData={specialistEquipmentData}
-                canopyTotal={canopyTotal}
-                canopyEntries={canopyEntries}
-                canopyComments={canopyComments}
-                accessDoorPrice={accessDoorPrice}
-                ventilationPrice={ventilationPrice}
-                airPrice={airPrice}
-                fanPartsPrice={fanPartsPrice}
-                airInExTotal={airInExTotal}
-                schematicItemsTotal={schematicItemsTotal}
-                selectedGroupId={selectedGroupId}
-                operations={operations}
-                access={access}
-                equipment={equipment}
-                notes={notes}
-                ventilation={ventilation}
-                childAreas={[]} // Empty array since we're removing child areas
-                modify={modify}
-                surveyImages={surveyImages}
-                placedItems={placedItems}
-                specialItems={specialItems}
-                gridSpaces={gridSpaces}
-                cellSize={cellSize}
-                flexiDuctSelections={flexiDuctSelections}
-                accessDoorSelections={accessDoorSelections}
-                groupDimensions={groupDimensions}
-                fanGradeSelections={fanGradeSelections}
-                createSurveyIfNeeded={
-                    !surveyId &&
-                    siteDetails &&
-                    (siteDetails._id || siteDetails.id)
-                        ? createSurveyIfNeeded
-                        : null
-                }
-                collectionId={collectionId}
-                areaIndex={areaIndex}
-                totalAreas={totalAreas}
-            />
-        </div>
+            <div style={containerStyle}>
+                {/* Add New Area button - Pass consolidated data */}
+                <AddNewArea
+                    surveyId={surveyId}
+                    surveyData={consolidatedSurveyData}
+                    refValue={refValue}
+                    structureId={structureId}
+                    siteDetails={siteDetails}
+                    collectionId={collectionId}
+                    operations={operations}
+                    access={access}
+                    equipment={equipment}
+                    notes={notes}
+                    ventilation={ventilation}
+                    surveyDate={surveyDate}
+                    contacts={contacts}
+                    primaryContactIndex={primaryContactIndex}
+                    walkAroundContactIndex={walkAroundContactIndex}
+                    parking={parking}
+                    onAreaAdded={(newAreaInfo) => {
+                        console.log("New area will be added:", newAreaInfo);
+                        // Don't update state here - will be handled after navigation
+                    }}
+                />
+
+                {/* Save Survey button */}
+                <SaveSurvey
+                    targetRef={contentRef}
+                    schematicRef={schematicRef}
+                    surveyId={surveyId}
+                    refValue={refValue}
+                    surveyDate={surveyDate}
+                    parking={parking}
+                    siteDetails={siteDetails}
+                    contacts={contacts}
+                    primaryContactIndex={primaryContactIndex}
+                    walkAroundContactIndex={walkAroundContactIndex}
+                    structureId={structureId}
+                    structureTotal={structureTotal}
+                    structureSelectionData={structureSelectionData}
+                    structureDimensions={structureDimensions}
+                    structureComments={structureComments}
+                    surveyData={surveyData}
+                    equipmentItems={equipmentItems}
+                    specialistEquipmentData={specialistEquipmentData}
+                    canopyTotal={canopyTotal}
+                    canopyEntries={canopyEntries}
+                    canopyComments={canopyComments}
+                    accessDoorPrice={accessDoorPrice}
+                    ventilationPrice={ventilationPrice}
+                    airPrice={airPrice}
+                    fanPartsPrice={fanPartsPrice}
+                    airInExTotal={airInExTotal}
+                    schematicItemsTotal={schematicItemsTotal}
+                    selectedGroupId={selectedGroupId}
+                    operations={operations}
+                    access={access}
+                    equipment={equipment}
+                    notes={notes}
+                    ventilation={ventilation}
+                    childAreas={[]} // Empty array since we're removing child areas
+                    modify={modify}
+                    surveyImages={surveyImages}
+                    placedItems={placedItems}
+                    specialItems={specialItems}
+                    gridSpaces={gridSpaces}
+                    cellSize={cellSize}
+                    flexiDuctSelections={flexiDuctSelections}
+                    accessDoorSelections={accessDoorSelections}
+                    groupDimensions={groupDimensions}
+                    fanGradeSelections={fanGradeSelections}
+                    createSurveyIfNeeded={
+                        !surveyId &&
+                        siteDetails &&
+                        (siteDetails._id || siteDetails.id)
+                            ? createSurveyIfNeeded
+                            : null
+                    }
+                    collectionId={collectionId}
+                    areaIndex={areaIndex}
+                    totalAreas={totalAreas}
+                />
+            </div>
+        </>
     );
 }
 
@@ -244,6 +251,8 @@ export function SurveyActionButtonsConsolidated({
     // Position options
     fixedPosition = true,
 }) {
+    const toast = useRef(null);
+
     const containerStyle = {
         display: "flex",
         gap: "1rem",
@@ -305,87 +314,91 @@ export function SurveyActionButtonsConsolidated({
     } = surveyData;
 
     return (
-        <div style={containerStyle}>
-            {/* Add New Area button - Pass the entire surveyData object */}
-            <AddNewArea
-                surveyId={internalSurveyId}
-                surveyData={surveyData} // Pass the full consolidated data
-                refValue={refValue}
-                structureId={structureId}
-                siteDetails={siteDetails}
-                collectionId={areasPagination.collectionId}
-                operations={operations}
-                access={access}
-                equipment={equipment}
-                notes={notes}
-                ventilation={ventilation}
-                surveyDate={surveyDate}
-                contacts={contacts}
-                primaryContactIndex={primaryContactIndex}
-                walkAroundContactIndex={walkAroundContactIndex}
-                parking={parking}
-                onAreaAdded={(newAreaInfo) => {
-                    console.log("New area will be added:", newAreaInfo);
-                }}
-            />
+        <>
+            <Toast ref={toast} />
 
-            {/* Save Survey button */}
-            <SaveSurvey
-                targetRef={contentRef}
-                schematicRef={schematicRef}
-                surveyId={internalSurveyId}
-                refValue={refValue}
-                surveyDate={surveyDate}
-                parking={parking}
-                siteDetails={siteDetails}
-                contacts={contacts}
-                primaryContactIndex={primaryContactIndex}
-                walkAroundContactIndex={walkAroundContactIndex}
-                structureId={structureId}
-                structureTotal={structureTotal}
-                structureSelectionData={structureSelectionData}
-                structureDimensions={structureDimensions}
-                structureComments={structureComments}
-                surveyData={equipmentSurveyData}
-                equipmentItems={equipmentItems}
-                specialistEquipmentData={specialistEquipmentData}
-                canopyTotal={canopyTotal}
-                canopyEntries={canopyEntries}
-                canopyComments={canopyComments}
-                accessDoorPrice={accessDoorPrice}
-                ventilationPrice={ventilationPrice}
-                airPrice={airPrice}
-                fanPartsPrice={fanPartsPrice}
-                airInExTotal={airInExTotal}
-                schematicItemsTotal={schematicItemsTotal}
-                selectedGroupId={selectedGroupId}
-                operations={operations}
-                access={access}
-                equipment={equipment}
-                notes={notes}
-                ventilation={ventilation}
-                childAreas={[]}
-                modify={modify}
-                surveyImages={surveyImages}
-                placedItems={placedItems}
-                specialItems={specialItems}
-                gridSpaces={gridSpaces}
-                cellSize={cellSize}
-                flexiDuctSelections={flexiDuctSelections}
-                accessDoorSelections={accessDoorSelections}
-                groupDimensions={groupDimensions}
-                fanGradeSelections={fanGradeSelections}
-                createSurveyIfNeeded={
-                    !internalSurveyId &&
-                    siteDetails &&
-                    (siteDetails._id || siteDetails.id)
-                        ? createSurveyIfNeeded
-                        : null
-                }
-                collectionId={areasPagination.collectionId}
-                areaIndex={areasPagination.currentIndex}
-                totalAreas={areasPagination.totalAreas}
-            />
-        </div>
+            <div style={containerStyle}>
+                {/* Add New Area button - Pass the entire surveyData object */}
+                <AddNewArea
+                    surveyId={internalSurveyId}
+                    surveyData={surveyData} // Pass the full consolidated data
+                    refValue={refValue}
+                    structureId={structureId}
+                    siteDetails={siteDetails}
+                    collectionId={areasPagination.collectionId}
+                    operations={operations}
+                    access={access}
+                    equipment={equipment}
+                    notes={notes}
+                    ventilation={ventilation}
+                    surveyDate={surveyDate}
+                    contacts={contacts}
+                    primaryContactIndex={primaryContactIndex}
+                    walkAroundContactIndex={walkAroundContactIndex}
+                    parking={parking}
+                    onAreaAdded={(newAreaInfo) => {
+                        console.log("New area will be added:", newAreaInfo);
+                    }}
+                />
+
+                {/* Save Survey button */}
+                <SaveSurvey
+                    targetRef={contentRef}
+                    schematicRef={schematicRef}
+                    surveyId={internalSurveyId}
+                    refValue={refValue}
+                    surveyDate={surveyDate}
+                    parking={parking}
+                    siteDetails={siteDetails}
+                    contacts={contacts}
+                    primaryContactIndex={primaryContactIndex}
+                    walkAroundContactIndex={walkAroundContactIndex}
+                    structureId={structureId}
+                    structureTotal={structureTotal}
+                    structureSelectionData={structureSelectionData}
+                    structureDimensions={structureDimensions}
+                    structureComments={structureComments}
+                    surveyData={equipmentSurveyData}
+                    equipmentItems={equipmentItems}
+                    specialistEquipmentData={specialistEquipmentData}
+                    canopyTotal={canopyTotal}
+                    canopyEntries={canopyEntries}
+                    canopyComments={canopyComments}
+                    accessDoorPrice={accessDoorPrice}
+                    ventilationPrice={ventilationPrice}
+                    airPrice={airPrice}
+                    fanPartsPrice={fanPartsPrice}
+                    airInExTotal={airInExTotal}
+                    schematicItemsTotal={schematicItemsTotal}
+                    selectedGroupId={selectedGroupId}
+                    operations={operations}
+                    access={access}
+                    equipment={equipment}
+                    notes={notes}
+                    ventilation={ventilation}
+                    childAreas={[]}
+                    modify={modify}
+                    surveyImages={surveyImages}
+                    placedItems={placedItems}
+                    specialItems={specialItems}
+                    gridSpaces={gridSpaces}
+                    cellSize={cellSize}
+                    flexiDuctSelections={flexiDuctSelections}
+                    accessDoorSelections={accessDoorSelections}
+                    groupDimensions={groupDimensions}
+                    fanGradeSelections={fanGradeSelections}
+                    createSurveyIfNeeded={
+                        !internalSurveyId &&
+                        siteDetails &&
+                        (siteDetails._id || siteDetails.id)
+                            ? createSurveyIfNeeded
+                            : null
+                    }
+                    collectionId={areasPagination.collectionId}
+                    areaIndex={areasPagination.currentIndex}
+                    totalAreas={areasPagination.totalAreas}
+                />
+            </div>
+        </>
     );
 }

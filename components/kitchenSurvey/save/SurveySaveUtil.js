@@ -45,6 +45,20 @@ export const syncComponentStates = async () => {
         );
     }
 
+    // Try to sync schematic door prices
+    let schematicSynced = false;
+    if (
+        typeof window !== "undefined" &&
+        window.schematicInstance &&
+        typeof window.schematicInstance.syncDoorPrices === "function"
+    ) {
+        schematicSynced = window.schematicInstance.syncDoorPrices();
+        console.log(
+            "[SurveySaveUtil] Schematic door prices synced:",
+            schematicSynced
+        );
+    }
+
     // Increase delay to ensure updates have been processed
     return new Promise((resolve) => setTimeout(resolve, 300));
 };
@@ -194,6 +208,21 @@ const extractNumericValue = (value, defaultValue = 0) => {
     return !isNaN(parsed) ? parsed : defaultValue;
 };
 
+// Function to calculate total access door price from selections
+export const calculateAccessDoorPriceFromSelections = (accessDoorSelections) => {
+    if (!accessDoorSelections || typeof accessDoorSelections !== 'object') {
+        return 0;
+    }
+    
+    // Calculate total price by summing the price of each door selection
+    return Object.values(accessDoorSelections).reduce((total, door) => {
+        const doorPrice = typeof door === 'object' && door !== null 
+            ? Number(door.price) || 0 
+            : 0;
+        return total + doorPrice;
+    }, 0);
+};
+
 // Build a complete save payload from survey data
 export const buildSavePayload = (
     surveyData,
@@ -228,12 +257,79 @@ export const buildSavePayload = (
         ...domSpecialistComments,
     };
 
-    // Extract numeric values for schematic totals
-    const schematicItemsTotalValue = extractNumericValue(surveyData.schematicItemsTotal);
-    console.log("[SurveySaveUtil] Extracted schematicItemsTotal:", {
-        original: surveyData.schematicItemsTotal,
-        extracted: schematicItemsTotalValue
-    });
+    // FIXED: Preserve the full schematicItemsTotal object if it's an object with breakdown
+    let schematicItemsTotalForSave;
+    if (typeof surveyData.schematicItemsTotal === 'object' && surveyData.schematicItemsTotal !== null) {
+        // If it has breakdown property, preserve the entire object
+        if (surveyData.schematicItemsTotal.breakdown && 
+            Object.keys(surveyData.schematicItemsTotal.breakdown).length > 0) {
+            schematicItemsTotalForSave = {
+                overall: extractNumericValue(surveyData.schematicItemsTotal.overall, 0),
+                breakdown: {...surveyData.schematicItemsTotal.breakdown}
+            };
+            console.log("[SurveySaveUtil] Preserving schematic breakdown with categories:", 
+                Object.keys(schematicItemsTotalForSave.breakdown));
+        } else {
+            // Just preserve the overall number if no breakdown
+            schematicItemsTotalForSave = extractNumericValue(surveyData.schematicItemsTotal);
+        }
+    } else {
+        // If it's just a number, use that
+        schematicItemsTotalForSave = extractNumericValue(surveyData.schematicItemsTotal);
+    }
+    
+    // Calculate access door price from selections and ensure it's accurate
+    let accessDoorPriceValue;
+    if (surveyData.accessDoorSelections && Object.keys(surveyData.accessDoorSelections).length > 0) {
+        // Calculate price from door selections
+        const calculatedPrice = calculateAccessDoorPriceFromSelections(surveyData.accessDoorSelections);
+        // Use calculated price if available, otherwise use stored price
+        accessDoorPriceValue = calculatedPrice > 0 
+            ? calculatedPrice 
+            : extractNumericValue(surveyData.accessDoorPrice);
+        
+        console.log("[SurveySaveUtil] Access door price:", {
+            calculated: calculatedPrice,
+            stored: surveyData.accessDoorPrice,
+            final: accessDoorPriceValue
+        });
+    } else {
+        accessDoorPriceValue = extractNumericValue(surveyData.accessDoorPrice);
+    }
+
+    // MULTI-COLLECTION: Process collections array to ensure it's properly formatted
+    let collectionsArray = [];
+    
+    // Check if additionalData has collections array (new format)
+    if (Array.isArray(additionalData.collections) && additionalData.collections.length > 0) {
+        collectionsArray = [...additionalData.collections];
+    }
+    // Fall back to surveyData collections array if present
+    else if (Array.isArray(surveyData.collections) && surveyData.collections.length > 0) {
+        collectionsArray = [...surveyData.collections];
+    }
+    // Backward compatibility: If single collectionId is provided but no collections array
+    else if ((additionalData.collectionId || surveyData.collectionId) && collectionsArray.length === 0) {
+        const collectionId = additionalData.collectionId || surveyData.collectionId;
+        const areaIndex = additionalData.areaIndex !== undefined 
+            ? additionalData.areaIndex 
+            : (surveyData.areaIndex !== undefined ? surveyData.areaIndex : 0);
+        const collectionRef = additionalData.collectionRef || surveyData.collectionRef || "";
+        
+        // Create a single collection entry with the primary flag set
+        collectionsArray.push({
+            collectionId: collectionId,
+            areaIndex: areaIndex,
+            collectionRef: collectionRef,
+            isPrimary: true
+        });
+    }
+
+    // Set at least one collection as primary if none is marked
+    let hasPrimary = collectionsArray.some(coll => coll.isPrimary);
+    if (collectionsArray.length > 0 && !hasPrimary) {
+        collectionsArray[0].isPrimary = true;
+    }
 
     // Build the complete payload with all data
     const savePayload = {
@@ -249,11 +345,8 @@ export const buildSavePayload = (
         // Include contacts if available
         contacts: surveyData.contacts || additionalData.contacts || [],
         
-        // Include collection information if available
-        ...(surveyData.collectionId || additionalData.collectionId ? {
-            collectionId: surveyData.collectionId || additionalData.collectionId,
-            areaIndex: surveyData.areaIndex || additionalData.areaIndex || 0,
-        } : {}),
+        // MULTI-COLLECTION: Use the collections array instead of individual fields
+        collections: collectionsArray,
         
         // General section
         general: {
@@ -290,14 +383,14 @@ export const buildSavePayload = (
             comments: surveyData.canopyComments || {},
         },
         
-        // Schematic section
+        // FIXED: Schematic section - now preserving the full schematicItemsTotal object
         schematic: {
-            accessDoorPrice: extractNumericValue(surveyData.accessDoorPrice),
+            accessDoorPrice: accessDoorPriceValue,
             ventilationPrice: extractNumericValue(surveyData.ventilationPrice),
             airPrice: extractNumericValue(surveyData.airPrice),
             fanPartsPrice: extractNumericValue(surveyData.fanPartsPrice),
             airInExTotal: extractNumericValue(surveyData.airInExTotal),
-            schematicItemsTotal: schematicItemsTotalValue, // Using extracted numeric value
+            schematicItemsTotal: schematicItemsTotalForSave, // Now preserving the full object if available
             selectedGroupId: surveyData.selectedGroupId || "",
             // Visual data
             gridSpaces: surveyData.gridSpaces || 26,
@@ -333,18 +426,18 @@ export const buildSavePayload = (
             categoryComments: finalSpecialistCategoryComments,
         },
         
-        // Totals section with numeric value extraction
+        // FIXED: Totals section - now preserving schematicItemsTotal format in mainArea and grandTotal
         totals: {
             mainArea: {
                 structureTotal: extractNumericValue(surveyData.structureTotal),
                 equipmentTotal: extractNumericValue(surveyData.equipmentTotal),
                 canopyTotal: extractNumericValue(surveyData.canopyTotal),
-                accessDoorPrice: extractNumericValue(surveyData.accessDoorPrice),
+                accessDoorPrice: accessDoorPriceValue,
                 ventilationPrice: extractNumericValue(surveyData.ventilationPrice),
                 airPrice: extractNumericValue(surveyData.airPrice),
                 fanPartsPrice: extractNumericValue(surveyData.fanPartsPrice),
                 airInExTotal: extractNumericValue(surveyData.airInExTotal),
-                schematicItemsTotal: schematicItemsTotalValue,
+                schematicItemsTotal: schematicItemsTotalForSave, // Now preserving the full object if available
                 modify: extractNumericValue(surveyData.modify),
                 groupingId: surveyData.selectedGroupId || ""
             },
@@ -352,12 +445,12 @@ export const buildSavePayload = (
                 structureTotal: extractNumericValue(surveyData.structureTotal),
                 equipmentTotal: extractNumericValue(surveyData.equipmentTotal),
                 canopyTotal: extractNumericValue(surveyData.canopyTotal),
-                accessDoorPrice: extractNumericValue(surveyData.accessDoorPrice),
+                accessDoorPrice: accessDoorPriceValue,
                 ventilationPrice: extractNumericValue(surveyData.ventilationPrice),
                 airPrice: extractNumericValue(surveyData.airPrice),
                 fanPartsPrice: extractNumericValue(surveyData.fanPartsPrice),
                 airInExTotal: extractNumericValue(surveyData.airInExTotal),
-                schematicItemsTotal: schematicItemsTotalValue
+                schematicItemsTotal: schematicItemsTotalForSave // Now preserving the full object if available
             },
             modify: extractNumericValue(surveyData.modify)
         },
@@ -366,6 +459,11 @@ export const buildSavePayload = (
         ...additionalData,
     };
 
+    // Remove old-style collection fields if they exist - since we're now using the collections array
+    if (savePayload.collectionId !== undefined) delete savePayload.collectionId;
+    if (savePayload.areaIndex !== undefined) delete savePayload.areaIndex;
+    if (savePayload.collectionRef !== undefined) delete savePayload.collectionRef;
+
     // Log key counts for debugging
     console.log("[SurveySaveUtil] Final payload prepared with:", {
         equipmentCommentCount: Object.keys(finalSubcategoryComments).length,
@@ -373,7 +471,11 @@ export const buildSavePayload = (
         equipmentEntryCount: (surveyData.surveyData || []).length,
         canopyEntryCount: (surveyData.canopyEntries || []).length,
         placedItemCount: (surveyData.placedItems || []).length,
-        schematicItemsTotal: schematicItemsTotalValue
+        collectionsCount: collectionsArray.length,
+        schematicItemsTotal: typeof schematicItemsTotalForSave === 'object' ? 
+            `Object with breakdown (${Object.keys(schematicItemsTotalForSave.breakdown || {}).length} categories)` : 
+            `Number: ${schematicItemsTotalForSave}`,
+        accessDoorPrice: accessDoorPriceValue
     });
 
     return savePayload;
@@ -417,6 +519,16 @@ export const saveSurveyWithHandshake = async (
         updateProgress("Building save payload...", 20);
         const savePayload = buildSavePayload(surveyData, additionalData);
         
+        // Log collections information specifically for debugging
+        if (savePayload.collections && savePayload.collections.length > 0) {
+            log(`Survey belongs to ${savePayload.collections.length} collections:`);
+            savePayload.collections.forEach((coll, index) => {
+                log(`  Collection ${index + 1}: ID=${coll.collectionId}, areaIndex=${coll.areaIndex}, isPrimary=${coll.isPrimary}`);
+            });
+        } else {
+            log("Survey does not belong to any collections");
+        }
+        
         // Log payload size and key sections for debugging
         log(`Save payload prepared with: 
             - ${Object.keys(savePayload.equipmentSurvey.subcategoryComments).length} equipment comments
@@ -424,7 +536,10 @@ export const saveSurveyWithHandshake = async (
             - ${savePayload.equipmentSurvey.entries.length} equipment entries
             - ${savePayload.canopySurvey.entries.length} canopy entries
             - ${savePayload.schematic.placedItems.length} placed schematic items
-            - schematicItemsTotal: ${savePayload.schematic.schematicItemsTotal}`);
+            - ${savePayload.collections ? savePayload.collections.length : 0} collection memberships
+            - schematicItemsTotal: ${typeof savePayload.schematic.schematicItemsTotal === 'object' ? 
+                'Object with breakdown' : savePayload.schematic.schematicItemsTotal}
+            - accessDoorPrice: ${savePayload.schematic.accessDoorPrice}`);
         
         // 3. Send the update to the API
         updateProgress("Sending data to server...", 40);
@@ -522,11 +637,61 @@ export const saveSurveyWithHandshake = async (
                     warn(`Warning: Expected ${expectedPlacedItemCount} schematic items, but found ${savedPlacedItemCount} in verification`);
                 }
                 
+                // FIXED: Check if schematicItemsTotal breakdown was preserved
+                if (typeof savePayload.schematic.schematicItemsTotal === 'object' && 
+                    savePayload.schematic.schematicItemsTotal.breakdown) {
+                    
+                    const hasBreakdownInSavedData = 
+                        typeof savedData.schematic.schematicItemsTotal === 'object' && 
+                        savedData.schematic.schematicItemsTotal.breakdown;
+                        
+                    if (!hasBreakdownInSavedData) {
+                        warn("Warning: schematicItemsTotal breakdown was not preserved in saved data!");
+                    } else {
+                        const expectedCategories = Object.keys(savePayload.schematic.schematicItemsTotal.breakdown).length;
+                        const savedCategories = Object.keys(savedData.schematic.schematicItemsTotal.breakdown).length;
+                        
+                        if (savedCategories < expectedCategories) {
+                            warn(`Warning: Expected ${expectedCategories} price categories, but found ${savedCategories} in verification`);
+                        } else {
+                            log(`Successfully preserved ${savedCategories} price categories in schematicItemsTotal`);
+                        }
+                    }
+                }
+                
+                // Verify access door price was correctly saved
+                const savedAccessDoorPrice = savedData.schematic?.accessDoorPrice || 0;
+                const expectedAccessDoorPrice = savePayload.schematic.accessDoorPrice || 0;
+                
+                if (Math.abs(savedAccessDoorPrice - expectedAccessDoorPrice) > 0.01) {
+                    warn(`Warning: Access door price mismatch - expected ${expectedAccessDoorPrice}, but found ${savedAccessDoorPrice} in verification`);
+                }
+
+                // MULTI-COLLECTION: Verify collections data
+                const savedCollectionCount = savedData.collections?.length || 0;
+                const expectedCollectionCount = savePayload.collections?.length || 0;
+
+                if (savedCollectionCount !== expectedCollectionCount) {
+                    warn(`Warning: Expected ${expectedCollectionCount} collections, but found ${savedCollectionCount} in verification`);
+                }
+
+                if (savedCollectionCount > 0) {
+                    // Check that at least one collection is marked as primary
+                    const hasPrimary = savedData.collections.some(coll => coll.isPrimary);
+                    if (!hasPrimary) {
+                        warn("Warning: No collection is marked as primary in saved data");
+                    }
+                }
+                
                 log(`Verification complete: 
                     - Found ${savedCommentCount}/${expectedCommentCount} equipment comments
                     - Found ${savedSpecialistCount}/${expectedSpecialistCount} specialist comments
                     - Found ${savedCanopyCount}/${expectedCanopyCount} canopy comments
-                    - Found ${savedPlacedItemCount}/${expectedPlacedItemCount} schematic items`);
+                    - Found ${savedPlacedItemCount}/${expectedPlacedItemCount} schematic items
+                    - Found ${savedCollectionCount}/${expectedCollectionCount} collections
+                    - AccessDoorPrice: ${savedAccessDoorPrice}/${expectedAccessDoorPrice}
+                    - SchematicItemsTotal: ${typeof savedData.schematic.schematicItemsTotal === 'object' ? 
+                        'Object with breakdown' : 'Numeric value only'}`);
             }
         }
 

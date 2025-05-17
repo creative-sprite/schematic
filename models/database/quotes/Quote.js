@@ -8,7 +8,18 @@ const QuoteSchema = new mongoose.Schema({
     },
     pdfData: {
         type: String,
-        required: [true, 'PDF data is required']
+        required: false // Changed from required to optional
+    },
+    // New fields for Cloudinary storage
+    cloudinary: {
+        publicId: {
+            type: String,
+            required: false
+        },
+        url: {
+            type: String,
+            required: false
+        }
     },
     schematicImg: {
         type: String,

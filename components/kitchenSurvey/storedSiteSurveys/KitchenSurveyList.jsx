@@ -4,12 +4,14 @@
 import { useState, useEffect, useRef } from "react";
 import { Card } from "primereact/card";
 import { Button } from "primereact/button";
-import { DataScroller } from "primereact/datascroller";
 import { ProgressSpinner } from "primereact/progressspinner";
 import { Toast } from "primereact/toast";
 import { ConfirmDialog, confirmDialog } from "primereact/confirmdialog";
 import { useRouter } from "next/navigation";
 import QuoteModal from "@/components/kitchenSurvey/quote/QuoteModal";
+import { Tooltip } from "primereact/tooltip";
+import { InputText } from "primereact/inputtext";
+import { Dialog } from "primereact/dialog";
 
 export default function KitchenSurveyList({ siteId, onCountChange }) {
     const [collections, setCollections] = useState([]);
@@ -22,6 +24,12 @@ export default function KitchenSurveyList({ siteId, onCountChange }) {
     const [flippedCards, setFlippedCards] = useState({});
     const [areasData, setAreasData] = useState({});
     const [loadingAreas, setLoadingAreas] = useState({});
+
+    // Edit collection name state with modal approach
+    const [nameModalVisible, setNameModalVisible] = useState(false);
+    const [editingCollection, setEditingCollection] = useState(null);
+    const [editedCollectionName, setEditedCollectionName] = useState("");
+
     const router = useRouter();
     const toast = useRef(null);
 
@@ -30,10 +38,20 @@ export default function KitchenSurveyList({ siteId, onCountChange }) {
         // Create style element for card flip animation
         const style = document.createElement("style");
         style.innerHTML = `
+            .horizontal-container {
+                width: 100%;
+                overflow-x: auto;
+                display: flex;
+                flex-wrap: nowrap;
+                padding: 1rem 0;
+            }
+            
             .card-container {
-                perspective: 1000px;
-                height: 200px;
-                margin-bottom: 1rem;
+                width: 250px;
+                flex: 0 0 auto;
+                height: 350px;
+                margin: 0 1rem;
+                position: relative;
             }
             
             .card-flipper {
@@ -43,7 +61,7 @@ export default function KitchenSurveyList({ siteId, onCountChange }) {
                 transition: transform 0.6s;
                 transform-style: preserve-3d;
             }
-            
+
             .card-flipper.flipped {
                 transform: rotateY(180deg);
             }
@@ -56,9 +74,54 @@ export default function KitchenSurveyList({ siteId, onCountChange }) {
                 -webkit-backface-visibility: hidden;
             }
             
+            .card-front {
+                z-index: 1;
+                pointer-events: auto;
+            }
+            
+            .card-flipper.flipped .card-front {
+                pointer-events: none;
+            }
+            
             .card-back {
                 transform: rotateY(180deg);
+                z-index: 0;
+                pointer-events: none;
                 overflow-y: auto;
+            }
+            
+            .card-flipper.flipped .card-back {
+                z-index: 2;
+                pointer-events: auto;
+            }
+            
+            .vertical-buttons {
+                display: flex;
+                flex-direction: column;
+                gap: 0.5rem;
+                position: absolute;
+                left: 1rem;
+                top: 50%;
+                transform: translateY(-50%);
+                z-index: 5;
+            }
+            
+            .collection-info {
+                margin-left: 3.5rem;
+                padding: 0.5rem;
+            }
+            
+            .edit-name-icon {
+                color: #6c757d;
+                background: transparent;
+                border: none;
+                padding: 0.2rem;
+                margin-left: 0.5rem;
+                cursor: pointer;
+            }
+            
+            .edit-name-icon:hover {
+                color: #007bff;
             }
         `;
         document.head.appendChild(style);
@@ -168,8 +231,89 @@ export default function KitchenSurveyList({ siteId, onCountChange }) {
         fetchCollections();
     }, [siteId]);
 
+    // Function to open the collection name edit modal
+    const openEditNameModal = (collection) => {
+        setEditingCollection(collection);
+        setEditedCollectionName(collection.name || "");
+        setNameModalVisible(true);
+    };
+
+    // Function to handle saving the collection name
+    const handleSaveCollectionName = async () => {
+        if (!editingCollection) return;
+
+        if (!editedCollectionName.trim()) {
+            toast.current.show({
+                severity: "error",
+                summary: "Error",
+                detail: "Collection name cannot be empty",
+                life: 3000,
+            });
+            return;
+        }
+
+        try {
+            const res = await fetch(
+                `/api/surveys/collections/${editingCollection._id}`,
+                {
+                    method: "PUT",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                        name: editedCollectionName,
+                    }),
+                }
+            );
+
+            if (!res.ok) {
+                throw new Error(`HTTP error! Status: ${res.status}`);
+            }
+
+            const json = await res.json();
+            if (json.success) {
+                // Update the local collections array
+                setCollections(
+                    collections.map((c) =>
+                        c._id === editingCollection._id
+                            ? { ...c, name: editedCollectionName }
+                            : c
+                    )
+                );
+
+                toast.current.show({
+                    severity: "success",
+                    summary: "Success",
+                    detail: "Collection name updated successfully",
+                    life: 3000,
+                });
+
+                // Close the modal
+                setNameModalVisible(false);
+            } else {
+                throw new Error(
+                    json.message || "Failed to update collection name"
+                );
+            }
+        } catch (error) {
+            console.error("Error updating collection name:", error);
+            toast.current.show({
+                severity: "error",
+                summary: "Error",
+                detail: error.message || "Failed to update collection name",
+                life: 3000,
+            });
+        }
+    };
+
     // Function to toggle card flip
     const toggleCardFlip = async (collectionId) => {
+        // Hide any visible tooltips by clearing their DOM elements
+        const tooltips = document.querySelectorAll(".p-tooltip");
+        tooltips.forEach((tooltip) => {
+            tooltip.style.display = "none";
+        });
+
         // Toggle the flip state for this card
         setFlippedCards((prev) => ({
             ...prev,
@@ -214,14 +358,34 @@ export default function KitchenSurveyList({ siteId, onCountChange }) {
                             json.data.structure?.structureId ||
                             json.data.structureId ||
                             "Unnamed Area";
+
+                        // Find the area index for this specific collection
+                        let areaIndex = 0;
+                        if (json.data.collections) {
+                            const collectionEntry = json.data.collections.find(
+                                (entry) =>
+                                    entry.collectionId &&
+                                    entry.collectionId.toString() ===
+                                        collectionId.toString()
+                            );
+                            if (collectionEntry) {
+                                areaIndex = collectionEntry.areaIndex || 0;
+                            }
+                        }
+
                         areas.push({
                             id: surveyId,
                             name: areaName,
                             date: json.data.surveyDate || json.data.createdAt,
+                            areaIndex: areaIndex,
+                            collections: json.data.collections || [],
                         });
                     }
                 }
             }
+
+            // Sort areas by areaIndex
+            areas.sort((a, b) => a.areaIndex - b.areaIndex);
 
             // Update areas data
             setAreasData((prev) => ({
@@ -330,12 +494,33 @@ export default function KitchenSurveyList({ siteId, onCountChange }) {
                     ) {
                         // Delete each survey in the collection
                         for (const survey of surveysJson.data) {
-                            await fetch(
-                                `/api/surveys/kitchenSurveys/viewAll/${survey._id}`,
-                                {
-                                    method: "DELETE",
-                                }
-                            );
+                            // Check if this survey is in multiple collections
+                            if (
+                                survey.collections &&
+                                survey.collections.length > 1
+                            ) {
+                                // Only remove this survey from this collection
+                                await fetch(
+                                    `/api/surveys/collections/${collectionId}`,
+                                    {
+                                        method: "DELETE",
+                                        headers: {
+                                            "Content-Type": "application/json",
+                                        },
+                                        body: JSON.stringify({
+                                            surveyId: survey._id,
+                                        }),
+                                    }
+                                );
+                            } else {
+                                // Delete the survey completely if it's only in this collection
+                                await fetch(
+                                    `/api/surveys/kitchenSurveys/viewAll/${survey._id}`,
+                                    {
+                                        method: "DELETE",
+                                    }
+                                );
+                            }
                         }
 
                         toast.current.show({
@@ -378,9 +563,6 @@ export default function KitchenSurveyList({ siteId, onCountChange }) {
                     : collection.surveys[0]._id
                 : null;
 
-        // Get the area name for the first area in collection
-        const firstAreaName = collection.firstAreaName || "Area 1";
-
         // Check if this card is flipped
         const isFlipped = flippedCards[collection._id] || false;
 
@@ -403,140 +585,145 @@ export default function KitchenSurveyList({ siteId, onCountChange }) {
                                 position: "relative",
                             }}
                         >
-                            <div
-                                style={{
-                                    display: "flex",
-                                    justifyContent: "space-between",
-                                    alignItems: "flex-start",
-                                }}
-                            >
-                                <div>
-                                    <h3>
-                                        {collection.collectionRef
-                                            ? `Collection REF: ${collection.collectionRef}`
-                                            : "Collection"}
-                                    </h3>
-                                    <p
-                                        style={{
-                                            marginTop: "-10px",
-                                            color: "#666",
-                                            fontStyle: "italic",
-                                        }}
-                                    >
-                                        First Area: {firstAreaName}
-                                    </p>
-                                    <p>
-                                        {collection.surveyDate
-                                            ? `Date: ${new Date(
-                                                  collection.surveyDate
-                                              ).toLocaleDateString()}`
-                                            : `Areas: ${
-                                                  collection.totalAreas ||
-                                                  collection.surveys?.length ||
-                                                  0
-                                              }`}
-                                    </p>
-                                    <p>
-                                        <strong>Type:</strong>{" "}
-                                        {collection.surveyType ||
-                                            "Kitchen Survey"}
-                                    </p>
+                            {/* Vertical Buttons on left side */}
+                            <div className="vertical-buttons">
+                                <Button
+                                    tooltip="View Areas"
+                                    icon="pi pi-info-circle"
+                                    className="p-button-secondary p-button-rounded"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        toggleCardFlip(collection._id);
+                                    }}
+                                />
+                                <Button
+                                    tooltip="Edit Collection"
+                                    icon="pi pi-file-edit"
+                                    className="p-button-primary"
+                                    onClick={() => {
+                                        if (firstSurveyId) {
+                                            router.push(
+                                                `/surveys/kitchenSurvey?id=${firstSurveyId}&collection=${collection._id}`
+                                            );
+                                        } else {
+                                            toast.current.show({
+                                                severity: "error",
+                                                summary: "Error",
+                                                detail: "Cannot find a survey in this collection",
+                                                life: 3000,
+                                            });
+                                        }
+                                    }}
+                                    disabled={!firstSurveyId}
+                                />
+                                <Button
+                                    tooltip="Create New Version"
+                                    icon="pi pi-file-plus"
+                                    className="p-button-success"
+                                    onClick={() =>
+                                        handleCreateVersion(
+                                            collection._id,
+                                            firstSurveyId
+                                        )
+                                    }
+                                    disabled={creating || !firstSurveyId}
+                                />
+                                <Button
+                                    tooltip="View Quotes"
+                                    icon="pi pi-file-pdf"
+                                    className="p-button-info"
+                                    onClick={() => {
+                                        // For now, just show quotes for the first survey in the collection
+                                        if (firstSurveyId) {
+                                            setSelectedSurvey({
+                                                _id: firstSurveyId,
+                                                refValue:
+                                                    collection.collectionRef,
+                                            });
+                                            setQuoteModalVisible(true);
+                                        } else {
+                                            toast.current.show({
+                                                severity: "error",
+                                                summary: "Error",
+                                                detail: "Cannot find a survey in this collection",
+                                                life: 3000,
+                                            });
+                                        }
+                                    }}
+                                    disabled={!firstSurveyId}
+                                />
+                                <Button
+                                    tooltip="Delete Collection"
+                                    icon="pi pi-trash"
+                                    className="p-button-danger"
+                                    onClick={() =>
+                                        handleDeleteCollection(collection._id)
+                                    }
+                                    disabled={deleting}
+                                />
+                            </div>
 
-                                    {/* Badge showing number of areas */}
-                                    <div
+                            {/* Collection Info */}
+                            <div className="collection-info">
+                                <h3
+                                    style={{
+                                        display: "flex",
+                                        alignItems: "center",
+                                    }}
+                                >
+                                    {collection.name || "Collection"}
+                                    <Button
+                                        icon="pi pi-pencil"
+                                        className="p-button-text p-button-sm"
                                         style={{
-                                            display: "inline-block",
-                                            background: "#2196F3",
-                                            color: "white",
-                                            borderRadius: "12px",
-                                            padding: "3px 8px",
-                                            fontSize: "0.85rem",
-                                            marginTop: "5px",
+                                            marginLeft: "0.5rem",
+                                            color: "#6c757d",
+                                            backgroundColor: "transparent",
+                                            border: "none",
+                                            padding: "0.2rem",
                                         }}
-                                    >
-                                        {collection.totalAreas ||
-                                            collection.surveys?.length ||
-                                            0}{" "}
-                                        Areas
-                                    </div>
-                                </div>
-                                <div style={{ display: "flex", gap: "0.5rem" }}>
-                                    <Button
-                                        tooltip="View Areas"
-                                        icon="pi pi-info-circle"
-                                        className="p-button-secondary p-button-rounded"
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            toggleCardFlip(collection._id);
-                                        }}
-                                    />
-                                    <Button
-                                        tooltip="Edit Collection"
-                                        icon="pi pi-file-edit"
-                                        className="p-button-primary"
-                                        onClick={() => {
-                                            if (firstSurveyId) {
-                                                router.push(
-                                                    `/surveys/kitchenSurvey?id=${firstSurveyId}&collection=${collection._id}`
-                                                );
-                                            } else {
-                                                toast.current.show({
-                                                    severity: "error",
-                                                    summary: "Error",
-                                                    detail: "Cannot find a survey in this collection",
-                                                    life: 3000,
-                                                });
-                                            }
-                                        }}
-                                        disabled={!firstSurveyId}
-                                    />
-                                    <Button
-                                        tooltip="Create New Version"
-                                        icon="pi pi-file-plus"
-                                        className="p-button-success"
                                         onClick={() =>
-                                            handleCreateVersion(
-                                                collection._id,
-                                                firstSurveyId
-                                            )
+                                            openEditNameModal(collection)
                                         }
-                                        disabled={creating || !firstSurveyId}
                                     />
-                                    <Button
-                                        tooltip="View Quotes"
-                                        icon="pi pi-file-pdf"
-                                        className="p-button-info"
-                                        onClick={() => {
-                                            // For now, just show quotes for the first survey in the collection
-                                            if (firstSurveyId) {
-                                                setSelectedSurvey({
-                                                    _id: firstSurveyId,
-                                                    refValue:
-                                                        collection.collectionRef,
-                                                });
-                                                setQuoteModalVisible(true);
-                                            } else {
-                                                toast.current.show({
-                                                    severity: "error",
-                                                    summary: "Error",
-                                                    detail: "Cannot find a survey in this collection",
-                                                    life: 3000,
-                                                });
-                                            }
-                                        }}
-                                        disabled={!firstSurveyId}
-                                    />
-                                    <Button
-                                        tooltip="Delete Collection"
-                                        icon="pi pi-trash"
-                                        className="p-button-danger"
-                                        onClick={() =>
-                                            handleDeleteCollection(
-                                                collection._id
-                                            )
-                                        }
-                                        disabled={deleting}
-                                    />
+                                </h3>
+                                <p>
+                                    {collection.collectionRef
+                                        ? `REF: ${collection.collectionRef}`
+                                        : "No Reference"}
+                                </p>
+                                <p>
+                                    {collection.surveyDate
+                                        ? `Date: ${new Date(
+                                              collection.surveyDate
+                                          ).toLocaleDateString()}`
+                                        : `Areas: ${
+                                              collection.totalAreas ||
+                                              collection.surveys?.length ||
+                                              0
+                                          }`}
+                                </p>
+                                <p>
+                                    <strong>Type:</strong>{" "}
+                                    {collection.surveyType || "Kitchen Survey"}
+                                </p>
+
+                                {/* Badge showing number of areas */}
+                                <div
+                                    style={{
+                                        display: "inline-block",
+                                        background: "#2196F3",
+                                        color: "white",
+                                        borderRadius: "12px",
+                                        padding: "3px 8px",
+                                        fontSize: "0.85rem",
+                                        marginTop: "5px",
+                                    }}
+                                >
+                                    {collection.totalAreas ||
+                                        collection.surveys?.length ||
+                                        0}{" "}
+                                    Areas
                                 </div>
                             </div>
                         </Card>
@@ -547,7 +734,6 @@ export default function KitchenSurveyList({ siteId, onCountChange }) {
                         <Card
                             key={`${collection._id}-back`}
                             className="collection-card-back"
-                            title="Areas in Collection"
                             style={{
                                 height: "100%",
                                 position: "relative",
@@ -562,9 +748,10 @@ export default function KitchenSurveyList({ siteId, onCountChange }) {
                                         background: "#f4f4f4",
                                     }}
                                 >
-                                    <h3 style={{ margin: 0 }}>
-                                        Areas in Collection
-                                    </h3>
+                                    <h4 style={{ margin: 0 }}>
+                                        {collection.name || "Collection"} -
+                                        Areas
+                                    </h4>
                                     <Button
                                         icon="pi pi-times"
                                         className="p-button-rounded p-button-text"
@@ -608,22 +795,27 @@ export default function KitchenSurveyList({ siteId, onCountChange }) {
                                                     index < areas.length - 1
                                                         ? "1px solid #e0e0e0"
                                                         : "none",
-                                                display: "flex",
-                                                justifyContent: "space-between",
                                             }}
                                         >
                                             <div>
                                                 <strong>{area.name}</strong>
-                                            </div>
-                                            <div
-                                                style={{
-                                                    color: "#777",
-                                                    fontSize: "0.9rem",
-                                                }}
-                                            >
-                                                {new Date(
-                                                    area.date
-                                                ).toLocaleDateString()}
+                                                {area.collections?.length >
+                                                    1 && (
+                                                    <span
+                                                        style={{
+                                                            fontWeight:
+                                                                "normal",
+                                                            fontSize: "0.9rem",
+                                                        }}
+                                                    >
+                                                        {" | in "}
+                                                        {
+                                                            area.collections
+                                                                .length
+                                                        }{" "}
+                                                        collections
+                                                    </span>
+                                                )}
                                             </div>
                                         </li>
                                     ))}
@@ -645,6 +837,24 @@ export default function KitchenSurveyList({ siteId, onCountChange }) {
         );
     };
 
+    // Footer template for the edit name dialog
+    const editNameDialogFooter = (
+        <div>
+            <Button
+                label="Cancel"
+                icon="pi pi-times"
+                className="p-button-text"
+                onClick={() => setNameModalVisible(false)}
+            />
+            <Button
+                label="Save"
+                icon="pi pi-check"
+                className="p-button-primary"
+                onClick={handleSaveCollectionName}
+            />
+        </div>
+    );
+
     if (loading) {
         return (
             <div
@@ -664,21 +874,22 @@ export default function KitchenSurveyList({ siteId, onCountChange }) {
     }
 
     if (collections.length === 0) {
-        return <div>No survey collections found for this site.</div>;
+        return <div>No surveys found for this site.</div>;
     }
 
     return (
         <div className="kitchen-survey-list">
             <Toast ref={toast} />
             <ConfirmDialog />
-            <DataScroller
-                value={collections}
-                itemTemplate={collectionTemplate}
-                rows={5}
-                inline
-                scrollHeight="400px"
-                emptyMessage="No survey collections found for this site."
-            />
+            <Tooltip target=".shared-area-badge" />
+
+            <div className="horizontal-container">
+                {collections.map((collection) => (
+                    <div key={collection._id}>
+                        {collectionTemplate(collection)}
+                    </div>
+                ))}
+            </div>
 
             {/* Quote Modal */}
             {selectedSurvey && (
@@ -689,6 +900,34 @@ export default function KitchenSurveyList({ siteId, onCountChange }) {
                     surveyRef={selectedSurvey.refValue}
                 />
             )}
+
+            {/* Edit Collection Name Modal */}
+            <Dialog
+                header="Edit Collection Name"
+                visible={nameModalVisible}
+                style={{ width: "400px" }}
+                modal
+                footer={editNameDialogFooter}
+                onHide={() => setNameModalVisible(false)}
+            >
+                <div className="p-field" style={{ marginTop: "1rem" }}>
+                    <label
+                        htmlFor="collection-name"
+                        style={{ display: "block", marginBottom: "0.5rem" }}
+                    >
+                        Collection Name
+                    </label>
+                    <InputText
+                        id="collection-name"
+                        value={editedCollectionName}
+                        onChange={(e) =>
+                            setEditedCollectionName(e.target.value)
+                        }
+                        style={{ width: "100%" }}
+                        autoFocus
+                    />
+                </div>
+            </Dialog>
         </div>
     );
 }

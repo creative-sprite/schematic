@@ -74,19 +74,60 @@ export async function POST(request) {
       body.images = {};
     }
     
-    console.log(`Creating new survey for site ${siteId}${body.collectionId ? ` with collection ${body.collectionId}` : ''}`);
+    // Initialize collections array if it doesn't exist
+    if (!body.collections) {
+      body.collections = [];
+    }
+    
+    // Handle backward compatibility - if collectionId exists, add it to collections array
+    if (body.collectionId) {
+      const oldCollectionId = body.collectionId;
+      let collectionAdded = false;
+      
+      // Check if this collection is already in the collections array
+      for (const collection of body.collections) {
+        if (collection.collectionId && collection.collectionId.toString() === oldCollectionId.toString()) {
+          collection.isPrimary = true;
+          collection.areaIndex = body.areaIndex !== undefined ? body.areaIndex : 0;
+          collectionAdded = true;
+          break;
+        }
+      }
+      
+      // If not found, add it to the collections array
+      if (!collectionAdded) {
+        body.collections.push({
+          collectionId: oldCollectionId,
+          areaIndex: body.areaIndex !== undefined ? body.areaIndex : 0,
+          collectionRef: body.collectionRef || "",
+          isPrimary: true
+        });
+      }
+      
+      // Remove the old fields
+      delete body.collectionId;
+      delete body.areaIndex;
+      delete body.collectionRef;
+    }
+
+    console.log(`Creating new survey for site ${siteId}${body.collections.length > 0 ? ` with ${body.collections.length} collections` : ''}`);
     
     // Create the new kitchen survey
     const newSurvey = await KitchenSurvey.create(body);
     console.log(`Created new survey with ID ${newSurvey._id}`);
     
-    // Collection handling - improved approach
-    let collectionId = null;
+    // Collection handling - improved approach for multiple collections
+    let primaryCollectionId = null;
     
-    // Check if this survey should be part of a collection (passed in request)
-    if (body.collectionId) {
-      collectionId = body.collectionId;
-      console.log(`Survey is part of existing collection ${collectionId}`);
+    // Process each collection in the collections array
+    for (const collectionEntry of body.collections) {
+      const collectionId = collectionEntry.collectionId;
+      if (!collectionId) continue;
+      
+      // Set primaryCollectionId if this is the primary collection
+      if (collectionEntry.isPrimary) {
+        primaryCollectionId = collectionId;
+      }
       
       // Fetch the collection to update it
       const existingCollection = await SurveyCollection.findById(collectionId);
@@ -95,13 +136,9 @@ export async function POST(request) {
         console.log(`Found collection ${collectionId}, updating with new survey`);
         
         // Ensure area index is set correctly if not already provided
-        let areaIndex = body.areaIndex;
+        let areaIndex = collectionEntry.areaIndex;
         if (areaIndex === undefined || areaIndex === null) {
           areaIndex = existingCollection.surveys.length;
-          
-          // Update the survey with the calculated area index
-          await KitchenSurvey.findByIdAndUpdate(newSurvey._id, { areaIndex });
-          console.log(`Set areaIndex to ${areaIndex} for survey ${newSurvey._id}`);
         }
         
         // Add this survey to the collection if not already included
@@ -118,14 +155,11 @@ export async function POST(request) {
         // Collection ID was provided but collection doesn't exist
         console.warn(`Collection ${collectionId} not found. Creating a new one.`);
         // Fall through to create a new collection
-        collectionId = null;
       }
-    } else {
-      console.log(`No collection ID provided for survey ${newSurvey._id}`);
     }
     
-    // If we need to create a new collection (either no collection ID provided or collection not found)
-    if (!collectionId) {
+    // If no collections were provided or all collections were invalid, create a new collection
+    if (body.collections.length === 0 || (body.collections.length > 0 && !primaryCollectionId)) {
       console.log(`Creating new collection for survey ${newSurvey._id}`);
       
       // Create a new collection with this survey as the first area
@@ -141,15 +175,21 @@ export async function POST(request) {
       
       try {
         const newCollection = await SurveyCollection.create(collectionData);
-        collectionId = newCollection._id;
+        primaryCollectionId = newCollection._id;
         
-        console.log(`Created new collection ${collectionId} for survey ${newSurvey._id}`);
+        console.log(`Created new collection ${primaryCollectionId} for survey ${newSurvey._id}`);
         
-        // Update the survey with the collection reference
-        await KitchenSurvey.findByIdAndUpdate(newSurvey._id, {
-          collectionId: collectionId,
+        // Update the survey with the new collection reference
+        const updatedCollections = newSurvey.collections || [];
+        updatedCollections.push({
+          collectionId: primaryCollectionId,
           areaIndex: 0,
-          collectionRef: collectionData.collectionRef
+          collectionRef: collectionData.collectionRef,
+          isPrimary: true
+        });
+        
+        await KitchenSurvey.findByIdAndUpdate(newSurvey._id, {
+          collections: updatedCollections
         });
         
         console.log(`Updated survey ${newSurvey._id} with collection info`);
@@ -159,8 +199,11 @@ export async function POST(request) {
       }
     }
     
-    // Final verification step - this ensures the collection relationship is solid
-    if (collectionId) {
+    // Final verification step - this ensures the collection relationships are solid
+    for (const collectionEntry of newSurvey.collections || []) {
+      const collectionId = collectionEntry.collectionId;
+      if (!collectionId) continue;
+      
       try {
         const verifyCollection = await SurveyCollection.findById(collectionId);
         if (verifyCollection && !verifyCollection.surveys.includes(newSurvey._id)) {
@@ -180,10 +223,10 @@ export async function POST(request) {
       const populatedSurvey = await KitchenSurvey.findById(newSurvey._id)
         .populate("site");
       
-      // Add collection ID to the response
+      // Add the primary collection ID to the response for backward compatibility
       const responseData = {
         ...populatedSurvey.toObject(),
-        collectionId
+        primaryCollectionId
       };
       
       return NextResponse.json(
@@ -196,7 +239,7 @@ export async function POST(request) {
       return NextResponse.json(
         { 
           success: true, 
-          data: { ...newSurvey.toObject(), collectionId },
+          data: { ...newSurvey.toObject(), primaryCollectionId },
           message: "Survey created but could not populate site data"
         },
         { status: 201 }

@@ -560,7 +560,8 @@ export default function Area1Logic({
                         groupingId={selectedGroupId}
                         onGroupIdChange={handleSelectedGroupIdChange}
                         onAccessDoorPriceChange={(price) => {
-                            setAccessDoorPrice((prev) => prev + price);
+                            // FIXED: Set price directly instead of accumulating
+                            setAccessDoorPrice(price);
                         }}
                         onVentilationPriceChange={handleVentilationPriceChange}
                         onFanPartsPriceChange={(price) => {

@@ -16,8 +16,8 @@ export async function GET(request, { params }) {
       .populate("site", "siteName addresses")
       .populate({
         path: "surveys",
-        select: "refValue structure areaIndex surveyDate createdAt",
-        options: { sort: { areaIndex: 1 } }
+        select: "refValue structure collections surveyDate createdAt",
+        options: { sort: { createdAt: 1 } }
       });
     
     if (!collection) {
@@ -95,20 +95,48 @@ export async function PATCH(request, { params }) {
       console.log(`Added survey ${body.surveyId} to collection ${id} at index ${areaIndex}`);
     }
     
-    // Update the survey with collection information
-    await KitchenSurvey.findByIdAndUpdate(body.surveyId, {
-      collectionId: id,
-      areaIndex: areaIndex,
-      collectionRef: collection.collectionRef
-    });
+    // Update the survey with the new collection information
+    // Get existing collections array
+    const collections = survey.collections || [];
     
-    // Ensure all surveys in this collection have the correct collection reference
-    for (const surveyId of collection.surveys) {
-      await KitchenSurvey.findByIdAndUpdate(surveyId, {
+    // Check if this collection is already in the array
+    const existingIndex = collections.findIndex(
+      entry => entry.collectionId && entry.collectionId.toString() === id.toString()
+    );
+    
+    if (existingIndex >= 0) {
+      // Update the existing entry
+      collections[existingIndex].areaIndex = areaIndex;
+      collections[existingIndex].collectionRef = collection.collectionRef;
+      // Set as primary if specified
+      if (body.isPrimary) {
+        collections[existingIndex].isPrimary = true;
+        // Ensure no other collection is set as primary
+        for (let i = 0; i < collections.length; i++) {
+          if (i !== existingIndex) {
+            collections[i].isPrimary = false;
+          }
+        }
+      }
+    } else {
+      // Add the new collection entry
+      collections.push({
         collectionId: id,
-        collectionRef: collection.collectionRef
+        areaIndex: areaIndex,
+        collectionRef: collection.collectionRef,
+        isPrimary: body.isPrimary || (collections.length === 0) // Set as primary if it's the first collection or specified
       });
+      
+      // If this is set as primary, ensure no other collection is primary
+      if (body.isPrimary) {
+        for (let i = 0; i < collections.length - 1; i++) {
+          collections[i].isPrimary = false;
+        }
+      }
     }
+    
+    // Update the survey with the modified collections array
+    await KitchenSurvey.findByIdAndUpdate(body.surveyId, { collections: collections });
     
     // Log detailed collection state for debugging
     console.log(`Collection ${id} now has ${collection.surveys.length} surveys`);
@@ -166,10 +194,16 @@ export async function DELETE(request, { params }) {
     collection.updatedAt = new Date();
     await collection.save();
     
-    // Update the survey to remove collection reference
-    await KitchenSurvey.findByIdAndUpdate(body.surveyId, {
-      $unset: { collectionId: "", areaIndex: "", collectionRef: "" }
-    });
+    // Update the survey to remove this collection from its collections array
+    const survey = await KitchenSurvey.findById(body.surveyId);
+    if (survey) {
+      const updatedCollections = (survey.collections || []).filter(
+        entry => !entry.collectionId || entry.collectionId.toString() !== id.toString()
+      );
+      
+      // Update the survey with the modified collections array
+      await KitchenSurvey.findByIdAndUpdate(body.surveyId, { collections: updatedCollections });
+    }
     
     console.log(`Removed survey ${body.surveyId} from collection ${id} (was at index ${currentIndex})`);
     
@@ -185,13 +219,29 @@ export async function DELETE(request, { params }) {
     // Otherwise, reindex the remaining surveys to close gaps in areaIndex values
     const remainingSurveys = await KitchenSurvey.find({
       _id: { $in: collection.surveys }
-    }).sort({ areaIndex: 1 });
+    }).sort({ createdAt: 1 });
     
     // Reassign area indices
     for (let i = 0; i < remainingSurveys.length; i++) {
-      await KitchenSurvey.findByIdAndUpdate(remainingSurveys[i]._id, {
-        areaIndex: i
-      });
+      const survey = await KitchenSurvey.findById(remainingSurveys[i]._id);
+      
+      if (survey && survey.collections) {
+        // Find the specific collection entry for this collection
+        const collectionEntryIndex = survey.collections.findIndex(
+          entry => entry.collectionId && entry.collectionId.toString() === id.toString()
+        );
+        
+        if (collectionEntryIndex >= 0) {
+          // Update the area index in this specific collection
+          const updatedCollections = [...survey.collections];
+          updatedCollections[collectionEntryIndex].areaIndex = i;
+          
+          // Save the updated collections array
+          await KitchenSurvey.findByIdAndUpdate(remainingSurveys[i]._id, {
+            collections: updatedCollections
+          });
+        }
+      }
     }
     
     return NextResponse.json({ 
@@ -241,9 +291,25 @@ export async function PUT(request, { params }) {
       
       // Update collectionRef on all member surveys
       for (const surveyId of collection.surveys) {
-        await KitchenSurvey.findByIdAndUpdate(surveyId, {
-          collectionRef: body.collectionRef
-        });
+        const survey = await KitchenSurvey.findById(surveyId);
+        
+        if (survey && survey.collections) {
+          // Find the specific collection entry for this collection
+          const collectionEntryIndex = survey.collections.findIndex(
+            entry => entry.collectionId && entry.collectionId.toString() === id.toString()
+          );
+          
+          if (collectionEntryIndex >= 0) {
+            // Update the collection ref in this specific collection
+            const updatedCollections = [...survey.collections];
+            updatedCollections[collectionEntryIndex].collectionRef = body.collectionRef;
+            
+            // Save the updated collections array
+            await KitchenSurvey.findByIdAndUpdate(surveyId, {
+              collections: updatedCollections
+            });
+          }
+        }
       }
     }
     

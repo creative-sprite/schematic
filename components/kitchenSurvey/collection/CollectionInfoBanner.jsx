@@ -1,5 +1,8 @@
 // components/kitchenSurvey/collection/CollectionInfoBanner.jsx
-import React from "react";
+import React, { useState } from "react";
+import { Dropdown } from "primereact/dropdown";
+import { Badge } from "primereact/badge";
+import { Button } from "primereact/button";
 
 /**
  * Component to display collection information at the top of the survey form
@@ -17,9 +20,15 @@ export default function CollectionInfoBanner({
 
     // Additional props
     structureId = "",
+
+    // New collection props
+    collections = [],
+    onSwitchCollection = () => {},
 }) {
+    const [selectedCollectionId, setSelectedCollectionId] = useState(null);
+
     // Use either individual props or extract from pagination data
-    const collection = areasPagination
+    const paginationData = areasPagination
         ? {
               collectionRef: areasPagination.collectionRef || "Multiple Areas",
               totalAreas: areasPagination.totalAreas || 0,
@@ -27,6 +36,7 @@ export default function CollectionInfoBanner({
               currentAreaName:
                   areasPagination.areasList &&
                   areasPagination.areasList[areasPagination.currentIndex]?.name,
+              collectionId: areasPagination.collectionId,
           }
         : {
               collectionRef: collectionRef || "Multiple Areas",
@@ -41,38 +51,71 @@ export default function CollectionInfoBanner({
         structureId && structureId.trim() !== ""
             ? structureId
             : // Then try the name from the collection data
-            collection.currentAreaName &&
-              collection.currentAreaName.trim() !== ""
-            ? collection.currentAreaName
+            paginationData.currentAreaName &&
+              paginationData.currentAreaName.trim() !== ""
+            ? paginationData.currentAreaName
             : // Finally fallback to generic area with index
-              `Area ${(collection.currentIndex || 0) + 1}`;
+              `Area ${(paginationData.currentIndex || 0) + 1}`;
 
-    // Log the values for debugging
-    console.log("CollectionInfoBanner DEBUG Values:", {
-        structureId,
-        currentAreaName: collection.currentAreaName,
-        currentIndex: collection.currentIndex,
-        displayName,
+    // Check if we need to render the multi-collection selector
+    const hasMultipleCollections = collections && collections.length > 1;
+
+    // Prepare collection options for dropdown
+    const collectionOptions = hasMultipleCollections
+        ? collections.map((c) => ({
+              label: c.name || c.collectionRef || "Collection",
+              value: c.id,
+              isPrimary: c.isPrimary,
+          }))
+        : [];
+
+    // Sort collection options to put primary first
+    collectionOptions.sort((a, b) => {
+        if (a.isPrimary && !b.isPrimary) return -1;
+        if (!a.isPrimary && b.isPrimary) return 1;
+        return 0;
     });
 
-    // Don't render if there's only one area or no areas
-    if (!collection.totalAreas || collection.totalAreas <= 1) {
-        console.log(
-            "CollectionInfoBanner: Not showing banner because totalAreas =",
-            collection.totalAreas
+    // Set initial selected collection from props
+    React.useEffect(() => {
+        if (hasMultipleCollections && collectionOptions.length > 0) {
+            // First try to use the collection from pagination data
+            if (paginationData.collectionId) {
+                setSelectedCollectionId(paginationData.collectionId);
+            }
+            // Otherwise use the first/primary collection
+            else {
+                setSelectedCollectionId(collectionOptions[0].value);
+            }
+        }
+    }, [hasMultipleCollections, collections, paginationData.collectionId]);
+
+    // Handle collection change
+    const handleCollectionChange = (e) => {
+        setSelectedCollectionId(e.value);
+        onSwitchCollection(e.value);
+    };
+
+    // Custom template for dropdown items to show primary
+    const collectionOptionTemplate = (option) => {
+        return (
+            <div className="collection-option">
+                <span>{option.label}</span>
+                {option.isPrimary && (
+                    <Badge
+                        value="Primary"
+                        severity="success"
+                        style={{ marginLeft: "8px", fontSize: "0.7rem" }}
+                    />
+                )}
+            </div>
         );
+    };
+
+    // Don't render if there's only one area or no areas
+    if (!paginationData.totalAreas || paginationData.totalAreas <= 1) {
         return null;
     }
-
-    // Log some info for debugging
-    console.log(
-        "CollectionInfoBanner: Rendering with",
-        collection.totalAreas,
-        "areas, currentIndex =",
-        collection.currentIndex,
-        "displaying area:",
-        displayName
-    );
 
     return (
         <div
@@ -88,12 +131,36 @@ export default function CollectionInfoBanner({
             }}
         >
             <div>
-                <span style={{ fontWeight: "bold" }}>
-                    Collection: {collection.collectionRef}
-                </span>
-                <span style={{ marginLeft: "0.5rem", color: "#666" }}>
-                    ({collection.totalAreas} areas)
-                </span>
+                {hasMultipleCollections ? (
+                    <div
+                        style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "0.5rem",
+                        }}
+                    >
+                        <span style={{ fontWeight: "bold" }}>Collection:</span>
+                        <Dropdown
+                            value={selectedCollectionId}
+                            options={collectionOptions}
+                            onChange={handleCollectionChange}
+                            itemTemplate={collectionOptionTemplate}
+                            style={{ minWidth: "250px" }}
+                        />
+                        <span style={{ color: "#666", marginLeft: "0.5rem" }}>
+                            ({paginationData.totalAreas} areas)
+                        </span>
+                    </div>
+                ) : (
+                    <>
+                        <span style={{ fontWeight: "bold" }}>
+                            Collection: {paginationData.collectionRef}
+                        </span>
+                        <span style={{ marginLeft: "0.5rem", color: "#666" }}>
+                            ({paginationData.totalAreas} areas)
+                        </span>
+                    </>
+                )}
             </div>
 
             {/* Display current area name */}

@@ -5,7 +5,7 @@ import { Toast } from "primereact/toast";
 import { ProgressBar } from "primereact/progressbar";
 import { saveSurveyWithHandshake } from "./save/SurveySaveUtil";
 // Import the ID generation functions from the new component
-import { generateUniqueId, generateNewRefId } from "../collection/collectionID";
+import { generateUniqueId, generateNewRefId } from "./collection/collectionID";
 
 export default function AddNewArea({
     surveyId,
@@ -27,6 +27,8 @@ export default function AddNewArea({
     primaryContactIndex,
     walkAroundContactIndex,
     parking,
+    // NEW: Add support for multiple collections
+    collections = [],
 }) {
     const router = useRouter();
     const toast = useRef(null);
@@ -72,13 +74,20 @@ export default function AddNewArea({
                 surveyId,
                 surveyData, // Use the complete consolidated data object
                 {
-                    // Additional data
-                    collectionId: collectionId,
-                    contacts: contacts.map((contact, index) => ({
-                        ...contact,
-                        isPrimaryContact: index === primaryContactIndex,
-                        isWalkAroundContact: index === walkAroundContactIndex,
-                    })),
+                    // MULTI-COLLECTION: Pass collections array if available
+                    ...(collections.length > 0
+                        ? { collections }
+                        : {
+                              // For backward compatibility if no collections array
+                              collectionId: collectionId,
+                              contacts: contacts.map((contact, index) => ({
+                                  ...contact,
+                                  isPrimaryContact:
+                                      index === primaryContactIndex,
+                                  isWalkAroundContact:
+                                      index === walkAroundContactIndex,
+                              })),
+                          }),
                 },
                 // Progress update function
                 (message, percent) => {
@@ -181,19 +190,49 @@ export default function AddNewArea({
                 setProgressMessage(message);
             };
 
-            // STEP 1: First, ensure we have a collection
-            let currentCollectionId = collectionId;
+            // STEP 1: First, ensure we have at least one collection
+            // MULTI-COLLECTION: Handle multiple collections - first gather all collections
+            let existingCollections = [];
+            let primaryCollectionId = null;
+
+            // Check if we have collections passed as prop (new approach)
+            if (collections && collections.length > 0) {
+                existingCollections = [...collections];
+                // Find primary collection if any exists
+                const primaryCollection = collections.find((c) => c.isPrimary);
+                if (primaryCollection) {
+                    primaryCollectionId =
+                        primaryCollection.id || primaryCollection.collectionId;
+                }
+                console.log(
+                    `[AddNewArea] Using ${existingCollections.length} collections passed as prop`
+                );
+            }
+            // Fall back to single collectionId for backward compatibility
+            else if (collectionId) {
+                existingCollections = [
+                    {
+                        id: collectionId,
+                        collectionId: collectionId,
+                        isPrimary: true,
+                    },
+                ];
+                primaryCollectionId = collectionId;
+                console.log(
+                    `[AddNewArea] Using single collection ID: ${collectionId}`
+                );
+            }
 
             // Log the collection status for debugging
             console.log(
-                `[AddNewArea] Current collection ID: ${currentCollectionId}`
+                `[AddNewArea] Found ${existingCollections.length} existing collections, primary: ${primaryCollectionId}`
             );
 
-            // If we don't have a collection ID, we need to get it or create one
-            if (!currentCollectionId) {
+            // If we don't have any collections, we need to get them or create one
+            if (existingCollections.length === 0) {
                 updateProgress("Checking for collection...");
 
-                // First check if the survey has a collection we don't know about
+                // First check if the survey has collections we don't know about
                 if (surveyId) {
                     try {
                         const surveyRes = await fetch(
@@ -201,28 +240,79 @@ export default function AddNewArea({
                         );
                         if (surveyRes.ok) {
                             const surveyJson = await surveyRes.json();
-                            if (
-                                surveyJson.success &&
-                                surveyJson.data &&
-                                surveyJson.data.collectionId
-                            ) {
-                                currentCollectionId =
-                                    surveyJson.data.collectionId;
-                                console.log(
-                                    `[AddNewArea] Found collection ID from survey: ${currentCollectionId}`
-                                );
+                            if (surveyJson.success && surveyJson.data) {
+                                // MULTI-COLLECTION: Check for collections array first (new approach)
+                                if (
+                                    surveyJson.data.collections &&
+                                    Array.isArray(
+                                        surveyJson.data.collections
+                                    ) &&
+                                    surveyJson.data.collections.length > 0
+                                ) {
+                                    existingCollections =
+                                        surveyJson.data.collections.map(
+                                            (coll) => ({
+                                                id: coll.collectionId,
+                                                collectionId: coll.collectionId,
+                                                collectionRef:
+                                                    coll.collectionRef,
+                                                areaIndex: coll.areaIndex,
+                                                isPrimary: coll.isPrimary,
+                                            })
+                                        );
+
+                                    // Find the primary collection
+                                    const primaryColl =
+                                        existingCollections.find(
+                                            (c) => c.isPrimary
+                                        );
+                                    if (primaryColl) {
+                                        primaryCollectionId =
+                                            primaryColl.id ||
+                                            primaryColl.collectionId;
+                                    } else if (existingCollections.length > 0) {
+                                        // Use first collection as primary if none marked
+                                        primaryCollectionId =
+                                            existingCollections[0].id ||
+                                            existingCollections[0].collectionId;
+                                    }
+
+                                    console.log(
+                                        `[AddNewArea] Found ${existingCollections.length} collections from survey`
+                                    );
+                                }
+                                // Fall back to single collectionId (backward compatibility)
+                                else if (surveyJson.data.collectionId) {
+                                    primaryCollectionId =
+                                        surveyJson.data.collectionId;
+                                    existingCollections = [
+                                        {
+                                            id: primaryCollectionId,
+                                            collectionId: primaryCollectionId,
+                                            collectionRef:
+                                                surveyJson.data.collectionRef ||
+                                                "",
+                                            areaIndex:
+                                                surveyJson.data.areaIndex || 0,
+                                            isPrimary: true,
+                                        },
+                                    ];
+                                    console.log(
+                                        `[AddNewArea] Found single collection ID from survey: ${primaryCollectionId}`
+                                    );
+                                }
                             }
                         }
                     } catch (error) {
                         console.warn(
-                            "Could not check for existing collection:",
+                            "Could not check for existing collections:",
                             error
                         );
                     }
                 }
 
                 // If we still don't have a collection, create one
-                if (!currentCollectionId) {
+                if (existingCollections.length === 0) {
                     updateProgress("Creating new collection...");
 
                     const collectionData = {
@@ -252,31 +342,66 @@ export default function AddNewArea({
                         );
                     }
 
-                    currentCollectionId = collJson.data._id;
+                    primaryCollectionId = collJson.data._id;
+                    existingCollections = [
+                        {
+                            id: primaryCollectionId,
+                            collectionId: primaryCollectionId,
+                            collectionRef: collectionData.collectionRef,
+                            areaIndex: 0,
+                            isPrimary: true,
+                        },
+                    ];
+
                     console.log(
-                        `[AddNewArea] Collection created with ID: ${currentCollectionId}`
+                        `[AddNewArea] Created new collection with ID: ${primaryCollectionId}`
                     );
 
                     // If we have a survey ID but had to create a new collection,
                     // make sure the survey is associated with the collection
                     if (surveyId) {
                         try {
-                            await fetch(
-                                `/api/surveys/kitchenSurveys/viewAll/${surveyId}`,
-                                {
-                                    method: "PUT",
-                                    headers: {
-                                        "Content-Type": "application/json",
-                                    },
-                                    body: JSON.stringify({
-                                        collectionId: currentCollectionId,
+                            // MULTI-COLLECTION: Use collections array approach
+                            const surveyRes = await fetch(
+                                `/api/surveys/kitchenSurveys/viewAll/${surveyId}`
+                            );
+
+                            if (surveyRes.ok) {
+                                const surveyJson = await surveyRes.json();
+                                if (surveyJson.success && surveyJson.data) {
+                                    // Get existing collections
+                                    const existingColls =
+                                        surveyJson.data.collections || [];
+
+                                    // Add the new collection to the list
+                                    existingColls.push({
+                                        collectionId: primaryCollectionId,
                                         areaIndex: 0,
-                                    }),
+                                        collectionRef:
+                                            collectionData.collectionRef,
+                                        isPrimary: true,
+                                    });
+
+                                    // Update the survey with the combined collections
+                                    await fetch(
+                                        `/api/surveys/kitchenSurveys/viewAll/${surveyId}`,
+                                        {
+                                            method: "PUT",
+                                            headers: {
+                                                "Content-Type":
+                                                    "application/json",
+                                            },
+                                            body: JSON.stringify({
+                                                collections: existingColls,
+                                            }),
+                                        }
+                                    );
+
+                                    console.log(
+                                        `[AddNewArea] Updated survey ${surveyId} with collection in collections array`
+                                    );
                                 }
-                            );
-                            console.log(
-                                `[AddNewArea] Updated survey ${surveyId} with new collection ID`
-                            );
+                            }
                         } catch (error) {
                             console.warn(
                                 "Warning: Could not update existing survey with collection ID:",
@@ -287,15 +412,23 @@ export default function AddNewArea({
                 }
             }
 
-            // STEP 2: Get the next area index (for an existing collection or the new one we created)
-            updateProgress("Determining area position...");
+            // MULTI-COLLECTION: Now with multiple collections, handle determining area indices
+            updateProgress("Determining area positions...");
 
-            let nextAreaIndex = 0;
-            if (currentCollectionId) {
+            // Arrays to store next area indices and final collections array
+            const nextAreaIndices = {};
+            const finalCollections = [];
+
+            // Process each collection to get next available area index
+            for (const collection of existingCollections) {
+                const collectionId = collection.id || collection.collectionId;
+
                 try {
+                    // Get information about this collection
                     const collInfoRes = await fetch(
-                        `/api/surveys/collections/${currentCollectionId}`
+                        `/api/surveys/collections/${collectionId}`
                     );
+
                     if (collInfoRes.ok) {
                         const collInfoJson = await collInfoRes.json();
                         if (
@@ -303,26 +436,60 @@ export default function AddNewArea({
                             collInfoJson.data &&
                             Array.isArray(collInfoJson.data.surveys)
                         ) {
-                            nextAreaIndex = collInfoJson.data.surveys.length;
+                            // Store the next available index
+                            nextAreaIndices[collectionId] =
+                                collInfoJson.data.surveys.length;
+
+                            // Add to final collections with determined areaIndex
+                            finalCollections.push({
+                                collectionId: collectionId,
+                                areaIndex: collInfoJson.data.surveys.length,
+                                collectionRef:
+                                    collInfoJson.data.collectionRef ||
+                                    collection.collectionRef ||
+                                    "",
+                                isPrimary: collection.isPrimary,
+                            });
+
                             console.log(
-                                `[AddNewArea] Next area index will be ${nextAreaIndex}`
+                                `[AddNewArea] Collection ${collectionId}: next area index will be ${nextAreaIndices[collectionId]}`
                             );
                         }
                     }
                 } catch (error) {
                     console.warn(
-                        "Could not determine precise area index, using default"
+                        `Could not determine precise area index for collection ${collectionId}, using default`,
+                        error
                     );
+
+                    // Use a fallback index if fetch fails
+                    nextAreaIndices[collectionId] = 0;
+
+                    // Still add to final collections with fallback areaIndex
+                    finalCollections.push({
+                        collectionId: collectionId,
+                        areaIndex: 0,
+                        collectionRef: collection.collectionRef || "",
+                        isPrimary: collection.isPrimary,
+                    });
                 }
             }
 
-            // STEP 3: Create the new area with reference to the collection
+            // Ensure at least one collection is marked as primary
+            if (
+                finalCollections.length > 0 &&
+                !finalCollections.some((c) => c.isPrimary)
+            ) {
+                finalCollections[0].isPrimary = true;
+            }
+
+            // STEP 3: Create the new area with reference to the collections
             updateProgress("Generating new area...");
             const newRefId = await generateNewRefId(refValue);
 
             // Generate a unique timestamp for the area
             const timestamp = new Date().toLocaleTimeString();
-            const newAreaName = `New Area ${nextAreaIndex + 1} (${timestamp})`;
+            const newAreaName = `New Area (${timestamp})`;
 
             // Create new area with collection reference
             updateProgress("Creating new area...");
@@ -370,9 +537,8 @@ export default function AddNewArea({
                     isWalkAroundContact: index === walkAroundContactIndex,
                 })),
 
-                // Collection data - explicitly include collection ID
-                collectionId: currentCollectionId,
-                areaIndex: nextAreaIndex,
+                // MULTI-COLLECTION: Use collections array instead of single collectionId
+                collections: finalCollections,
 
                 // General info - copy from current survey
                 general: {
@@ -565,7 +731,7 @@ export default function AddNewArea({
 
             // Create the new area
             console.log(
-                `[AddNewArea] Creating new survey with collection ID ${currentCollectionId}`
+                `[AddNewArea] Creating new survey with ${finalCollections.length} collections`
             );
             const res = await fetch("/api/surveys/kitchenSurveys", {
                 method: "POST",
@@ -590,16 +756,20 @@ export default function AddNewArea({
                     `[AddNewArea] Created new survey with ID ${newSurveyId}`
                 );
 
-                // STEP 4: Verify the collection relationship is properly established
-                updateProgress("Finalizing collection relationship...");
+                // STEP 4: Verify the collection relationships are properly established
+                updateProgress("Finalizing collection relationships...");
                 setProgressValue(70);
 
-                if (currentCollectionId) {
+                // MULTI-COLLECTION: Verify all collection relationships
+                let verificationSuccess = true;
+
+                for (const collection of finalCollections) {
                     try {
-                        // Verify that the survey was added to the collection
+                        // Verify that the survey was added to this collection
                         const verifyRes = await fetch(
-                            `/api/surveys/collections/${currentCollectionId}`
+                            `/api/surveys/collections/${collection.collectionId}`
                         );
+
                         if (verifyRes.ok) {
                             const verifyJson = await verifyRes.json();
 
@@ -616,12 +786,12 @@ export default function AddNewArea({
                                 )
                             ) {
                                 console.log(
-                                    `[AddNewArea] Survey not found in collection - adding explicitly`
+                                    `[AddNewArea] Survey not found in collection ${collection.collectionId} - adding explicitly`
                                 );
 
                                 // Add the survey to the collection
                                 const addRes = await fetch(
-                                    `/api/surveys/collections/${currentCollectionId}`,
+                                    `/api/surveys/collections/${collection.collectionId}`,
                                     {
                                         method: "PATCH",
                                         headers: {
@@ -629,27 +799,34 @@ export default function AddNewArea({
                                         },
                                         body: JSON.stringify({
                                             surveyId: newSurveyId,
-                                            areaIndex: nextAreaIndex,
+                                            areaIndex: collection.areaIndex,
+                                            isPrimary: collection.isPrimary,
                                         }),
                                     }
                                 );
 
                                 if (addRes.ok) {
                                     console.log(
-                                        `[AddNewArea] Successfully added survey to collection explicitly`
+                                        `[AddNewArea] Successfully added survey to collection ${collection.collectionId} explicitly`
                                     );
+                                } else {
+                                    console.warn(
+                                        `[AddNewArea] Failed to add survey to collection ${collection.collectionId} explicitly`
+                                    );
+                                    verificationSuccess = false;
                                 }
                             } else {
                                 console.log(
-                                    `[AddNewArea] Survey already found in collection, no need to add explicitly`
+                                    `[AddNewArea] Survey already found in collection ${collection.collectionId}, no need to add explicitly`
                                 );
                             }
                         }
                     } catch (error) {
                         console.warn(
-                            "Warning: Verification of collection membership failed, but continuing anyway",
+                            `[AddNewArea] Verification of collection ${collection.collectionId} membership failed:`,
                             error
                         );
+                        verificationSuccess = false;
                     }
                 }
 
@@ -686,6 +863,8 @@ export default function AddNewArea({
                                         verifiedData.canopySurvey?.comments ||
                                             {}
                                     ).length,
+                                    collections:
+                                        verifiedData.collections?.length || 0,
                                 }
                             );
 
@@ -699,20 +878,38 @@ export default function AddNewArea({
                     );
                 }
 
+                // Find the primary collection for navigation
+                let navigateCollectionId = null;
+                if (finalCollections.length > 0) {
+                    const primaryCollection = finalCollections.find(
+                        (c) => c.isPrimary
+                    );
+                    navigateCollectionId = primaryCollection
+                        ? primaryCollection.collectionId
+                        : finalCollections[0].collectionId;
+                } else if (primaryCollectionId) {
+                    navigateCollectionId = primaryCollectionId;
+                }
+
                 // Store essential collection data as a fallback
                 localStorage.setItem(
                     "surveyCollectionFallback",
                     JSON.stringify({
                         newSurveyId,
-                        collectionId: currentCollectionId,
-                        areaIndex: nextAreaIndex,
+                        collectionId: navigateCollectionId,
+                        collections: finalCollections,
+                        areaIndex:
+                            navigateCollectionId &&
+                            nextAreaIndices[navigateCollectionId]
+                                ? nextAreaIndices[navigateCollectionId]
+                                : 0,
                         timestamp: Date.now(),
                         previousSurveyId: surveyId,
                     })
                 );
 
                 // Show success message
-                toast.current.show({
+                toast.current?.show({
                     severity: "success",
                     summary: "New Area Created",
                     detail: "Successfully created new area. Navigating now...",
@@ -723,8 +920,13 @@ export default function AddNewArea({
                 if (typeof onAreaAdded === "function") {
                     onAreaAdded({
                         newSurveyId,
-                        collectionId: currentCollectionId,
-                        areaIndex: nextAreaIndex,
+                        collections: finalCollections,
+                        primaryCollectionId: navigateCollectionId,
+                        areaIndex:
+                            navigateCollectionId &&
+                            nextAreaIndices[navigateCollectionId]
+                                ? nextAreaIndices[navigateCollectionId]
+                                : 0,
                     });
                 }
 
@@ -736,10 +938,10 @@ export default function AddNewArea({
 
                 // Navigate to the new area with refresh flag to ensure proper loading
                 console.log(
-                    `[AddNewArea] Navigating to new survey ${newSurveyId} in collection ${currentCollectionId}`
+                    `[AddNewArea] Navigating to new survey ${newSurveyId} in collection ${navigateCollectionId}`
                 );
                 router.push(
-                    `/surveys/kitchenSurvey?id=${newSurveyId}&collection=${currentCollectionId}&refresh=true`
+                    `/surveys/kitchenSurvey?id=${newSurveyId}&collection=${navigateCollectionId}&refresh=true`
                 );
 
                 // Note: We're keeping the overlay visible until navigation completes

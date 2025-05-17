@@ -36,6 +36,71 @@ export default function QuotesList({ siteId, onCountChange }) {
     const router = useRouter();
     const toast = useRef(null);
 
+    // Add CSS for horizontal layout and card styling
+    useEffect(() => {
+        const style = document.createElement("style");
+        style.innerHTML = `
+            .horizontal-container {
+                width: 100%;
+                overflow-x: auto;
+                display: flex;
+                flex-wrap: nowrap;
+                padding: 1rem 0;
+            }
+            
+            .quote-card-container {
+                width: 250px;
+                flex: 0 0 auto;
+                height: 280px;
+                margin: 0 1rem;
+                position: relative;
+            }
+            
+            .vertical-buttons {
+                display: flex;
+                flex-direction: column;
+                gap: 0.5rem;
+                position: absolute;
+                left: 1rem;
+                top: 50%;
+                transform: translateY(-50%);
+                z-index: 5;
+            }
+            
+            .quote-info {
+                margin-left: 3.5rem;
+                padding: 0.5rem;
+            }
+            
+            .quote-card {
+                height: 100%;
+                position: relative;
+            }
+            
+            .orphaned-quote {
+                border: 1px solid #FFA500;
+                box-shadow: 0 2px 4px rgba(255, 165, 0, 0.2);
+            }
+            
+            .note-indicator {
+                position: absolute;
+                top: 10px;
+                right: 10px;
+                color: #6366F1;
+                font-size: 0.8rem;
+            }
+            
+            .p-datascroller-content {
+                overflow-y: hidden !important;
+            }
+        `;
+        document.head.appendChild(style);
+
+        return () => {
+            document.head.removeChild(style);
+        };
+    }, []);
+
     // Cache for storing IDs of surveys we know don't exist to avoid 404 errors
     // Load from localStorage (if available) to persist across page refreshes
     const [missingSurveyIds, setMissingSurveyIds] = useState(() => {
@@ -137,8 +202,8 @@ export default function QuotesList({ siteId, onCountChange }) {
             );
 
             setQuotes(sortedQuotes);
-            // Initially show only first 10 quotes
-            setVisibleQuotes(sortedQuotes.slice(0, 10));
+            // Show all quotes since we're using horizontal scrolling
+            setVisibleQuotes(sortedQuotes);
 
             // Call the onCountChange prop with the count if it exists
             if (onCountChange && typeof onCountChange === "function") {
@@ -353,11 +418,24 @@ export default function QuotesList({ siteId, onCountChange }) {
 
     // Function to view PDF directly
     const handleViewPdf = (quote) => {
-        if (!quote || !quote.pdfData) {
+        if (!quote) {
             toast.current.show({
                 severity: "error",
                 summary: "Error",
-                detail: "PDF data not available for this quote",
+                detail: "Quote information not available",
+                life: 3000,
+            });
+            return;
+        }
+
+        // Get the PDF URL - prefer Cloudinary storage but fall back to direct pdfData
+        const hasPdf = quote.cloudinary?.url || quote.pdfData;
+
+        if (!hasPdf) {
+            toast.current.show({
+                severity: "error",
+                summary: "Error",
+                detail: "PDF not available for this quote",
                 life: 3000,
             });
             return;
@@ -520,15 +598,10 @@ export default function QuotesList({ siteId, onCountChange }) {
         });
     };
 
-    // Handle lazy loading more quotes
-    const onLazyLoad = (event) => {
-        // Only load more if there are more quotes to load
-        if (visibleQuotes.length < quotes.length) {
-            // Calculate the end index for the next batch
-            const endIndex = Math.min(event.first + event.rows, quotes.length);
-            // Get the next batch of quotes
-            setVisibleQuotes(quotes.slice(0, endIndex));
-        }
+    // Get PDF URL from quote - prioritize Cloudinary URL but fall back to direct pdfData
+    const getQuotePdfUrl = (quote) => {
+        if (!quote) return null;
+        return quote.cloudinary?.url || quote.pdfData || null;
     };
 
     // Render a quote item in the list
@@ -538,72 +611,18 @@ export default function QuotesList({ siteId, onCountChange }) {
         const isSurveyMissing = !surveyRef;
         const hasNotes = orphanedQuotes[quote._id];
 
-        return (
-            <Card
-                key={quote._id}
-                className="survey-card"
-                style={{
-                    marginBottom: "1rem",
-                    position: "relative",
-                    height: "200px", // Fixed identical height
-                    border: isSurveyMissing ? "1px solid #FFA500" : "initial", // Orange border for orphaned quotes
-                    boxShadow: isSurveyMissing
-                        ? "0 2px 4px rgba(255, 165, 0, 0.2)"
-                        : "initial",
-                }}
-            >
-                <div
-                    style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "flex-start",
-                    }}
-                >
-                    <div>
-                        <h3 style={{ display: "flex", alignItems: "center" }}>
-                            {surveyRef ? (
-                                `REF: ${surveyRef}`
-                            ) : (
-                                <>
-                                    <div
-                                        style={{
-                                            color: "red",
-                                        }}
-                                    >
-                                        Survey removed
-                                    </div>
-                                </>
-                            )}
+        // Check if the quote has a PDF via Cloudinary or direct storage
+        const hasPdf = !!getQuotePdfUrl(quote);
 
-                            {/* Note indicator */}
-                            {hasNotes && (
-                                <span
-                                    className="pi pi-file-edit"
-                                    style={{
-                                        marginLeft: "10px",
-                                        color: "#6366F1",
-                                        fontSize: "0.8rem",
-                                        cursor: "pointer",
-                                    }}
-                                    title="This quote has notes"
-                                ></span>
-                            )}
-                        </h3>
-                        <p>
-                            Date:{" "}
-                            {new Date(quote.createdAt).toLocaleDateString()}
-                        </p>
-                        <p>
-                            <strong>Amount:</strong>{" "}
-                            {quote.amount
-                                ? `£${quote.amount.toFixed(2)}`
-                                : "N/A"}
-                        </p>
-                        <p>
-                            <strong>Status:</strong> {quote.status || "N/A"}
-                        </p>
-                    </div>
-                    <div style={{ display: "flex", gap: "0.5rem" }}>
+        return (
+            <div className="quote-card-container">
+                <Card
+                    className={`quote-card ${
+                        isSurveyMissing ? "orphaned-quote" : ""
+                    }`}
+                >
+                    {/* Vertical buttons on the left side */}
+                    <div className="vertical-buttons">
                         <Button
                             tooltip="View Quote Details"
                             icon="pi pi-file-pdf"
@@ -633,8 +652,48 @@ export default function QuotesList({ siteId, onCountChange }) {
                             disabled={deleting}
                         />
                     </div>
-                </div>
-            </Card>
+
+                    {/* Note indicator */}
+                    {hasNotes && (
+                        <span
+                            className="pi pi-file-edit note-indicator"
+                            title="This quote has notes"
+                        ></span>
+                    )}
+
+                    {/* Quote information */}
+                    <div className="quote-info">
+                        <h3>
+                            {surveyRef ? (
+                                `REF: ${surveyRef}`
+                            ) : (
+                                <span style={{ color: "red" }}>
+                                    Survey removed
+                                </span>
+                            )}
+                        </h3>
+                        <p>
+                            Date:{" "}
+                            {new Date(quote.createdAt).toLocaleDateString()}
+                        </p>
+                        <p>
+                            <strong>Amount:</strong>{" "}
+                            {quote.totalPrice
+                                ? `£${quote.totalPrice.toFixed(2)}`
+                                : "N/A"}
+                        </p>
+                        {quote.cloudinary?.publicId && (
+                            <p>
+                                <span
+                                    className="pi pi-cloud-upload"
+                                    style={{ color: "#4CAF50" }}
+                                ></span>{" "}
+                                Stored in Cloudinary
+                            </p>
+                        )}
+                    </div>
+                </Card>
+            </div>
         );
     };
 
@@ -711,6 +770,10 @@ export default function QuotesList({ siteId, onCountChange }) {
         const surveyRef = surveyRefs[selectedQuote.surveyId];
         const hasNotes = orphanedQuotes[selectedQuote._id];
 
+        // Check if the quote has a PDF via Cloudinary or direct storage
+        const pdfUrl = getQuotePdfUrl(selectedQuote);
+        const isCloudinaryPdf = !!selectedQuote.cloudinary?.url;
+
         return (
             <div>
                 <h3>Quote Details</h3>
@@ -719,7 +782,7 @@ export default function QuotesList({ siteId, onCountChange }) {
                     {surveyRef || "Missing Reference"}
                 </p>
                 <p>
-                    <strong>Title:</strong> {selectedQuote.title || "N/A"}
+                    <strong>Title:</strong> {selectedQuote.name || "N/A"}
                 </p>
                 <p>
                     <strong>Date:</strong>{" "}
@@ -727,13 +790,15 @@ export default function QuotesList({ siteId, onCountChange }) {
                 </p>
                 <p>
                     <strong>Amount:</strong>{" "}
-                    {selectedQuote.amount
-                        ? `£${selectedQuote.amount.toFixed(2)}`
+                    {selectedQuote.totalPrice
+                        ? `£${selectedQuote.totalPrice.toFixed(2)}`
                         : "N/A"}
                 </p>
-                <p>
-                    <strong>Status:</strong> {selectedQuote.status || "N/A"}
-                </p>
+                {isCloudinaryPdf && (
+                    <p>
+                        <strong>Storage:</strong> Cloudinary (optimized)
+                    </p>
+                )}
 
                 {selectedQuote.description && (
                     <div>
@@ -784,7 +849,7 @@ export default function QuotesList({ siteId, onCountChange }) {
 
                 {/* PDF actions */}
                 <div style={{ marginTop: "1rem", textAlign: "center" }}>
-                    {selectedQuote.pdfData ? (
+                    {pdfUrl ? (
                         <div
                             style={{
                                 display: "flex",
@@ -808,8 +873,11 @@ export default function QuotesList({ siteId, onCountChange }) {
                                 onClick={() => {
                                     // Create a temporary link to download the PDF
                                     const link = document.createElement("a");
-                                    link.href = selectedQuote.pdfData;
-                                    link.download = `Quote_${selectedQuote._id}.pdf`;
+                                    link.href = pdfUrl;
+                                    link.download = `Quote_${
+                                        selectedQuote.refValue ||
+                                        selectedQuote._id
+                                    }.pdf`;
                                     document.body.appendChild(link);
                                     link.click();
                                     document.body.removeChild(link);
@@ -851,16 +919,11 @@ export default function QuotesList({ siteId, onCountChange }) {
             <Toast ref={toast} />
             <ConfirmDialog />
 
-            <DataScroller
-                value={visibleQuotes}
-                itemTemplate={quoteTemplate}
-                rows={10}
-                lazy
-                onLazyLoad={onLazyLoad}
-                inline
-                scrollHeight="400px"
-                emptyMessage="No quotes found for this site."
-            />
+            <div className="horizontal-container">
+                {visibleQuotes.map((quote) => (
+                    <div key={quote._id}>{quoteTemplate(quote)}</div>
+                ))}
+            </div>
 
             {/* Survey Modal */}
             <Dialog
@@ -884,7 +947,7 @@ export default function QuotesList({ siteId, onCountChange }) {
 
             {/* PDF Viewer Modal */}
             <Dialog
-                header={`PDF Quote - ${selectedQuote?.title || "Quote"}`}
+                header={`PDF Quote - ${selectedQuote?.name || "Quote"}`}
                 visible={pdfModalVisible}
                 style={{ width: "80vw", height: "80vh" }}
                 onHide={() => setPdfModalVisible(false)}
@@ -892,9 +955,9 @@ export default function QuotesList({ siteId, onCountChange }) {
                 modal
                 blockScroll
             >
-                {selectedQuote?.pdfData ? (
+                {selectedQuote && getQuotePdfUrl(selectedQuote) ? (
                     <iframe
-                        src={selectedQuote.pdfData}
+                        src={getQuotePdfUrl(selectedQuote)}
                         style={{
                             width: "100%",
                             height: "calc(80vh - 120px)",

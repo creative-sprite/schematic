@@ -1,19 +1,13 @@
-// components\kitchenSurvey\storedSiteSurveys\AreaSurveyList.jsx
+// components\kitchenSurvey\storedAreaSurveys\AreaSurveyList.jsx
 "use client";
 
 import { useState, useEffect, useRef } from "react";
 import { Card } from "primereact/card";
 import { Button } from "primereact/button";
-import { DataScroller } from "primereact/datascroller";
 import { ProgressSpinner } from "primereact/progressspinner";
 import { Toast } from "primereact/toast";
 import { ConfirmDialog, confirmDialog } from "primereact/confirmdialog";
 import { useRouter } from "next/navigation";
-import { Checkbox } from "primereact/checkbox";
-import { Dialog } from "primereact/dialog";
-import { InputText } from "primereact/inputtext";
-import { ProgressBar } from "primereact/progressbar";
-import { generateNewCollectionRef } from "../collection/collectionID";
 
 /**
  * Component to display and manage individual areas from all collections
@@ -24,84 +18,87 @@ export default function AreaSurveyList({ siteId, onCountChange }) {
     const [error, setError] = useState(null);
     const [isDeleting, setIsDeleting] = useState(false);
     const [isCreatingVersion, setIsCreatingVersion] = useState(false);
+    const [collections, setCollections] = useState([]);
+    const [flippedCards, setFlippedCards] = useState({});
     const router = useRouter();
     const toast = useRef(null);
 
-    // State for area combination
-    const [selectionMode, setSelectionMode] = useState(false);
-    const [selectedAreas, setSelectedAreas] = useState({});
-    const [showConfirmDialog, setShowConfirmDialog] = useState(false);
-    const [newSurveyName, setNewSurveyName] = useState("");
-    const [isCreatingSurvey, setIsCreatingSurvey] = useState(false);
-    const [showProgressOverlay, setShowProgressOverlay] = useState(false);
-    const [progressMessage, setProgressMessage] = useState("");
-    const [progressValue, setProgressValue] = useState(0);
-
-    // Add CSS for dynamic cards
+    // Add CSS for card flip animation and horizontal layout - IDENTICAL TO KITCHENSURVEYLIST
     useEffect(() => {
+        // Create style element for card flip animation
         const style = document.createElement("style");
         style.innerHTML = `
-            .area-card {
-                min-height: 180px;
-                margin-bottom: 1rem;
-                transition: all 0.2s ease;
+            .horizontal-container {
+                width: 100%;
+                overflow-x: auto;
+                display: flex;
+                flex-wrap: nowrap;
+                padding: 1rem 0;
+            }
+            
+            .card-container {
+                width: 250px;
+                flex: 0 0 auto;
+                height: 350px;
+                margin: 0 1rem;
                 position: relative;
             }
             
-            .area-card.selected {
-                border: 2px solid #4caf50;
-                background-color: rgba(76, 175, 80, 0.05);
-            }
-            
-            .p-card {
+            .card-flipper {
+                position: relative;
+                width: 100%;
                 height: 100%;
-                display: flex;
-                flex-direction: column;
+                transition: transform 0.6s;
+                transform-style: preserve-3d;
+            }
+
+            .card-flipper.flipped {
+                transform: rotateY(180deg);
             }
             
-            .p-card-body {
-                flex: 1;
-                display: flex;
-                flex-direction: column;
-            }
-            
-            .p-card-content {
-                flex: 1;
-                padding: 1rem;
-            }
-            
-            .area-selection-checkbox {
+            .card-front, .card-back {
                 position: absolute;
-                top: 10px;
-                right: 10px;
-                z-index: 10;
+                width: 100%;
+                height: 100%;
+                backface-visibility: hidden;
+                -webkit-backface-visibility: hidden;
             }
             
-            .area-badge {
-                display: inline-block;
-                background: #2196F3;
-                color: white;
-                border-radius: 12px;
-                padding: 3px 8px;
-                font-size: 0.85rem;
-                margin-top: 5px;
-                margin-right: 8px;
+            .card-front {
+                z-index: 1;
+                pointer-events: auto;
             }
             
-            .ref-badge {
-                display: inline-block;
-                background: #FF9800;
-                color: white;
-                border-radius: 12px;
-                padding: 3px 8px;
-                font-size: 0.85rem;
-                margin-right: 8px;
+            .card-flipper.flipped .card-front {
+                pointer-events: none;
             }
             
-            /* Ensure DataScroller adjusts to content */
-            .p-datascroller .p-datascroller-content {
-                min-height: 400px;
-                max-height: 800px;
+            .card-back {
+                transform: rotateY(180deg);
+                z-index: 0;
+                pointer-events: none;
+                overflow-y: auto;
+            }
+            
+            .card-flipper.flipped .card-back {
+                z-index: 2;
+                pointer-events: auto;
+            }
+            
+            .vertical-buttons {
+                display: flex;
+                flex-direction: column;
+                gap: 0.5rem;
+                position: absolute;
+                left: 1rem;
+                top: 50%;
+                transform: translateY(-50%);
+                z-index: 5;
+            }
+            
+            .area-info {
+                margin-left: 3.5rem;
+                padding: 0.5rem;
             }
         `;
         document.head.appendChild(style);
@@ -135,6 +132,7 @@ export default function AreaSurveyList({ siteId, onCountChange }) {
             }
 
             const collections = collJson.data;
+            setCollections(collections);
 
             // Now fetch all areas from these collections
             const allAreas = [];
@@ -155,16 +153,61 @@ export default function AreaSurveyList({ siteId, onCountChange }) {
                                 const areaJson = await areaRes.json();
 
                                 if (areaJson.success && areaJson.data) {
-                                    // Add collection info to the area data
-                                    allAreas.push({
-                                        ...areaJson.data,
-                                        collectionInfo: {
-                                            id: collection._id,
-                                            ref: collection.collectionRef,
-                                            name:
-                                                collection.name || "Collection",
-                                        },
-                                    });
+                                    // Check if this area is already in our list
+                                    const existingAreaIndex =
+                                        allAreas.findIndex(
+                                            (a) => a._id === areaJson.data._id
+                                        );
+
+                                    if (existingAreaIndex >= 0) {
+                                        // Area already exists, just update its collectionInfo array
+                                        if (
+                                            !allAreas[existingAreaIndex]
+                                                .collectionsInfo
+                                        ) {
+                                            allAreas[
+                                                existingAreaIndex
+                                            ].collectionsInfo = [];
+                                        }
+
+                                        // Add this collection to the collectionsInfo if not already present
+                                        if (
+                                            !allAreas[
+                                                existingAreaIndex
+                                            ].collectionsInfo.some(
+                                                (c) =>
+                                                    c.id &&
+                                                    c.id.toString() ===
+                                                        collection._id.toString()
+                                            )
+                                        ) {
+                                            allAreas[
+                                                existingAreaIndex
+                                            ].collectionsInfo.push({
+                                                id: collection._id,
+                                                ref: collection.collectionRef,
+                                                name:
+                                                    collection.name ||
+                                                    "Collection",
+                                            });
+                                        }
+                                    } else {
+                                        // New area, add it with collection info
+                                        const areaWithCollections = {
+                                            ...areaJson.data,
+                                            collectionsInfo: [
+                                                {
+                                                    id: collection._id,
+                                                    ref: collection.collectionRef,
+                                                    name:
+                                                        collection.name ||
+                                                        "Collection",
+                                                },
+                                            ],
+                                        };
+
+                                        allAreas.push(areaWithCollections);
+                                    }
                                 }
                             }
                         } catch (err) {
@@ -199,272 +242,22 @@ export default function AreaSurveyList({ siteId, onCountChange }) {
         fetchAreas();
     }, [siteId]);
 
-    // Function to toggle area selection for combining
-    const toggleAreaSelection = (areaId) => {
-        setSelectedAreas((prev) => {
-            const updated = { ...prev };
-            if (updated[areaId]) {
-                delete updated[areaId];
-            } else {
-                const area = areas.find((a) => a._id === areaId);
-                if (area) {
-                    updated[areaId] = area;
-                }
-            }
-            return updated;
+    // Function to toggle card flip
+    const toggleCardFlip = (areaId) => {
+        // Hide any visible tooltips by clearing their DOM elements
+        const tooltips = document.querySelectorAll(".p-tooltip");
+        tooltips.forEach((tooltip) => {
+            tooltip.style.display = "none";
         });
-    };
 
-    // Start selection mode to combine areas
-    const startSelectionMode = () => {
-        setSelectionMode(true);
-        // Set default survey name based on site and date
-        setNewSurveyName(`Combined Survey ${new Date().toLocaleDateString()}`);
-    };
-
-    // Exit selection mode (cancel)
-    const cancelSelectionMode = () => {
-        setSelectionMode(false);
-        setSelectedAreas({});
-    };
-
-    // Confirm selection and open dialog for naming
-    const confirmSelection = () => {
-        const selectedCount = Object.keys(selectedAreas).length;
-
-        if (selectedCount < 1) {
-            toast.current.show({
-                severity: "warn",
-                summary: "No Areas Selected",
-                detail: "Please select at least one area to combine",
-                life: 3000,
-            });
-            return;
-        }
-
-        setShowConfirmDialog(true);
-    };
-
-    // Process and create the combined survey
-    const createCombinedSurvey = async () => {
-        if (isCreatingSurvey) return;
-
-        const selectedCount = Object.keys(selectedAreas).length;
-        if (selectedCount < 1) {
-            toast.current.show({
-                severity: "warn",
-                summary: "No Areas Selected",
-                detail: "Please select at least one area to combine",
-                life: 3000,
-            });
-            return;
-        }
-
-        // Validate survey name
-        if (!newSurveyName.trim()) {
-            toast.current.show({
-                severity: "error",
-                summary: "Missing Name",
-                detail: "Please provide a name for the combined survey",
-                life: 3000,
-            });
-            return;
-        }
-
-        // Start the creation process
-        setIsCreatingSurvey(true);
-        setShowConfirmDialog(false);
-        setShowProgressOverlay(true);
-        setProgressValue(0);
-        setProgressMessage("Starting combination process...");
-
-        try {
-            // Step 1: Generate a new unique REF ID for the combined survey
-            setProgressMessage("Generating unique survey reference...");
-            setProgressValue(10);
-            const newRefId = await generateNewCollectionRef();
-
-            // Step 2: Selected areas are already loaded, prepare them for the new collection
-            setProgressMessage("Preparing areas for combination...");
-            setProgressValue(20);
-
-            const selectedAreaIds = Object.keys(selectedAreas);
-            const areaDetails = selectedAreaIds.map((id) => selectedAreas[id]);
-
-            if (areaDetails.length === 0) {
-                throw new Error(
-                    "Could not prepare area details. Please try again."
-                );
-            }
-
-            // Step 3: Create a new collection
-            setProgressMessage("Creating new collection...");
-            setProgressValue(50);
-
-            const collectionData = {
-                collectionRef: newRefId,
-                name: newSurveyName,
-                site: siteId,
-                surveys: [], // We'll add surveys after they're created
-                totalAreas: 0,
-            };
-
-            const collRes = await fetch("/api/surveys/collections", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(collectionData),
-            });
-
-            if (!collRes.ok) {
-                throw new Error("Failed to create new collection");
-            }
-
-            const collJson = await collRes.json();
-            if (!collJson.success) {
-                throw new Error(
-                    collJson.message || "Failed to create collection"
-                );
-            }
-
-            const newCollectionId = collJson.data._id;
-            console.log(`Created new collection with ID: ${newCollectionId}`);
-
-            // Step 4: Create surveys in the new collection for each area
-            setProgressMessage("Creating combined surveys...");
-            setProgressValue(60);
-
-            const createdSurveys = [];
-
-            for (let i = 0; i < areaDetails.length; i++) {
-                const area = areaDetails[i];
-                setProgressValue(60 + (i / areaDetails.length) * 30); // 60-90% progress
-
-                // Create a copy of the area with modified references
-                const newAreaPayload = {
-                    // Basic info
-                    refValue: `${newRefId}-Area${i + 1}`,
-                    surveyDate: new Date(),
-                    site: area.site._id || area.site,
-
-                    // Collection reference
-                    collectionId: newCollectionId,
-                    areaIndex: i,
-
-                    // Copy essential fields from original
-                    structure: area.structure,
-                    canopySurvey: area.canopySurvey,
-                    equipmentSurvey: area.equipmentSurvey,
-                    specialistEquipmentSurvey: area.specialistEquipmentSurvey,
-                    ventilationInfo: area.ventilationInfo,
-                    schematic: area.schematic,
-                    access: area.access,
-                    operations: area.operations,
-                    notes: area.notes,
-                    images: area.images,
-                    contacts: area.contacts,
-                    general: area.general,
-
-                    // Make sure to include totals
-                    totals: area.totals,
-                };
-
-                // Create the new survey
-                const surveyRes = await fetch("/api/surveys/kitchenSurveys", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(newAreaPayload),
-                });
-
-                if (surveyRes.ok) {
-                    const surveyJson = await surveyRes.json();
-                    if (surveyJson.success && surveyJson.data) {
-                        createdSurveys.push(surveyJson.data);
-                    }
-                }
-            }
-
-            if (createdSurveys.length === 0) {
-                throw new Error(
-                    "Failed to create surveys in the new collection"
-                );
-            }
-
-            // Step 5: Finalize and update collection
-            setProgressMessage("Finalizing combined survey...");
-            setProgressValue(95);
-
-            // Update the collection with the newly created surveys if needed
-            if (createdSurveys.length > 0) {
-                try {
-                    const updateRes = await fetch(
-                        `/api/surveys/collections/${newCollectionId}`,
-                        {
-                            method: "PUT",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({
-                                name: newSurveyName,
-                                totalAreas: createdSurveys.length,
-                            }),
-                        }
-                    );
-
-                    if (!updateRes.ok) {
-                        console.warn(
-                            "Warning: Failed to update collection name"
-                        );
-                    }
-                } catch (error) {
-                    console.warn("Warning: Error updating collection:", error);
-                }
-            }
-
-            // Success! Navigate to the first survey in the new collection
-            setProgressValue(100);
-            setProgressMessage("Survey combination complete!");
-
-            toast.current.show({
-                severity: "success",
-                summary: "Success",
-                detail: `Created combined survey with ${createdSurveys.length} areas`,
-                life: 3000,
-            });
-
-            // Allow time for the user to see the success message
-            setTimeout(() => {
-                // Navigate to the first survey in the new collection
-                if (createdSurveys.length > 0) {
-                    const firstSurveyId = createdSurveys[0]._id;
-                    router.push(
-                        `/surveys/kitchenSurvey?id=${firstSurveyId}&collection=${newCollectionId}`
-                    );
-                } else {
-                    // Fallback to collection view if for some reason we don't have survey IDs
-                    router.push(`/database/clients/site/${siteId}`);
-                }
-            }, 2000);
-        } catch (error) {
-            console.error("Error creating combined survey:", error);
-            toast.current.show({
-                severity: "error",
-                summary: "Error",
-                detail: error.message || "Error creating combined survey",
-                life: 5000,
-            });
-            setIsCreatingSurvey(false);
-            setShowProgressOverlay(false);
-        } finally {
-            // Reset states in case user cancels navigation
-            setTimeout(() => {
-                setIsCreatingSurvey(false);
-                setShowProgressOverlay(false);
-                setSelectionMode(false);
-                setSelectedAreas({});
-            }, 3000);
-        }
+        setFlippedCards((prev) => ({
+            ...prev,
+            [areaId]: !prev[areaId],
+        }));
     };
 
     // Function to handle deleting an area
-    const handleDeleteArea = async (areaId, collectionId) => {
+    const handleDeleteArea = async (areaId) => {
         confirmDialog({
             message:
                 "Are you sure you want to delete this area? This action cannot be undone.",
@@ -540,9 +333,14 @@ export default function AreaSurveyList({ siteId, onCountChange }) {
                     life: 3000,
                 });
 
+                // Find primary collection for navigation
+                const area = areas.find((a) => a._id === areaId);
+                const primaryCollection = getPrimaryCollectionId(area);
+                const targetCollection = primaryCollection || collectionId;
+
                 // Navigate to edit the newly created version
                 router.push(
-                    `/surveys/kitchenSurvey?id=${json.data._id}&collection=${collectionId}`
+                    `/surveys/kitchenSurvey?id=${json.data._id}&collection=${targetCollection}`
                 );
             } else {
                 throw new Error(json.message || "Failed to create new version");
@@ -559,67 +357,78 @@ export default function AreaSurveyList({ siteId, onCountChange }) {
         }
     };
 
+    // Helper function to get primary collection ID from an area
+    const getPrimaryCollectionId = (area) => {
+        if (!area || !area.collections) return null;
+
+        // First, try to find a collection marked as primary
+        const primaryCollection = area.collections.find((c) => c.isPrimary);
+        if (primaryCollection) return primaryCollection.collectionId;
+
+        // If no primary collection, return the first collection's ID
+        return area.collections[0]?.collectionId || null;
+    };
+
     // Render an area item in the list
     const areaTemplate = (area) => {
-        const isSelected = !!selectedAreas[area._id];
         const structureId = area.structure?.structureId || "Unnamed Area";
         const surveyDate = area.surveyDate || area.createdAt;
 
-        // Get collection info
-        const collectionName = area.collectionInfo?.name || "Collection";
-        const collectionRef = area.collectionInfo?.ref || "";
-        const collectionId = area.collectionInfo?.id;
+        // Get collection info for display
+        const collections = area.collections || [];
+        const collectionsInfo = area.collectionsInfo || [];
+        const collectionsCount = collections.length;
 
-        // Get individual kitchen survey REF
-        const surveyRef = area.refValue || "";
+        // Check if this card is flipped
+        const isFlipped = flippedCards[area._id] || false;
 
         return (
-            <div className={`area-card ${isSelected ? "selected" : ""}`}>
-                {selectionMode && (
-                    <div className="area-selection-checkbox">
-                        <Checkbox
-                            checked={isSelected}
-                            onChange={() => toggleAreaSelection(area._id)}
-                        />
-                    </div>
-                )}
-
-                <Card>
-                    <div
-                        style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            alignItems: "flex-start",
-                        }}
-                    >
-                        <div>
-                            <h3>Area Name: {structureId}</h3>
-                            <p style={{ marginTop: "-10px", color: "#666" }}>
-                                Survey REF: {collectionRef}
-                                <p className="ref-badge">
-                                    Area REF: {surveyRef}
-                                </p>
-                                {surveyDate &&
-                                    `Date: ${new Date(
-                                        surveyDate
-                                    ).toLocaleDateString()}`}
-                            </p>
-
-                            <p>
-                                <strong>Type:</strong>{" "}
-                                {area.general?.surveyType || "Kitchen Survey"}
-                            </p>
-                        </div>
-
-                        {!selectionMode && (
-                            <div style={{ display: "flex", gap: "0.5rem" }}>
+            <div className="card-container">
+                <div className={`card-flipper ${isFlipped ? "flipped" : ""}`}>
+                    {/* FRONT OF CARD */}
+                    <div className="card-front">
+                        <Card
+                            key={area._id}
+                            className="collection-card"
+                            style={{
+                                height: "100%",
+                                position: "relative",
+                            }}
+                        >
+                            <div className="vertical-buttons">
+                                <Button
+                                    tooltip="View Collections"
+                                    icon="pi pi-info-circle"
+                                    className="p-button-secondary p-button-rounded"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        toggleCardFlip(area._id);
+                                    }}
+                                />
                                 <Button
                                     tooltip="Edit Area"
                                     icon="pi pi-file-edit"
                                     className="p-button-primary"
                                     onClick={() => {
+                                        // Get primary collection or first collection for navigation
+                                        const primaryCollection =
+                                            getPrimaryCollectionId(area);
+                                        const targetCollection =
+                                            primaryCollection ||
+                                            (area.collections &&
+                                            area.collections.length > 0
+                                                ? area.collections[0]
+                                                      .collectionId
+                                                : null);
+
                                         router.push(
-                                            `/surveys/kitchenSurvey?id=${area._id}&collection=${collectionId}`
+                                            `/surveys/kitchenSurvey?id=${
+                                                area._id
+                                            }${
+                                                targetCollection
+                                                    ? `&collection=${targetCollection}`
+                                                    : ""
+                                            }`
                                         );
                                     }}
                                 />
@@ -628,10 +437,7 @@ export default function AreaSurveyList({ siteId, onCountChange }) {
                                     icon="pi pi-file-plus"
                                     className="p-button-success"
                                     onClick={() =>
-                                        handleCreateVersion(
-                                            area._id,
-                                            collectionId
-                                        )
+                                        handleCreateVersion(area._id)
                                     }
                                     disabled={isCreatingVersion}
                                 />
@@ -639,15 +445,130 @@ export default function AreaSurveyList({ siteId, onCountChange }) {
                                     tooltip="Delete Area"
                                     icon="pi pi-trash"
                                     className="p-button-danger"
-                                    onClick={() =>
-                                        handleDeleteArea(area._id, collectionId)
-                                    }
+                                    onClick={() => handleDeleteArea(area._id)}
                                     disabled={isDeleting}
                                 />
                             </div>
-                        )}
+
+                            <div className="area-info">
+                                <h3>
+                                    Area Name: {structureId}
+                                    {collectionsCount > 1 && (
+                                        <span style={{ fontWeight: "normal" }}>
+                                            {" | in "}
+                                            {collectionsCount} surveys
+                                        </span>
+                                    )}
+                                </h3>
+                                <p
+                                    style={{
+                                        marginTop: "-10px",
+                                        color: "#666",
+                                        fontStyle: "italic",
+                                    }}
+                                >
+                                    Survey REF: {area.refValue}
+                                </p>
+                                <p>
+                                    {surveyDate &&
+                                        `Date: ${new Date(
+                                            surveyDate
+                                        ).toLocaleDateString()}`}
+                                </p>
+
+                                <p>
+                                    <strong>Type:</strong>{" "}
+                                    {area.general?.surveyType ||
+                                        "Kitchen Survey"}
+                                </p>
+                            </div>
+                        </Card>
                     </div>
-                </Card>
+
+                    {/* BACK OF CARD */}
+                    <div className="card-back">
+                        <Card
+                            key={`${area._id}-back`}
+                            className="collection-card-back"
+                            style={{
+                                height: "100%",
+                                position: "relative",
+                            }}
+                            header={
+                                <div
+                                    style={{
+                                        display: "flex",
+                                        justifyContent: "space-between",
+                                        alignItems: "center",
+                                        padding: "0.5rem 1rem",
+                                        background: "#f4f4f4",
+                                    }}
+                                >
+                                    <h4 style={{ margin: 0 }}>
+                                        Included in Surveys
+                                    </h4>
+                                    <Button
+                                        icon="pi pi-times"
+                                        className="p-button-rounded p-button-text"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            toggleCardFlip(area._id);
+                                        }}
+                                    />
+                                </div>
+                            }
+                        >
+                            {collections.length > 0 ? (
+                                <ul
+                                    style={{
+                                        padding: "0 1rem",
+                                        margin: 0,
+                                        listStyleType: "none",
+                                    }}
+                                >
+                                    {collections.map((collection, idx) => {
+                                        // Find detailed info for this collection
+                                        const info = collectionsInfo.find(
+                                            (c) =>
+                                                c.id &&
+                                                collection.collectionId &&
+                                                c.id.toString() ===
+                                                    collection.collectionId.toString()
+                                        );
+
+                                        return (
+                                            <li
+                                                key={idx}
+                                                style={{
+                                                    padding: "0.5rem 0",
+                                                    borderBottom:
+                                                        idx <
+                                                        collections.length - 1
+                                                            ? "1px solid #e0e0e0"
+                                                            : "none",
+                                                }}
+                                            >
+                                                <strong>REF:</strong>{" "}
+                                                {info?.ref ||
+                                                    collection.collectionRef ||
+                                                    `Unknown`}
+                                            </li>
+                                        );
+                                    })}
+                                </ul>
+                            ) : (
+                                <div
+                                    style={{
+                                        padding: "1rem",
+                                        textAlign: "center",
+                                    }}
+                                >
+                                    No collections information available
+                                </div>
+                            )}
+                        </Card>
+                    </div>
+                </div>
             </div>
         );
     };
@@ -675,153 +596,15 @@ export default function AreaSurveyList({ siteId, onCountChange }) {
     }
 
     return (
-        <div className="area-survey-list">
+        <div className="kitchen-survey-list">
             <Toast ref={toast} />
             <ConfirmDialog />
 
-            {/* Header with title and action buttons */}
-            <div
-                style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    marginBottom: "1rem",
-                }}
-            >
-                {!selectionMode ? (
-                    <Button
-                        icon="pi pi-object-group"
-                        label="Create Survey"
-                        className="p-button-outlined p-button-info"
-                        onClick={startSelectionMode}
-                    />
-                ) : (
-                    <div style={{ display: "flex", gap: "0.5rem" }}>
-                        <span
-                            style={{
-                                display: "inline-flex",
-                                alignItems: "center",
-                                background: "#f0f0f0",
-                                padding: "0.5rem 1rem",
-                                borderRadius: "4px",
-                            }}
-                        >
-                            <i
-                                className="pi pi-check-circle"
-                                style={{
-                                    marginRight: "0.5rem",
-                                    color: "#4caf50",
-                                }}
-                            ></i>
-                            {Object.keys(selectedAreas).length} areas selected
-                        </span>
-                        <Button
-                            icon="pi pi-times"
-                            label="Cancel"
-                            className="p-button-outlined p-button-secondary"
-                            onClick={cancelSelectionMode}
-                        />
-                        <Button
-                            icon="pi pi-check"
-                            label="Confirm"
-                            className="p-button-success"
-                            onClick={confirmSelection}
-                            disabled={Object.keys(selectedAreas).length === 0}
-                        />
-                    </div>
-                )}
+            <div className="horizontal-container">
+                {areas.map((area) => (
+                    <div key={area._id}>{areaTemplate(area)}</div>
+                ))}
             </div>
-
-            <DataScroller
-                value={areas}
-                itemTemplate={areaTemplate}
-                rows={10}
-                inline
-                scrollHeight={areas.length > 5 ? "700px" : "auto"}
-                emptyMessage="No areas found for this site."
-            />
-
-            {/* Confirmation Dialog for naming new survey */}
-            <Dialog
-                header="Create Combined Survey"
-                visible={showConfirmDialog}
-                onHide={() => setShowConfirmDialog(false)}
-                style={{ width: "450px" }}
-                footer={
-                    <div>
-                        <Button
-                            label="Cancel"
-                            icon="pi pi-times"
-                            onClick={() => setShowConfirmDialog(false)}
-                            className="p-button-text"
-                        />
-                        <Button
-                            label="Create Survey"
-                            icon="pi pi-check"
-                            onClick={createCombinedSurvey}
-                            autoFocus
-                        />
-                    </div>
-                }
-            >
-                <div className="p-fluid">
-                    <div className="p-field">
-                        <label htmlFor="surveyName">Survey Name</label>
-                        <InputText
-                            id="surveyName"
-                            value={newSurveyName}
-                            onChange={(e) => setNewSurveyName(e.target.value)}
-                            autoFocus
-                        />
-                    </div>
-                    <div className="p-field mt-3">
-                        <p>
-                            <strong>{Object.keys(selectedAreas).length}</strong>{" "}
-                            areas will be combined into a new survey.
-                        </p>
-                    </div>
-                </div>
-            </Dialog>
-
-            {/* Progress Overlay */}
-            {showProgressOverlay && (
-                <div
-                    style={{
-                        position: "fixed",
-                        top: 0,
-                        left: 0,
-                        width: "100%",
-                        height: "100%",
-                        backgroundColor: "rgba(0, 0, 0, 0.6)",
-                        display: "flex",
-                        flexDirection: "column",
-                        justifyContent: "center",
-                        alignItems: "center",
-                        zIndex: 9999,
-                    }}
-                >
-                    <div
-                        style={{
-                            backgroundColor: "white",
-                            padding: "2rem",
-                            borderRadius: "8px",
-                            width: "60%",
-                            maxWidth: "500px",
-                        }}
-                    >
-                        <h2>Creating Combined Survey</h2>
-                        <p>{progressMessage}</p>
-                        <ProgressBar
-                            value={progressValue}
-                            showValue={true}
-                            style={{ height: "20px", marginBottom: "1rem" }}
-                        />
-                        <p style={{ textAlign: "center", fontStyle: "italic" }}>
-                            Please wait while we create your new survey...
-                        </p>
-                    </div>
-                </div>
-            )}
         </div>
     );
 }

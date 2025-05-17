@@ -7,10 +7,9 @@ import { Toast } from "primereact/toast";
 import { ProgressSpinner } from "primereact/progressspinner";
 import { ProgressBar } from "primereact/progressbar";
 import { Button } from "primereact/button";
-import ExportPDF from "@/components/PDF/export";
 import SurveyInfo from "@/components/kitchenSurvey/surveyInfo";
 import Area1Logic from "@/components/kitchenSurvey/Area1Logic";
-// Removed SurveySteps import
+// Removed ExportPDF import
 
 // Import our new extracted components
 import AreaPagination from "@/components/kitchenSurvey/pagination/AreaPagination";
@@ -53,6 +52,9 @@ export default function SurveyForm() {
     const prevSiteIdRef = useRef(siteIdParam);
     // Add state to track navigation loading state
     const [isNavigatingToNewArea, setIsNavigatingToNewArea] = useState(false);
+
+    // MULTI-COLLECTION: Add state for survey's collection memberships
+    const [surveyCollections, setSurveyCollections] = useState([]);
 
     // State for pagination
     const [areasPagination, setAreasPagination] = useState({
@@ -233,6 +235,125 @@ export default function SurveyForm() {
     // Track if we've already created a draft survey for this site
     const [hasDraftSurvey, setHasDraftSurvey] = useState(!!surveyId);
 
+    // MULTI-COLLECTION: Add a new effect to fetch and process the survey's collections
+    useEffect(() => {
+        if (!surveyId || isLoading) return;
+
+        const fetchSurveyCollections = async () => {
+            try {
+                const res = await fetch(
+                    `/api/surveys/kitchenSurveys/viewAll/${surveyId}`
+                );
+
+                if (res.ok) {
+                    const json = await res.json();
+
+                    if (json.success && json.data) {
+                        // MULTI-COLLECTION: Check for collections array (new format)
+                        if (
+                            json.data.collections &&
+                            Array.isArray(json.data.collections)
+                        ) {
+                            // Transform the collections data into a consistent format
+                            const processedCollections =
+                                json.data.collections.map((coll) => ({
+                                    id: coll.collectionId,
+                                    collectionId: coll.collectionId,
+                                    areaIndex: coll.areaIndex,
+                                    collectionRef: coll.collectionRef,
+                                    isPrimary: coll.isPrimary,
+                                }));
+
+                            // Get detailed information for each collection
+                            const enhancedCollections = [];
+
+                            for (const coll of processedCollections) {
+                                try {
+                                    const collRes = await fetch(
+                                        `/api/surveys/collections/${coll.collectionId}`
+                                    );
+
+                                    if (collRes.ok) {
+                                        const collJson = await collRes.json();
+
+                                        if (collJson.success && collJson.data) {
+                                            enhancedCollections.push({
+                                                ...coll,
+                                                name: collJson.data.name,
+                                                totalAreas:
+                                                    collJson.data.totalAreas,
+                                            });
+                                        } else {
+                                            enhancedCollections.push(coll);
+                                        }
+                                    } else {
+                                        enhancedCollections.push(coll);
+                                    }
+                                } catch (error) {
+                                    console.error(
+                                        `Error fetching collection ${coll.collectionId}:`,
+                                        error
+                                    );
+                                    enhancedCollections.push(coll);
+                                }
+                            }
+
+                            setSurveyCollections(enhancedCollections);
+                            console.log(
+                                `[page] Fetched ${enhancedCollections.length} collections for survey ${surveyId}`
+                            );
+                        }
+                        // Backward compatibility: Handle single collectionId
+                        else if (json.data.collectionId) {
+                            const singleCollection = {
+                                id: json.data.collectionId,
+                                collectionId: json.data.collectionId,
+                                areaIndex:
+                                    json.data.areaIndex !== undefined
+                                        ? json.data.areaIndex
+                                        : 0,
+                                collectionRef: json.data.collectionRef || "",
+                                isPrimary: true,
+                            };
+
+                            // Try to get collection name
+                            try {
+                                const collRes = await fetch(
+                                    `/api/surveys/collections/${json.data.collectionId}`
+                                );
+
+                                if (collRes.ok) {
+                                    const collJson = await collRes.json();
+
+                                    if (collJson.success && collJson.data) {
+                                        singleCollection.name =
+                                            collJson.data.name;
+                                        singleCollection.totalAreas =
+                                            collJson.data.totalAreas;
+                                    }
+                                }
+                            } catch (error) {
+                                console.error(
+                                    `Error fetching collection ${json.data.collectionId}:`,
+                                    error
+                                );
+                            }
+
+                            setSurveyCollections([singleCollection]);
+                            console.log(
+                                `[page] Found single collection ${json.data.collectionId} for survey ${surveyId}`
+                            );
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error("Error fetching survey collections:", error);
+            }
+        };
+
+        fetchSurveyCollections();
+    }, [surveyId, isLoading]);
+
     // Effect to detect site selection and automatically create a survey
     useEffect(() => {
         // Check if we already have a survey ID or are in the process of creating one
@@ -271,6 +392,11 @@ export default function SurveyForm() {
                         "FALLBACK: Found valid collection data in localStorage",
                         data
                     );
+
+                    // MULTI-COLLECTION: Check for collections array in fallback data
+                    if (data.collections && Array.isArray(data.collections)) {
+                        setSurveyCollections(data.collections);
+                    }
 
                     // Force set areasPagination with minimum data to show pagination
                     setAreasPagination((prev) => ({
@@ -472,6 +598,48 @@ export default function SurveyForm() {
                                 collectionId: areasPagination.collectionId,
                             });
 
+                            // MULTI-COLLECTION: Also refresh survey collections
+                            if (surveyId) {
+                                try {
+                                    const surveyRes = await fetch(
+                                        `/api/surveys/kitchenSurveys/viewAll/${surveyId}`
+                                    );
+
+                                    if (surveyRes.ok) {
+                                        const surveyJson =
+                                            await surveyRes.json();
+
+                                        if (
+                                            surveyJson.success &&
+                                            surveyJson.data &&
+                                            surveyJson.data.collections
+                                        ) {
+                                            const collections =
+                                                surveyJson.data.collections.map(
+                                                    (coll) => ({
+                                                        id: coll.collectionId,
+                                                        collectionId:
+                                                            coll.collectionId,
+                                                        areaIndex:
+                                                            coll.areaIndex,
+                                                        collectionRef:
+                                                            coll.collectionRef,
+                                                        isPrimary:
+                                                            coll.isPrimary,
+                                                    })
+                                                );
+
+                                            setSurveyCollections(collections);
+                                        }
+                                    }
+                                } catch (error) {
+                                    console.error(
+                                        "Error refreshing survey collections:",
+                                        error
+                                    );
+                                }
+                            }
+
                             // Remove refresh flag from URL after processing
                             const url = new URL(window.location);
                             url.searchParams.delete("refresh");
@@ -511,8 +679,133 @@ export default function SurveyForm() {
                         if (res.ok) {
                             const json = await res.json();
                             if (json.success && json.data) {
-                                // If this survey is part of a collection, get that collection ID
-                                if (json.data.collectionId) {
+                                // MULTI-COLLECTION: First check for collections array
+                                if (
+                                    json.data.collections &&
+                                    Array.isArray(json.data.collections) &&
+                                    json.data.collections.length > 0
+                                ) {
+                                    // Find the primary collection or use the first one
+                                    const primaryCollection =
+                                        json.data.collections.find(
+                                            (c) => c.isPrimary
+                                        ) || json.data.collections[0];
+                                    const targetCollectionId =
+                                        collectionIdParam ||
+                                        primaryCollection.collectionId;
+
+                                    // Get all surveys in this specific collection
+                                    const collRes = await fetch(
+                                        `/api/surveys/kitchenSurveys/viewAll?collectionId=${targetCollectionId}`
+                                    );
+
+                                    if (collRes.ok) {
+                                        const collJson = await collRes.json();
+                                        if (
+                                            collJson.success &&
+                                            Array.isArray(collJson.data)
+                                        ) {
+                                            // Sort by areaIndex
+                                            const sortedAreas =
+                                                collJson.data.sort((a, b) => {
+                                                    // Find the collection entry for this specific collection
+                                                    const aEntry =
+                                                        a.collections?.find(
+                                                            (coll) =>
+                                                                coll.collectionId &&
+                                                                coll.collectionId.toString() ===
+                                                                    targetCollectionId.toString()
+                                                        );
+
+                                                    const bEntry =
+                                                        b.collections?.find(
+                                                            (coll) =>
+                                                                coll.collectionId &&
+                                                                coll.collectionId.toString() ===
+                                                                    targetCollectionId.toString()
+                                                        );
+
+                                                    // Use the areaIndex from the specific collection entry
+                                                    const aIndex =
+                                                        aEntry?.areaIndex || 0;
+                                                    const bIndex =
+                                                        bEntry?.areaIndex || 0;
+
+                                                    return aIndex - bIndex;
+                                                });
+
+                                            // Find current survey's index in collection
+                                            const currentIndex =
+                                                sortedAreas.findIndex(
+                                                    (area) =>
+                                                        area._id === surveyId
+                                                );
+
+                                            console.log(
+                                                "[page] Found collection with",
+                                                sortedAreas.length,
+                                                "areas"
+                                            );
+
+                                            // Get collection info for display
+                                            let collectionRef =
+                                                primaryCollection.collectionRef;
+                                            try {
+                                                const detailRes = await fetch(
+                                                    `/api/surveys/collections/${targetCollectionId}`
+                                                );
+                                                if (detailRes.ok) {
+                                                    const detailJson =
+                                                        await detailRes.json();
+                                                    if (
+                                                        detailJson.success &&
+                                                        detailJson.data
+                                                    ) {
+                                                        collectionRef =
+                                                            detailJson.data
+                                                                .collectionRef;
+                                                    }
+                                                }
+                                            } catch (error) {
+                                                console.warn(
+                                                    "Could not fetch collection details",
+                                                    error
+                                                );
+                                            }
+
+                                            setAreasPagination({
+                                                currentIndex:
+                                                    currentIndex !== -1
+                                                        ? currentIndex
+                                                        : 0,
+                                                totalAreas: sortedAreas.length,
+                                                areasList: sortedAreas.map(
+                                                    (area) => ({
+                                                        id: area._id,
+                                                        name:
+                                                            area.structure
+                                                                ?.structureId ||
+                                                            `Area ${
+                                                                (area.collections?.find(
+                                                                    (coll) =>
+                                                                        coll.collectionId &&
+                                                                        coll.collectionId.toString() ===
+                                                                            targetCollectionId.toString()
+                                                                )?.areaIndex ||
+                                                                    0) + 1
+                                                            }`,
+                                                        refValue: area.refValue,
+                                                    })
+                                                ),
+                                                collectionRef: collectionRef,
+                                                collectionId:
+                                                    targetCollectionId,
+                                            });
+                                        }
+                                    }
+                                }
+                                // Fall back to legacy single collectionId approach
+                                else if (json.data.collectionId) {
                                     // Get all surveys in this collection
                                     const collRes = await fetch(
                                         `/api/surveys/kitchenSurveys/viewAll?collectionId=${json.data.collectionId}`
@@ -593,10 +886,30 @@ export default function SurveyForm() {
                                 collJson.success &&
                                 Array.isArray(collJson.data)
                             ) {
-                                // Sort by areaIndex
+                                // MULTI-COLLECTION: Sort by areaIndex for this specific collection
                                 const sortedAreas = collJson.data.sort(
-                                    (a, b) =>
-                                        (a.areaIndex || 0) - (b.areaIndex || 0)
+                                    (a, b) => {
+                                        // Find the collection entry for this specific collection
+                                        const aEntry = a.collections?.find(
+                                            (coll) =>
+                                                coll.collectionId &&
+                                                coll.collectionId.toString() ===
+                                                    collectionIdParam.toString()
+                                        );
+
+                                        const bEntry = b.collections?.find(
+                                            (coll) =>
+                                                coll.collectionId &&
+                                                coll.collectionId.toString() ===
+                                                    collectionIdParam.toString()
+                                        );
+
+                                        // Use the areaIndex from the specific collection entry
+                                        const aIndex = aEntry?.areaIndex || 0;
+                                        const bIndex = bEntry?.areaIndex || 0;
+
+                                        return aIndex - bIndex;
+                                    }
                                 );
 
                                 console.log(
@@ -605,6 +918,30 @@ export default function SurveyForm() {
                                     "areas from param"
                                 );
 
+                                // Get collection ref from API for display
+                                let collectionRef = "";
+                                try {
+                                    const detailRes = await fetch(
+                                        `/api/surveys/collections/${collectionIdParam}`
+                                    );
+                                    if (detailRes.ok) {
+                                        const detailJson =
+                                            await detailRes.json();
+                                        if (
+                                            detailJson.success &&
+                                            detailJson.data
+                                        ) {
+                                            collectionRef =
+                                                detailJson.data.collectionRef;
+                                        }
+                                    }
+                                } catch (error) {
+                                    console.warn(
+                                        "Could not fetch collection details",
+                                        error
+                                    );
+                                }
+
                                 setAreasPagination({
                                     currentIndex: 0, // Default to first area if no surveyId
                                     totalAreas: sortedAreas.length,
@@ -612,12 +949,17 @@ export default function SurveyForm() {
                                         id: area._id,
                                         name:
                                             area.structure?.structureId ||
-                                            `Area ${area.areaIndex + 1}`,
+                                            `Area ${
+                                                (area.collections?.find(
+                                                    (coll) =>
+                                                        coll.collectionId &&
+                                                        coll.collectionId.toString() ===
+                                                            collectionIdParam.toString()
+                                                )?.areaIndex || 0) + 1
+                                            }`,
                                         refValue: area.refValue,
                                     })),
-                                    collectionRef:
-                                        sortedAreas[0]?.collectionRef ||
-                                        "Collection",
+                                    collectionRef: collectionRef,
                                     collectionId: collectionIdParam,
                                 });
                             }
@@ -672,11 +1014,29 @@ export default function SurveyForm() {
                             Array.isArray(json.data) &&
                             json.data.length > 0
                         ) {
-                            // Sort by areaIndex
-                            const sortedAreas = json.data.sort(
-                                (a, b) =>
-                                    (a.areaIndex || 0) - (b.areaIndex || 0)
-                            );
+                            // MULTI-COLLECTION: Sort by areaIndex for this specific collection
+                            const sortedAreas = json.data.sort((a, b) => {
+                                // Find the collection entry for this specific collection
+                                const aEntry = a.collections?.find(
+                                    (coll) =>
+                                        coll.collectionId &&
+                                        coll.collectionId.toString() ===
+                                            targetCollectionId.toString()
+                                );
+
+                                const bEntry = b.collections?.find(
+                                    (coll) =>
+                                        coll.collectionId &&
+                                        coll.collectionId.toString() ===
+                                            targetCollectionId.toString()
+                                );
+
+                                // Use the areaIndex from the specific collection entry
+                                const aIndex = aEntry?.areaIndex || 0;
+                                const bIndex = bEntry?.areaIndex || 0;
+
+                                return aIndex - bIndex;
+                            });
 
                             // Find current survey's index in collection
                             const currentIndex = sortedAreas.findIndex(
@@ -690,6 +1050,30 @@ export default function SurveyForm() {
                             );
 
                             if (sortedAreas.length > 1) {
+                                // Get collection ref from API for display
+                                let collectionRef = "";
+                                try {
+                                    const detailRes = await fetch(
+                                        `/api/surveys/collections/${targetCollectionId}`
+                                    );
+                                    if (detailRes.ok) {
+                                        const detailJson =
+                                            await detailRes.json();
+                                        if (
+                                            detailJson.success &&
+                                            detailJson.data
+                                        ) {
+                                            collectionRef =
+                                                detailJson.data.collectionRef;
+                                        }
+                                    }
+                                } catch (error) {
+                                    console.warn(
+                                        "Could not fetch collection details",
+                                        error
+                                    );
+                                }
+
                                 setAreasPagination({
                                     currentIndex:
                                         currentIndex !== -1 ? currentIndex : 0,
@@ -698,12 +1082,17 @@ export default function SurveyForm() {
                                         id: area._id,
                                         name:
                                             area.structure?.structureId ||
-                                            `Area ${area.areaIndex + 1}`,
-                                        refValue: area.refValue,
+                                            `Area ${
+                                                (area.collections?.find(
+                                                    (coll) =>
+                                                        coll.collectionId &&
+                                                        coll.collectionId.toString() ===
+                                                            targetCollectionId.toString()
+                                                )?.areaIndex || 0) + 1
+                                            }`,
+                                        refValue: area.refValue || "",
                                     })),
-                                    collectionRef:
-                                        sortedAreas[0]?.collectionRef ||
-                                        "Collection",
+                                    collectionRef: collectionRef,
                                     collectionId: targetCollectionId,
                                 });
                             }
@@ -746,11 +1135,37 @@ export default function SurveyForm() {
                             const sortedSurveys = Array.isArray(
                                 json.data.surveys
                             )
-                                ? json.data.surveys.sort(
-                                      (a, b) =>
+                                ? json.data.surveys.sort((a, b) => {
+                                      // Try to find specific areaIndex from collections array
+                                      if (a.collections && b.collections) {
+                                          const aEntry = a.collections.find(
+                                              (coll) =>
+                                                  coll.collectionId &&
+                                                  coll.collectionId.toString() ===
+                                                      areasPagination.collectionId.toString()
+                                          );
+
+                                          const bEntry = b.collections.find(
+                                              (coll) =>
+                                                  coll.collectionId &&
+                                                  coll.collectionId.toString() ===
+                                                      areasPagination.collectionId.toString()
+                                          );
+
+                                          if (aEntry && bEntry) {
+                                              return (
+                                                  (aEntry.areaIndex || 0) -
+                                                  (bEntry.areaIndex || 0)
+                                              );
+                                          }
+                                      }
+
+                                      // Fall back to default sort by areaIndex
+                                      return (
                                           (a.areaIndex || 0) -
                                           (b.areaIndex || 0)
-                                  )
+                                      );
+                                  })
                                 : [];
 
                             console.log(
@@ -771,13 +1186,32 @@ export default function SurveyForm() {
                                     currentIndex:
                                         currentIndex !== -1 ? currentIndex : 0,
                                     totalAreas: sortedSurveys.length,
-                                    areasList: sortedSurveys.map((area) => ({
-                                        id: area._id,
-                                        name:
-                                            area.structure?.structureId ||
-                                            `Area ${area.areaIndex + 1}`,
-                                        refValue: area.refValue || "",
-                                    })),
+                                    areasList: sortedSurveys.map((area) => {
+                                        // Find the areaIndex for this specific collection
+                                        let areaIndex = 0;
+                                        if (area.collections) {
+                                            const entry = area.collections.find(
+                                                (coll) =>
+                                                    coll.collectionId &&
+                                                    coll.collectionId.toString() ===
+                                                        areasPagination.collectionId.toString()
+                                            );
+                                            if (entry) {
+                                                areaIndex =
+                                                    entry.areaIndex || 0;
+                                            }
+                                        } else {
+                                            areaIndex = area.areaIndex || 0;
+                                        }
+
+                                        return {
+                                            id: area._id,
+                                            name:
+                                                area.structure?.structureId ||
+                                                `Area ${areaIndex + 1}`,
+                                            refValue: area.refValue || "",
+                                        };
+                                    }),
                                 }));
 
                                 console.log(
@@ -893,8 +1327,15 @@ export default function SurveyForm() {
                     structureId: structureId || "Area 1",
                     structureTotal: 0,
                 },
-                collectionId: collectionId, // Reference the collection we just created
-                areaIndex: 0, // First survey is index 0
+                // MULTI-COLLECTION: Use collections array
+                collections: [
+                    {
+                        collectionId: collectionId,
+                        areaIndex: 0,
+                        collectionRef: collectionData.collectionRef,
+                        isPrimary: true,
+                    },
+                ],
                 // FIXED: Initialize with empty objects for comments
                 equipmentSurvey: {
                     entries: [],
@@ -949,6 +1390,19 @@ export default function SurveyForm() {
 
             // Update the internal state
             setInternalSurveyId(newSurveyId);
+
+            // MULTI-COLLECTION: Update all collections state
+            setSurveyCollections([
+                {
+                    id: collectionId,
+                    collectionId: collectionId,
+                    areaIndex: 0,
+                    collectionRef: collectionData.collectionRef,
+                    isPrimary: true,
+                    name: collectionData.name,
+                    totalAreas: 1,
+                },
+            ]);
 
             // Update pagination to show the new collection
             setAreasPagination({
@@ -1254,6 +1708,9 @@ export default function SurveyForm() {
         accessDoorSelections,
         groupDimensions,
         fanGradeSelections,
+
+        // MULTI-COLLECTION: Include collections array
+        collections: surveyCollections,
     };
 
     return (
@@ -1347,11 +1804,23 @@ export default function SurveyForm() {
 
             {/* Main Survey Content */}
             <>
-                {/* Collection information display if in a collection - USING NEW COMPONENT */}
+                {/* Collection information display if in a collection - USING UPDATED COMPONENT WITH COLLECTIONS */}
                 {areasPagination.totalAreas > 1 && (
                     <CollectionInfoBanner
                         areasPagination={areasPagination}
                         structureId={structureId}
+                        collections={surveyCollections}
+                        onSwitchCollection={(newCollectionId) => {
+                            // Handle switching to a different collection
+                            if (
+                                newCollectionId &&
+                                newCollectionId !== areasPagination.collectionId
+                            ) {
+                                router.push(
+                                    `/surveys/kitchenSurvey?id=${surveyId}&collection=${newCollectionId}`
+                                );
+                            }
+                        }}
                     />
                 )}
 
@@ -1553,7 +2022,7 @@ export default function SurveyForm() {
                         />
                     )}
 
-                    {/* Save and Add New Area buttons - USING NEW COMPONENT */}
+                    {/* Save and Add New Area buttons - USING CONSOLIDATED COMPONENT WITH COLLECTIONS */}
                     <SurveyActionButtonsConsolidated
                         contentRef={contentRef}
                         schematicRef={schematicRef}
@@ -1562,14 +2031,6 @@ export default function SurveyForm() {
                         areasPagination={areasPagination}
                         createSurveyIfNeeded={createMainSurveyInBackground}
                         fixedPosition={true}
-                    />
-                </div>
-
-                <div style={{ marginTop: "1rem" }}>
-                    <ExportPDF
-                        targetRef={contentRef}
-                        fileName="kitchen_survey.pdf"
-                        buttonText="Save as PDF"
                     />
                 </div>
             </>

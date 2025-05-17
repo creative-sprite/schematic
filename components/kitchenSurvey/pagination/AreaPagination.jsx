@@ -52,21 +52,54 @@ export default function AreaPagination({
                 if (res.ok) {
                     const json = await res.json();
                     if (json.success && json.data && json.data.surveys) {
-                        // Sort by areaIndex
-                        const sortedAreas = json.data.surveys.sort(
-                            (a, b) => (a.areaIndex || 0) - (b.areaIndex || 0)
-                        );
+                        // Fetch full details of each survey to get the area index for this collection
+                        const surveyDetails = [];
 
-                        // Convert to areasList format if needed
-                        const formattedAreas = sortedAreas.map((area) => ({
-                            id: area._id,
-                            name:
-                                area.structure?.structureId ||
-                                `Area ${area.areaIndex + 1}`,
-                            refValue: area.refValue || "",
-                        }));
+                        for (const surveyId of json.data.surveys) {
+                            const sid =
+                                typeof surveyId === "string"
+                                    ? surveyId
+                                    : surveyId._id;
+                            const surveyRes = await fetch(
+                                `/api/surveys/kitchenSurveys/viewAll/${sid}`
+                            );
 
-                        setAreas(formattedAreas);
+                            if (surveyRes.ok) {
+                                const surveyData = await surveyRes.json();
+                                if (surveyData.success && surveyData.data) {
+                                    // Find the collection entry for this specific collection
+                                    let areaIndex = 0;
+                                    const collectionEntry =
+                                        surveyData.data.collections?.find(
+                                            (c) =>
+                                                c.collectionId &&
+                                                c.collectionId.toString() ===
+                                                    pagination.collectionId
+                                        );
+
+                                    if (collectionEntry) {
+                                        areaIndex =
+                                            collectionEntry.areaIndex || 0;
+                                    }
+
+                                    surveyDetails.push({
+                                        id: sid,
+                                        name:
+                                            surveyData.data.structure
+                                                ?.structureId ||
+                                            `Area ${areaIndex + 1}`,
+                                        refValue:
+                                            surveyData.data.refValue || "",
+                                        areaIndex: areaIndex,
+                                    });
+                                }
+                            }
+                        }
+
+                        // Sort by area index within this specific collection
+                        surveyDetails.sort((a, b) => a.areaIndex - b.areaIndex);
+
+                        setAreas(surveyDetails);
                     }
                 }
             } catch (error) {
@@ -122,8 +155,13 @@ export default function AreaPagination({
                 currentSurveyId,
                 surveyData,
                 {
-                    collectionId: pagination.collectionId,
-                    areaIndex: pagination.currentIndex,
+                    // Only include collection info if we have a valid collection ID
+                    ...(pagination.collectionId
+                        ? {
+                              collectionId: pagination.collectionId,
+                              areaIndex: pagination.currentIndex,
+                          }
+                        : {}),
                 },
                 // Progress update function
                 (message, percent) => {

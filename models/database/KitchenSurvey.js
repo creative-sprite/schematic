@@ -251,6 +251,7 @@ const SchematicSchema = new Schema({
   schematicItemsTotal: { type: Number },
   flexiDuctSelections: { type: Schema.Types.Mixed }, // Map of item IDs to ventilation selections
   accessDoorSelections: { type: Schema.Types.Mixed }, // Map of item IDs to door selections
+  fanGradeSelections: { type: Schema.Types.Mixed }, // Map of item IDs to fan grade selections
 });
 
 // Sub-schema for duplicated area
@@ -274,19 +275,32 @@ const DuplicatedAreaSchema = new Schema({
   ventilation: VentilationInfoSchema,
 });
 
+// NEW: Sub-schema for collection memberships
+const CollectionMembershipSchema = new Schema({
+  collectionId: { type: Schema.Types.ObjectId, ref: "SurveyCollection" },
+  areaIndex: { type: Number, default: 0 },
+  collectionRef: { type: String },
+  isPrimary: { type: Boolean, default: false }
+});
+
 // Main KitchenSurvey schema
 const KitchenSurveySchema = new Schema(
   {
-    // REMOVED: Parent-child relationship fields
-    // parentSurvey: { type: Schema.Types.ObjectId, ref: "KitchenSurvey" },
-    // childAreas: [{ type: Schema.Types.ObjectId, ref: "KitchenSurvey" }],
-    
     // Basic Survey Information
     refValue: { type: String },
     surveyDate: { type: Date, default: Date.now },
 
     // Link to the selected Site document
     site: { type: Schema.Types.ObjectId, ref: "Site", required: true },
+
+    // UPDATED: Collection membership information
+    // REMOVED: Single collection fields
+    // collectionId: { type: Schema.Types.ObjectId, ref: "SurveyCollection" },
+    // areaIndex: { type: Number },
+    // collectionRef: { type: String },
+    
+    // NEW: Array of collection memberships
+    collections: [CollectionMembershipSchema],
 
     // Primary Contact Details
     primaryContact: {

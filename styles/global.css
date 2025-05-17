@@ -64,3 +64,8 @@ body {
   padding: 0;
   box-sizing: border-box;
 }
+
+#__next-build-watcher, 
+nextjs-portal {
+  display: none !important;
+}

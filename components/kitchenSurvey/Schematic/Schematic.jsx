@@ -81,6 +81,32 @@ function Schematic({
         schematic: false,
     });
 
+    // NEW: Reference for global instance access to allow syncing door prices
+    const instanceRef = useRef({
+        syncDoorPrices: () => {
+            // Skip if already updating
+            if (updatingStateRef.current) return false;
+
+            // Calculate total price from all door selections
+            let totalAccessDoorPrice = 0;
+            Object.values(accessDoorSelections).forEach((door) => {
+                if (door && door.price) {
+                    totalAccessDoorPrice += Number(door.price);
+                }
+            });
+
+            // Update local state if there's a change
+            if (Math.abs(accessDoorPrice - totalAccessDoorPrice) > 0.001) {
+                setAccessDoorPrice(totalAccessDoorPrice);
+                prevValuesRef.current.accessDoorPrice = totalAccessDoorPrice;
+                pricesSentRef.current.accessDoor = false; // Reset flag to trigger parent update
+                return true;
+            }
+
+            return false;
+        },
+    });
+
     // ADDED: Track previous values for deep comparison
     const prevValuesRef = useRef({
         accessDoorPrice: initialAccessDoorPrice || 0,
@@ -160,6 +186,21 @@ function Schematic({
         onSchematicItemsTotalChange,
         onGroupIdChange,
     ]);
+
+    // NEW: Register the global instance for external access
+    useEffect(() => {
+        if (typeof window !== "undefined") {
+            window.schematicInstance = instanceRef.current;
+        }
+        return () => {
+            if (
+                typeof window !== "undefined" &&
+                window.schematicInstance === instanceRef.current
+            ) {
+                delete window.schematicInstance;
+            }
+        };
+    }, []);
 
     // NEW: Use a ref for selectedGroupId to avoid dependency issues
     const selectedGroupIdRef = useRef(initialSelectedGroupId);

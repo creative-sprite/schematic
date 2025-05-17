@@ -31,6 +31,7 @@ export default function CombineAreas({
     const [isCreating, setIsCreating] = useState(false);
     const [showConfirmDialog, setShowConfirmDialog] = useState(false);
     const [newSurveyName, setNewSurveyName] = useState("");
+    const [setPrimaryCollection, setSetPrimaryCollection] = useState(true);
 
     // State for progress tracking
     const [showProgressOverlay, setShowProgressOverlay] = useState(false);
@@ -207,94 +208,35 @@ export default function CombineAreas({
             const newCollectionId = collJson.data._id;
             console.log(`Created new collection with ID: ${newCollectionId}`);
 
-            // Step 4: Create surveys in the new collection for each area
-            setProgressMessage("Creating combined surveys...");
+            // Step 4: Add each selected area to the new collection
+            setProgressMessage("Adding areas to collection...");
             setProgressValue(60);
-
-            const createdSurveys = [];
 
             for (let i = 0; i < areaDetails.length; i++) {
                 const area = areaDetails[i];
                 setProgressValue(60 + (i / areaDetails.length) * 30); // 60-90% progress
 
-                // Create a copy of the area with modified references
-                const newAreaPayload = {
-                    // Basic info
-                    refValue: `${newRefId}-Area${i + 1}`,
-                    surveyDate: new Date(),
-                    site: area.site._id || area.site,
-
-                    // Collection reference
-                    collectionId: newCollectionId,
-                    areaIndex: i,
-
-                    // Copy essential fields from original
-                    structure: area.structure,
-                    canopySurvey: area.canopySurvey,
-                    equipmentSurvey: area.equipmentSurvey,
-                    specialistEquipmentSurvey: area.specialistEquipmentSurvey,
-                    ventilationInfo: area.ventilationInfo,
-                    schematic: area.schematic,
-                    access: area.access,
-                    operations: area.operations,
-                    notes: area.notes,
-                    images: area.images,
-                    contacts: area.contacts,
-                    general: area.general,
-
-                    // Make sure to include totals
-                    totals: area.totals,
-                };
-
-                // Create the new survey
-                const surveyRes = await fetch("/api/surveys/kitchenSurveys", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(newAreaPayload),
-                });
-
-                if (surveyRes.ok) {
-                    const surveyJson = await surveyRes.json();
-                    if (surveyJson.success && surveyJson.data) {
-                        createdSurveys.push(surveyJson.data);
-                    }
+                try {
+                    // Add this area to the new collection using the PATCH endpoint
+                    await fetch(`/api/surveys/collections/${newCollectionId}`, {
+                        method: "PATCH",
+                        headers: {
+                            "Content-Type": "application/json",
+                        },
+                        body: JSON.stringify({
+                            surveyId: area._id,
+                            areaIndex: i,
+                            isPrimary: setPrimaryCollection,
+                        }),
+                    });
+                } catch (error) {
+                    console.error("Error adding area to collection:", error);
                 }
-            }
-
-            if (createdSurveys.length === 0) {
-                throw new Error(
-                    "Failed to create surveys in the new collection"
-                );
             }
 
             // Step 5: Finalize and update collection
             setProgressMessage("Finalizing combined survey...");
             setProgressValue(95);
-
-            // Update the collection with the newly created surveys if needed
-            if (createdSurveys.length > 0) {
-                try {
-                    const updateRes = await fetch(
-                        `/api/surveys/collections/${newCollectionId}`,
-                        {
-                            method: "PUT",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({
-                                name: newSurveyName,
-                                totalAreas: createdSurveys.length,
-                            }),
-                        }
-                    );
-
-                    if (!updateRes.ok) {
-                        console.warn(
-                            "Warning: Failed to update collection name"
-                        );
-                    }
-                } catch (error) {
-                    console.warn("Warning: Error updating collection:", error);
-                }
-            }
 
             // Success! Navigate to the first survey in the new collection
             setProgressValue(100);
@@ -303,15 +245,15 @@ export default function CombineAreas({
             toast.current.show({
                 severity: "success",
                 summary: "Success",
-                detail: `Created combined survey with ${createdSurveys.length} areas`,
+                detail: `Created combined survey with ${areaDetails.length} areas`,
                 life: 3000,
             });
 
             // Allow time for the user to see the success message
             setTimeout(() => {
                 // Navigate to the first survey in the new collection
-                if (createdSurveys.length > 0) {
-                    const firstSurveyId = createdSurveys[0]._id;
+                if (areaDetails.length > 0) {
+                    const firstSurveyId = areaDetails[0]._id;
                     router.push(
                         `/surveys/kitchenSurvey?id=${firstSurveyId}&collection=${newCollectionId}`
                     );
@@ -344,9 +286,10 @@ export default function CombineAreas({
                 // Button to start combination mode
                 <Button
                     icon="pi pi-object-group"
-                    label="Create Survey"
+                    label="+ Survey"
                     className="p-button-outlined p-button-info"
                     onClick={startSelectionMode}
+                    style={{ paddingRight: "1.4rem" }}
                 />
             ) : (
                 // Confirm/Cancel buttons when in selection mode
@@ -400,7 +343,31 @@ export default function CombineAreas({
                             autoFocus
                         />
                     </div>
-                    <div className="p-field mt-3">
+                    <div className="p-field mt-3" style={{ marginTop: "1rem" }}>
+                        <label className="p-checkbox-label">
+                            <Checkbox
+                                inputId="setPrimary"
+                                checked={setPrimaryCollection}
+                                onChange={(e) =>
+                                    setSetPrimaryCollection(e.checked)
+                                }
+                            />
+                            <span style={{ marginLeft: "0.5rem" }}>
+                                Set as primary collection for these areas
+                            </span>
+                        </label>
+                        <small
+                            style={{
+                                display: "block",
+                                marginTop: "0.5rem",
+                                color: "#666",
+                            }}
+                        >
+                            When checked, this collection will become the
+                            primary collection for all selected areas.
+                        </small>
+                    </div>
+                    <div className="p-field mt-3" style={{ marginTop: "1rem" }}>
                         <p>
                             <strong>{Object.keys(selectedAreas).length}</strong>{" "}
                             areas will be combined into a new survey.

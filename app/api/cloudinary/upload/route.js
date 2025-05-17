@@ -5,6 +5,7 @@ import { getCloudinaryConfig } from '@/lib/cloudinary';
 /**
  * API route to handle server-side Cloudinary uploads
  * This provides more control and security than client-side uploads
+ * Supports both images and PDF documents
  */
 export async function POST(request) {
   console.log('[CloudinaryAPI] Upload request received');
@@ -32,8 +33,10 @@ export async function POST(request) {
     
     const file = formData.get('file');
     const folder = formData.get('folder') || 'surveys/uploads';
+    const resourceType = formData.get('resource_type') || 'auto';
     
     console.log('[CloudinaryAPI] Folder:', folder);
+    console.log('[CloudinaryAPI] Resource type:', resourceType);
     
     if (!file) {
       console.error('[CloudinaryAPI] No file provided in form data');
@@ -49,9 +52,27 @@ export async function POST(request) {
       size: file.size
     });
     
-    // Convert file to buffer for Cloudinary upload
-    const buffer = Buffer.from(await file.arrayBuffer());
-    console.log('[CloudinaryAPI] Converted file to buffer, size:', buffer.length);
+    // Determine if this is a PDF from the file type or name
+    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+    
+    // Enhanced error handling and debugging for buffer conversion
+    let buffer;
+    try {
+      buffer = Buffer.from(await file.arrayBuffer());
+      console.log('[CloudinaryAPI] Buffer created successfully, size:', buffer.length);
+      
+      // Additional check for PDF files
+      if (isPdf) {
+        console.log('[CloudinaryAPI] Processing PDF file, first 20 bytes:', 
+          buffer.slice(0, 20).toString('hex'));
+      }
+    } catch (bufferError) {
+      console.error('[CloudinaryAPI] Error creating buffer:', bufferError);
+      return NextResponse.json(
+        { success: false, message: 'Error processing file buffer', error: bufferError.message },
+        { status: 500 }
+      );
+    }
     
     // Check if we should preserve the original filename or add timestamp
     const preserveFilename = formData.get('preserveFilename') === 'true';
@@ -74,48 +95,71 @@ export async function POST(request) {
     // Upload config
     const uploadConfig = {
       folder,
-      public_id: finalFilename,
-      resource_type: 'auto',
+      public_id: finalFilename.replace(/\.[^/.]+$/, ""), // Remove extension for public_id
+      resource_type: resourceType,
       upload_preset: process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET,
     };
     
+    // If it's a PDF and resourceType wasn't explicitly set, use 'raw'
+    if (isPdf && resourceType === 'auto') {
+      uploadConfig.resource_type = 'raw';
+      console.log('[CloudinaryAPI] Detected PDF, setting resource_type to raw');
+    }
+    
     console.log('[CloudinaryAPI] Upload config:', uploadConfig);
     
-    // Upload to Cloudinary using upload_stream
-    console.log('[CloudinaryAPI] Starting Cloudinary upload...');
-    const uploadResult = await new Promise((resolve, reject) => {
-      // Create upload stream
-      const uploadStream = cloudinary.uploader.upload_stream(
-        uploadConfig,
-        (error, result) => {
-          if (error) {
-            console.error('[CloudinaryAPI] Cloudinary upload error:', error);
-            reject(error);
-          } else {
-            console.log('[CloudinaryAPI] Cloudinary upload success:', {
-              public_id: result.public_id,
-              format: result.format,
-              secure_url: result.secure_url
-            });
-            resolve(result);
+    // More detailed error handling for Cloudinary upload
+    try {
+      // Upload to Cloudinary using upload_stream
+      console.log('[CloudinaryAPI] Starting Cloudinary upload...');
+      const uploadResult = await new Promise((resolve, reject) => {
+        // Create upload stream
+        const uploadStream = cloudinary.uploader.upload_stream(
+          uploadConfig,
+          (error, result) => {
+            if (error) {
+              console.error('[CloudinaryAPI] Cloudinary upload error:', error);
+              reject(error);
+            } else {
+              console.log('[CloudinaryAPI] Cloudinary upload success:', {
+                public_id: result.public_id,
+                format: result.format,
+                resource_type: result.resource_type,
+                secure_url: result.secure_url
+              });
+              resolve(result);
+            }
           }
-        }
-      );
+        );
+        
+        // Pass buffer to stream
+        uploadStream.end(buffer);
+      });
       
-      // Pass buffer to stream
-      uploadStream.end(buffer);
-    });
-    
-    // Return successful response with upload details
-    console.log('[CloudinaryAPI] Upload complete, returning response');
-    return NextResponse.json(
-      { 
-        success: true, 
-        data: uploadResult,
-        message: 'File uploaded successfully' 
-      },
-      { status: 200 }
-    );
+      // Return successful response with upload details
+      console.log('[CloudinaryAPI] Upload complete, returning response');
+      return NextResponse.json(
+        { 
+          success: true, 
+          data: uploadResult,
+          message: 'File uploaded successfully' 
+        },
+        { status: 200 }
+      );
+    } catch (uploadError) {
+      console.error('[CloudinaryAPI] Cloudinary upload error:', uploadError);
+      
+      // Return more detailed error response
+      return NextResponse.json(
+        { 
+          success: false, 
+          message: 'Error during Cloudinary upload',
+          error: uploadError.message,
+          details: uploadError.details || 'No additional details available'
+        },
+        { status: 500 }
+      );
+    }
   } catch (error) {
     console.error('[CloudinaryAPI] Server error during upload:', error);
     return NextResponse.json(

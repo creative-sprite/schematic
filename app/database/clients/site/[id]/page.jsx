@@ -13,12 +13,14 @@ import useEntityData from "@/components/database/clients/common/useEntityData";
 import KitchenSurveyList from "@/components/kitchenSurvey/storedSiteSurveys/KitchenSurveyList";
 import AreaSurveyList from "@/components/kitchenSurvey/storedAreaSurveys/AreaSurveyList";
 import QuotesList from "@/components/kitchenSurvey/storedQuotes/QuotesList";
+import CombineAreas from "@/components/kitchenSurvey/storedAreaSurveys/CombineAreas";
 
 export default function SiteDetail() {
     const { id } = useParams();
     const [surveyCount, setSurveyCount] = useState(0);
     const [areaCount, setAreaCount] = useState(0);
     const [quoteCount, setQuoteCount] = useState(0);
+    const [collections, setCollections] = useState([]);
     const {
         entity: site,
         loading,
@@ -78,9 +80,26 @@ export default function SiteDetail() {
                 }
             };
 
+            const fetchCollections = async () => {
+                try {
+                    const res = await fetch(
+                        `/api/surveys/collections?siteId=${site._id}`
+                    );
+                    if (res.ok) {
+                        const json = await res.json();
+                        if (json.success && Array.isArray(json.data)) {
+                            setCollections(json.data);
+                        }
+                    }
+                } catch (error) {
+                    console.error("Error fetching collections:", error);
+                }
+            };
+
             fetchSurveyCount();
             fetchAreaCount();
             fetchQuoteCount();
+            fetchCollections();
         }
     }, [site]);
 
@@ -94,7 +113,7 @@ export default function SiteDetail() {
                     alignItems: "center",
                 }}
             >
-                <span>Kitchen Surveys</span>
+                <span>Surveys</span>
                 <span style={{ fontSize: "0.9rem", color: "#666" }}>
                     {surveyCount} {surveyCount === 1 ? "Survey" : "Surveys"}
                 </span>
@@ -113,9 +132,24 @@ export default function SiteDetail() {
                 }}
             >
                 <span>Areas</span>
-                <span style={{ fontSize: "0.9rem", color: "#666" }}>
-                    {areaCount} {areaCount === 1 ? "Area" : "Areas"}
-                </span>
+                <div
+                    style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "1rem",
+                    }}
+                >
+                    {site && site._id && (
+                        <CombineAreas
+                            siteId={site._id}
+                            collections={collections || []}
+                            onToggleSelectionMode={() => {}}
+                        />
+                    )}
+                    <span style={{ fontSize: "0.9rem", color: "#666" }}>
+                        {areaCount} {areaCount === 1 ? "Area" : "Areas"}
+                    </span>
+                </div>
             </div>
         );
     };
@@ -157,10 +191,9 @@ export default function SiteDetail() {
                 <div
                     style={{
                         display: "flex",
-                        flexWrap: "wrap",
+                        flexDirection: "column",
                         gap: "1rem",
-                        maxHeight: "800px",
-                        overflowY: "auto",
+                        width: "100%",
                     }}
                 >
                     <Card

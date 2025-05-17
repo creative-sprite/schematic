@@ -584,16 +584,40 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
 
                 // Simplified canopy data loading
                 if (survey.canopySurvey) {
-                    // Set canopy entries and total
+                    // First check for canopy total in the totals section (priority source)
+                    if (
+                        survey.totals &&
+                        survey.totals.mainArea &&
+                        survey.totals.mainArea.canopyTotal
+                    ) {
+                        setCanopyTotal(survey.totals.mainArea.canopyTotal);
+                        console.log(
+                            "Loading canopy total from totals section:",
+                            survey.totals.mainArea.canopyTotal
+                        );
+                    } else if (
+                        survey.canopySurvey.entries &&
+                        survey.canopySurvey.entries.length > 0 &&
+                        survey.canopySurvey.entries[0].canopyTotal
+                    ) {
+                        // Fall back to entries if totals section doesn't have it
+                        setCanopyTotal(
+                            survey.canopySurvey.entries[0].canopyTotal
+                        );
+                        console.log(
+                            "Loading canopy total from first entry:",
+                            survey.canopySurvey.entries[0].canopyTotal
+                        );
+                    } else {
+                        setCanopyTotal(0);
+                        console.log("No canopy total found, setting to 0");
+                    }
+
+                    // Set canopy entries
                     if (
                         survey.canopySurvey.entries &&
                         survey.canopySurvey.entries.length > 0
                     ) {
-                        // Extract total from first entry if available
-                        setCanopyTotal(
-                            survey.canopySurvey.entries[0].canopyTotal || 0
-                        );
-
                         // Process entries with cleaner structure
                         const processedEntries =
                             survey.canopySurvey.entries.map((entry) => {
@@ -616,13 +640,42 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
                                         width: null,
                                         height: null,
                                     },
+                                    // Make sure to include the canopy total in each entry
+                                    canopyTotal:
+                                        entry.canopyTotal ||
+                                        survey.totals?.mainArea?.canopyTotal ||
+                                        0,
                                 };
                             });
 
                         setCanopyEntries(processedEntries);
+                    } else if (survey.totals?.mainArea?.canopyTotal > 0) {
+                        // If we have a total but no entries, create a placeholder entry
+                        setCanopyEntries([
+                            {
+                                id: Date.now().toString(),
+                                canopy: {
+                                    type: "Canopy",
+                                    item: "Standard Canopy",
+                                    grade: "Standard",
+                                    length: 1,
+                                    width: 1,
+                                    height: 1,
+                                },
+                                filter: {
+                                    type: "Filter",
+                                    item: "Standard Filter",
+                                    grade: "Standard",
+                                    number: 1,
+                                    length: null,
+                                    width: null,
+                                    height: null,
+                                },
+                                canopyTotal: survey.totals.mainArea.canopyTotal,
+                            },
+                        ]);
                     } else {
                         setCanopyEntries([]);
-                        setCanopyTotal(0);
                     }
 
                     // FIXED: Always set canopy comments, even if empty
@@ -640,7 +693,33 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
 
                 // Set schematic data
                 if (survey.schematic) {
-                    setAccessDoorPrice(survey.schematic.accessDoorPrice || 0);
+                    // FIXED: Set access door selections and calculate total price
+                    const doorSelections =
+                        survey.schematic.accessDoorSelections || {};
+                    setAccessDoorSelections(doorSelections);
+
+                    // Calculate total price from all door selections
+                    const calculatedDoorPrice = Object.values(
+                        doorSelections
+                    ).reduce((total, door) => {
+                        const doorPrice = Number(door.price) || 0;
+                        return total + doorPrice;
+                    }, 0);
+
+                    // Use calculated price if greater than 0, otherwise use saved value as fallback
+                    console.log(
+                        "Calculated access door price:",
+                        calculatedDoorPrice
+                    );
+                    if (calculatedDoorPrice > 0) {
+                        setAccessDoorPrice(calculatedDoorPrice);
+                    } else {
+                        setAccessDoorPrice(
+                            survey.schematic.accessDoorPrice || 0
+                        );
+                    }
+
+                    // Set other schematic prices
                     setVentilationPrice(survey.schematic.ventilationPrice || 0);
                     setAirPrice(survey.schematic.airPrice || 0);
                     setFanPartsPrice(survey.schematic.fanPartsPrice || 0);
@@ -686,9 +765,6 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
                     // FIXED: Always set selections, even if empty
                     setFlexiDuctSelections(
                         survey.schematic.flexiDuctSelections || {}
-                    );
-                    setAccessDoorSelections(
-                        survey.schematic.accessDoorSelections || {}
                     );
                     setFanGradeSelections(
                         survey.schematic.fanGradeSelections || {}
@@ -1115,6 +1191,8 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
         setFlexiDuctSelections,
         accessDoorSelections,
         setAccessDoorSelections,
+        groupDimensions,
+        setGroupDimensions,
         fanGradeSelections,
         setFanGradeSelections,
 
