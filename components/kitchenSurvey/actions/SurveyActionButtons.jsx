@@ -3,6 +3,8 @@ import React, { useState, useRef } from "react";
 import { Toast } from "primereact/toast";
 import SaveSurvey from "@/components/kitchenSurvey/save/SaveSurvey";
 import AddNewArea from "@/components/kitchenSurvey/AddNewArea";
+import PreviewPDFModal from "@/components/kitchenSurvey/quote/PreviewPDFModal";
+import { Button } from "primereact/button";
 
 export default function SurveyActionButtons({
     // Refs
@@ -21,12 +23,14 @@ export default function SurveyActionButtons({
     primaryContactIndex,
     walkAroundContactIndex,
 
-    // Structure data
+    // Structure data - including both legacy and new fields
     structureId,
     structureTotal,
     structureSelectionData,
     structureDimensions,
     structureComments,
+    // NEW: Add structureEntries as primary data storage
+    structureEntries = [],
 
     // Equipment data
     surveyData,
@@ -80,6 +84,10 @@ export default function SurveyActionButtons({
     fixedPosition = true,
 }) {
     const toast = useRef(null);
+    // New state for controlling preview modal
+    const [previewModalVisible, setPreviewModalVisible] = useState(false);
+    // State to store schematic HTML for preview
+    const [capturedSchematicHtml, setCapturedSchematicHtml] = useState(null);
 
     // Container style based on position preference
     const containerStyle = {
@@ -98,7 +106,37 @@ export default function SurveyActionButtons({
               }),
     };
 
-    // Create a complete surveyData object for AddNewArea
+    // Function to capture schematic HTML and show preview
+    const handlePreviewClick = async () => {
+        try {
+            // Capture the schematic HTML if a ref is provided
+            let schematicHtml = null;
+            if (schematicRef && schematicRef.current) {
+                // Get the HTML content
+                schematicHtml = schematicRef.current.outerHTML;
+                // Clean it up with DOMParser
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(schematicHtml, "text/html");
+                schematicHtml = doc.body.innerHTML;
+            }
+
+            // Store the schematic HTML
+            setCapturedSchematicHtml(schematicHtml);
+
+            // Show the preview modal
+            setPreviewModalVisible(true);
+        } catch (error) {
+            console.error("Error preparing preview:", error);
+            toast.current?.show({
+                severity: "error",
+                summary: "Preview Error",
+                detail: "Could not generate preview",
+                life: 3000,
+            });
+        }
+    };
+
+    // Create a complete surveyData object for AddNewArea and Preview
     const consolidatedSurveyData = {
         refValue,
         surveyDate,
@@ -106,9 +144,11 @@ export default function SurveyActionButtons({
         siteDetails,
         structureId,
         structureTotal,
+        // Include both legacy structure fields and the new entries array
         structureSelectionData,
         structureDimensions,
         structureComments,
+        structureEntries, // NEW: Include structure entries array
         surveyData: surveyData || [],
         equipmentItems,
         specialistEquipmentData,
@@ -163,9 +203,17 @@ export default function SurveyActionButtons({
                     walkAroundContactIndex={walkAroundContactIndex}
                     parking={parking}
                     onAreaAdded={(newAreaInfo) => {
-                        console.log("New area will be added:", newAreaInfo);
-                        // Don't update state here - will be handled after navigation
+                        // console.log("New area will be added:", newAreaInfo);
                     }}
+                />
+
+                {/* PDF Button */}
+                <Button
+                    label="Preview PDF"
+                    icon="pi pi-eye"
+                    className="p-button-help"
+                    onClick={handlePreviewClick}
+                    tooltip="Preview PDF without saving"
                 />
 
                 {/* Save Survey button */}
@@ -185,6 +233,7 @@ export default function SurveyActionButtons({
                     structureSelectionData={structureSelectionData}
                     structureDimensions={structureDimensions}
                     structureComments={structureComments}
+                    structureEntries={structureEntries}
                     surveyData={surveyData}
                     equipmentItems={equipmentItems}
                     specialistEquipmentData={specialistEquipmentData}
@@ -203,7 +252,7 @@ export default function SurveyActionButtons({
                     equipment={equipment}
                     notes={notes}
                     ventilation={ventilation}
-                    childAreas={[]} // Empty array since we're removing child areas
+                    childAreas={[]}
                     modify={modify}
                     surveyImages={surveyImages}
                     placedItems={placedItems}
@@ -226,6 +275,14 @@ export default function SurveyActionButtons({
                     totalAreas={totalAreas}
                 />
             </div>
+
+            {/* Preview PDF Modal */}
+            <PreviewPDFModal
+                visible={previewModalVisible}
+                onHide={() => setPreviewModalVisible(false)}
+                surveyData={consolidatedSurveyData}
+                schematicHtml={capturedSchematicHtml}
+            />
         </>
     );
 }
@@ -250,8 +307,15 @@ export function SurveyActionButtonsConsolidated({
 
     // Position options
     fixedPosition = true,
+
+    // Force sync components function
+    forceSyncComponents = () => true,
 }) {
     const toast = useRef(null);
+    // State for controlling preview modal
+    const [previewModalVisible, setPreviewModalVisible] = useState(false);
+    // State to store schematic HTML for preview
+    const [capturedSchematicHtml, setCapturedSchematicHtml] = useState(null);
 
     const containerStyle = {
         display: "flex",
@@ -269,6 +333,41 @@ export function SurveyActionButtonsConsolidated({
               }),
     };
 
+    // Function to capture schematic HTML and show preview
+    const handlePreviewClick = async () => {
+        try {
+            // Force component state sync before preview if available
+            if (typeof forceSyncComponents === "function") {
+                forceSyncComponents();
+            }
+
+            // Capture the schematic HTML if a ref is provided
+            let schematicHtml = null;
+            if (schematicRef && schematicRef.current) {
+                // Get the HTML content
+                schematicHtml = schematicRef.current.outerHTML;
+                // Clean it up with DOMParser
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(schematicHtml, "text/html");
+                schematicHtml = doc.body.innerHTML;
+            }
+
+            // Store the schematic HTML
+            setCapturedSchematicHtml(schematicHtml);
+
+            // Show the preview modal
+            setPreviewModalVisible(true);
+        } catch (error) {
+            console.error("Error preparing preview:", error);
+            toast.current?.show({
+                severity: "error",
+                summary: "Preview Error",
+                detail: "Could not generate preview",
+                life: 3000,
+            });
+        }
+    };
+
     // Extract all the necessary properties from surveyData
     const {
         refValue,
@@ -283,6 +382,7 @@ export function SurveyActionButtonsConsolidated({
         structureSelectionData,
         structureDimensions,
         structureComments,
+        structureEntries = [],
         surveyData: equipmentSurveyData,
         equipmentItems,
         specialistEquipmentData,
@@ -341,6 +441,14 @@ export function SurveyActionButtonsConsolidated({
                     }}
                 />
 
+                {/* Preview PDF Button */}
+                <Button
+                    label="Preview Quote"
+                    className="p-button-help"
+                    onClick={handlePreviewClick}
+                    tooltip="Preview PDF without saving"
+                />
+
                 {/* Save Survey button */}
                 <SaveSurvey
                     targetRef={contentRef}
@@ -358,6 +466,7 @@ export function SurveyActionButtonsConsolidated({
                     structureSelectionData={structureSelectionData}
                     structureDimensions={structureDimensions}
                     structureComments={structureComments}
+                    structureEntries={structureEntries}
                     surveyData={equipmentSurveyData}
                     equipmentItems={equipmentItems}
                     specialistEquipmentData={specialistEquipmentData}
@@ -399,6 +508,14 @@ export function SurveyActionButtonsConsolidated({
                     totalAreas={areasPagination.totalAreas}
                 />
             </div>
+
+            {/* Preview PDF Modal */}
+            <PreviewPDFModal
+                visible={previewModalVisible}
+                onHide={() => setPreviewModalVisible(false)}
+                surveyData={surveyData}
+                schematicHtml={capturedSchematicHtml}
+            />
         </>
     );
 }

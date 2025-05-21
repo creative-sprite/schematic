@@ -108,3 +108,7 @@ table select {
     gap: 10px; /* reduce gap on smaller screens if you like */
   }
 }
+
+.p-inputtextarea.p-filled {
+  border-color: var(--primary-color) !important;
+}

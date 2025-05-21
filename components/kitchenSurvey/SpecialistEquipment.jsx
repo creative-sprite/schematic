@@ -29,21 +29,21 @@ export default function SpecialistEquipment({
 }) {
     // Enhanced debug logging for initial props
     useEffect(() => {
-        console.log("SPECIALIST: Component received props:", {
-            initialSpecialistEquipmentData:
-                initialSpecialistEquipmentData?.length || 0,
-            initialCategoryComments: initialCategoryComments
-                ? `Object with ${
-                      Object.keys(initialCategoryComments || {}).length
-                  } keys`
-                : "undefined/null",
-            equipmentCategoryComments: equipment?.categoryComments
-                ? `Object with ${
-                      Object.keys(equipment?.categoryComments || {}).length
-                  } keys`
-                : "undefined/null",
-            commentsContent: JSON.stringify(initialCategoryComments || {}),
-        });
+        // console.log("SPECIALIST: Component received props:", {
+        //     initialSpecialistEquipmentData:
+        //         initialSpecialistEquipmentData?.length || 0,
+        //     initialCategoryComments: initialCategoryComments
+        //         ? `Object with ${
+        //               Object.keys(initialCategoryComments || {}).length
+        //           } keys`
+        //         : "undefined/null",
+        //     equipmentCategoryComments: equipment?.categoryComments
+        //         ? `Object with ${
+        //               Object.keys(equipment?.categoryComments || {}).length
+        //           } keys`
+        //         : "undefined/null",
+        //     commentsContent: JSON.stringify(initialCategoryComments || {}),
+        // });
     }, [initialSpecialistEquipmentData, initialCategoryComments, equipment]);
 
     // State for holding product items fetched from the API.
@@ -75,12 +75,12 @@ export default function SpecialistEquipment({
             typeof initialCategoryComments === "object" &&
             Object.keys(initialCategoryComments).length > 0
         ) {
-            console.log(
-                "SPECIALIST: Initializing with initialCategoryComments:",
-                Object.keys(initialCategoryComments).length,
-                "items",
-                JSON.stringify(initialCategoryComments)
-            );
+            // console.log(
+            //     "SPECIALIST: Initializing with initialCategoryComments:",
+            //     Object.keys(initialCategoryComments).length,
+            //     "items",
+            //     JSON.stringify(initialCategoryComments)
+            // );
             return { ...initialCategoryComments };
         }
         // Second priority: use equipment.categoryComments if it has keys
@@ -89,18 +89,18 @@ export default function SpecialistEquipment({
             typeof equipment.categoryComments === "object" &&
             Object.keys(equipment.categoryComments).length > 0
         ) {
-            console.log(
-                "SPECIALIST: Initializing with equipment.categoryComments:",
-                Object.keys(equipment.categoryComments).length,
-                "items",
-                JSON.stringify(equipment.categoryComments)
-            );
+            // console.log(
+            //     "SPECIALIST: Initializing with equipment.categoryComments:",
+            //     Object.keys(equipment.categoryComments).length,
+            //     "items",
+            //     JSON.stringify(equipment.categoryComments)
+            // );
             return { ...equipment.categoryComments };
         }
 
-        console.log(
-            "SPECIALIST: No category comments found, using empty object"
-        );
+        // console.log(
+        //     "SPECIALIST: No category comments found, using empty object"
+        // );
         return {};
     });
 
@@ -157,11 +157,11 @@ export default function SpecialistEquipment({
             Object.keys(initialCategoryComments).length > 0 &&
             initialComments !== prevComments
         ) {
-            console.log(
-                "SPECIALIST: Updating from initialCategoryComments change:",
-                Object.keys(initialCategoryComments).length,
-                "items"
-            );
+            // console.log(
+            //     "SPECIALIST: Updating from initialCategoryComments change:",
+            //     Object.keys(initialCategoryComments).length,
+            //     "items"
+            // );
             setCategoryComments({ ...initialCategoryComments });
         }
         // If no initialCategoryComments, check if equipment.categoryComments changed and has data
@@ -171,11 +171,11 @@ export default function SpecialistEquipment({
             Object.keys(equipment.categoryComments).length > 0 &&
             equipmentComments !== prevComments
         ) {
-            console.log(
-                "SPECIALIST: Updating from equipment.categoryComments change:",
-                Object.keys(equipment.categoryComments).length,
-                "items"
-            );
+            // console.log(
+            //     "SPECIALIST: Updating from equipment.categoryComments change:",
+            //     Object.keys(equipment.categoryComments).length,
+            //     "items"
+            // );
             setCategoryComments({ ...equipment.categoryComments });
         }
         // Empty dependency array since we're using refs for comparison
@@ -187,11 +187,11 @@ export default function SpecialistEquipment({
             initialSpecialistEquipmentData &&
             initialSpecialistEquipmentData.length > 0
         ) {
-            console.log(
-                "SPECIALIST: Loading initial data:",
-                initialSpecialistEquipmentData.length,
-                "items"
-            );
+            // console.log(
+            //     "SPECIALIST: Loading initial data:",
+            //     initialSpecialistEquipmentData.length,
+            //     "items"
+            // );
             setSurveyList(initialSpecialistEquipmentData);
         }
         // Use string length as dependency to keep array size consistent
@@ -207,7 +207,7 @@ export default function SpecialistEquipment({
                 setLoading(true);
                 didFetchRef.current = true; // Mark as fetched to prevent duplicates
 
-                console.log("SPECIALIST: Fetching product items...");
+                // console.log("SPECIALIST: Fetching product items...");
                 const res = await fetch("/api/database/products");
 
                 if (!res.ok) {
@@ -222,16 +222,16 @@ export default function SpecialistEquipment({
                         PREDEFINED_CATEGORIES.includes(product.category)
                     );
 
-                    console.log(
-                        `SPECIALIST: Fetched ${filteredProducts.length} products in predefined categories`
-                    );
+                    // console.log(
+                    //     `SPECIALIST: Fetched ${filteredProducts.length} products in predefined categories`
+                    // );
 
                     setProductItems(filteredProducts);
                 } else {
-                    console.error("Failed to fetch product items:", json);
+                    // console.error("Failed to fetch product items:", json);
                 }
             } catch (error) {
-                console.error("Error fetching product items:", error);
+                // console.error("Error fetching product items:", error);
             } finally {
                 setLoading(false);
             }
@@ -251,9 +251,9 @@ export default function SpecialistEquipment({
             const currentStr = JSON.stringify(categoryComments);
 
             if (commentStr !== currentStr) {
-                console.log(
-                    "SPECIALIST: initialCategoryComments updated, syncing..."
-                );
+                // console.log(
+                //     "SPECIALIST: initialCategoryComments updated, syncing..."
+                // );
                 setCategoryComments({ ...initialCategoryComments });
             }
         }
@@ -269,9 +269,9 @@ export default function SpecialistEquipment({
             const currentStr = JSON.stringify(categoryComments);
 
             if (commentStr !== currentStr) {
-                console.log(
-                    "SPECIALIST: equipment.categoryComments updated, syncing..."
-                );
+                // console.log(
+                //     "SPECIALIST: equipment.categoryComments updated, syncing..."
+                // );
                 setCategoryComments({ ...equipment.categoryComments });
             }
         }
@@ -300,7 +300,7 @@ export default function SpecialistEquipment({
     // For normal items, if an entry exists, increment its count by 1 per click.
     const handleAddSurvey = (newEntry) => {
         // Debug log the entry being added
-        console.log("SPECIALIST: Adding entry:", newEntry.name);
+        // console.log("SPECIALIST: Adding entry:", newEntry.name);
 
         setSurveyList((prev) => {
             const isDimension =
@@ -384,7 +384,7 @@ export default function SpecialistEquipment({
 
     // Remove one unit at a time for normal items; remove entire entry for dimension items.
     const handleRemoveEntry = (id) => {
-        console.log("SPECIALIST: Removing entry with ID:", id);
+        // console.log("SPECIALIST: Removing entry with ID:", id);
 
         setSurveyList((prev) =>
             prev
@@ -409,12 +409,12 @@ export default function SpecialistEquipment({
 
     // Improved category comments handler with better logging
     const handleCategoryCommentsChange = (updatedComments) => {
-        console.log(
-            "SPECIALIST: Category comments changed:",
-            Object.keys(updatedComments).length,
-            "items",
-            JSON.stringify(updatedComments)
-        );
+        // console.log(
+        //     "SPECIALIST: Category comments changed:",
+        //     Object.keys(updatedComments).length,
+        //     "items",
+        //     JSON.stringify(updatedComments)
+        // );
 
         // Update local state
         setCategoryComments(updatedComments);
@@ -434,11 +434,11 @@ export default function SpecialistEquipment({
                 categoryComments: updates.categoryComments || categoryComments,
             };
 
-            console.log(
-                "SPECIALIST: Sending combined updates to parent:",
-                Object.keys(combinedUpdate).join(", "),
-                JSON.stringify(combinedUpdate.categoryComments)
-            );
+            // console.log(
+            //     "SPECIALIST: Sending combined updates to parent:",
+            //     Object.keys(combinedUpdate).join(", "),
+            //     JSON.stringify(combinedUpdate.categoryComments)
+            // );
 
             onEquipmentChange(combinedUpdate);
         }
@@ -449,10 +449,10 @@ export default function SpecialistEquipment({
         if (typeof window !== "undefined") {
             window.specialistEquipmentInstance = {
                 syncChanges: () => {
-                    console.log(
-                        "SPECIALIST: Force syncing all pending changes",
-                        JSON.stringify(categoryComments)
-                    );
+                    // console.log(
+                    //     "SPECIALIST: Force syncing all pending changes",
+                    //     JSON.stringify(categoryComments)
+                    // );
 
                     // Send current state to parent
                     if (typeof onEquipmentChange === "function") {

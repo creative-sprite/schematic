@@ -2,8 +2,9 @@
 import { NextResponse } from "next/server";
 import dbConnect from "@/lib/dbConnect";
 import Quote from "@/models/database/quotes/Quote";
+import KitchenSurvey from "@/models/database/KitchenSurvey"; // For survey lookup
 
-// GET quotes with optional surveyId filter
+// GET quotes with optional surveyId or siteId filter
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -23,22 +24,17 @@ export async function GET(request) {
     if (siteId) {
       try {
         // Get all surveys that belong to this site
-        const res = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || ''}/api/surveys/kitchenSurveys/viewAll?siteId=${siteId}`, {
-          headers: { 'Content-Type': 'application/json' }
-        });
+        const surveys = await KitchenSurvey.find({ 'site': siteId }).select('_id');
         
-        if (res.ok) {
-          const data = await res.json();
-          if (data.success && Array.isArray(data.data) && data.data.length > 0) {
-            // Get all survey IDs from this site
-            const surveyIds = data.data.map(survey => survey._id);
-            
-            // Add to our filter
-            filter.surveyId = { $in: surveyIds };
-          } else {
-            // No surveys found for this site, return empty array
-            return NextResponse.json([], { status: 200 });
-          }
+        if (surveys && surveys.length > 0) {
+          // Get all survey IDs from this site
+          const surveyIds = surveys.map(survey => survey._id);
+          
+          // Add to our filter
+          filter.surveyId = { $in: surveyIds };
+        } else {
+          // No surveys found for this site, return empty array
+          return NextResponse.json([], { status: 200 });
         }
       } catch (error) {
         console.warn("Error fetching site surveys:", error);
@@ -46,13 +42,18 @@ export async function GET(request) {
       }
     }
     
-    // Execute the quotes query with our filter
-    const quotes = await Quote.find(filter).sort({ createdAt: -1 }); // Most recent first
+    // Execute the quotes query with our filter with projection to exclude deprecated fields
+    const quotes = await Quote.find(filter)
+      .select('-pdfData -metadata') // Exclude deprecated large fields
+      .sort({ createdAt: -1 }); // Most recent first
     
     return NextResponse.json(quotes, { status: 200 });
   } catch (error) {
     console.error("Error fetching quotes:", error);
-    return NextResponse.json({ message: error.message }, { status: 500 });
+    return NextResponse.json({ 
+      success: false, 
+      message: error.message || "Failed to fetch quotes" 
+    }, { status: 500 });
   }
 }
 
@@ -63,7 +64,7 @@ export async function POST(request) {
     
     await dbConnect();
     
-    // Validate the request
+    // Validate the required fields
     if (!body.surveyId) {
       return NextResponse.json(
         { success: false, message: "Survey ID is required" },
@@ -71,40 +72,83 @@ export async function POST(request) {
       );
     }
     
-    // NEW: Validate Cloudinary data if present
-    if (body.cloudinary) {
-      if (!body.cloudinary.publicId || !body.cloudinary.url) {
-        return NextResponse.json(
-          { success: false, message: "Incomplete Cloudinary data provided" },
-          { status: 400 }
-        );
+    // Validate Cloudinary data
+    if (!body.cloudinary || !body.cloudinary.publicId || !body.cloudinary.url) {
+      return NextResponse.json(
+        { success: false, message: "Cloudinary data is required" },
+        { status: 400 }
+      );
+    }
+
+    // Validate name
+    if (!body.name) {
+      return NextResponse.json(
+        { success: false, message: "Quote name is required" },
+        { status: 400 }
+      );
+    }
+
+    // Ensure totalPrice is valid
+    if (body.totalPrice === undefined || isNaN(parseFloat(body.totalPrice))) {
+      return NextResponse.json(
+        { success: false, message: "Valid total price is required" },
+        { status: 400 }
+      );
+    }
+    
+    // Create a new quote with essential fields only
+    const quoteData = {
+      name: body.name,
+      surveyId: body.surveyId,
+      cloudinary: {
+        publicId: body.cloudinary.publicId,
+        url: body.cloudinary.url
+      },
+      totalPrice: Number(body.totalPrice),
+      refValue: body.refValue || "",
+      createdAt: new Date()
+    };
+    
+    // For backward compatibility, optionally include these fields if provided
+    if (body.schematicImg) {
+      if (typeof body.schematicImg === 'object' && body.schematicImg.url) {
+        quoteData.schematicImg = body.schematicImg.url;
+      } else if (typeof body.schematicImg === 'string') {
+        quoteData.schematicImg = body.schematicImg;
       }
     }
     
-    // NEW: If pdfData is provided but we also have cloudinary info, we can clear pdfData
-    // This allows us to migrate existing quotes to Cloudinary storage and save DB space
-    if (body.pdfData && body.cloudinary && body.cloudinary.publicId && body.cloudinary.url) {
-      // Clear the large pdfData to save space, since we now have it in Cloudinary
-      body.pdfData = null;
-      console.log("Cleared pdfData from quote as it's now stored in Cloudinary");
-    }
+    // Create the quote with clean data
+    const quote = await Quote.create(quoteData);
     
-    // Check if we need to ensure one of pdfData or cloudinary exists
-    if (!body.pdfData && (!body.cloudinary || !body.cloudinary.url)) {
-      console.warn("Creating quote without PDF data - either pdfData or cloudinary.url should be provided");
+    // Get the reference value from the survey if not provided
+    if (!body.refValue) {
+      try {
+        const survey = await KitchenSurvey.findById(body.surveyId).select('refValue');
+        if (survey && survey.refValue) {
+          quote.refValue = survey.refValue;
+          await quote.save();
+        }
+      } catch (surveyError) {
+        console.warn("Could not get reference value from survey:", surveyError);
+      }
     }
-    
-    // Create a new quote
-    const quote = await Quote.create(body);
     
     return NextResponse.json(
-      { success: true, data: quote, message: "Quote created successfully" },
+      { 
+        success: true, 
+        data: quote, 
+        message: "Quote created successfully" 
+      },
       { status: 201 }
     );
   } catch (error) {
     console.error("Error creating quote:", error);
     return NextResponse.json(
-      { success: false, message: error.message },
+      { 
+        success: false, 
+        message: error.message || "Failed to create quote" 
+      },
       { status: 500 }
     );
   }

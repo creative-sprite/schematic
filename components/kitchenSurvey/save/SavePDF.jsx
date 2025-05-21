@@ -1,607 +1,1429 @@
-// components/kitchenSurvey/pdf/SavePDF.jsx
-import { useEffect, useState } from "react";
-import { getSurveyPdfFolder, uploadPdfToCloudinary } from "@/lib/cloudinary";
+// components/kitchenSurvey/save/SavePDF.jsx
 
-export default function SavePDF() {
-    // For dynamic import of jsPDF
-    const [jsPDFModule, setJsPDFModule] = useState(null);
+import { useState, useEffect, useCallback } from "react";
+// ADDED: Import the getSurveyPdfFolder from cloudinary.js
+import { getSurveyPdfFolder, getCloudinaryPdfUrl } from "@/lib/cloudinary";
 
-    // Dynamically import jsPDF only on the client side
-    useEffect(() => {
-        import("html2canvas").then(() => {
-            import("jspdf")
-                .then((module) => {
-                    setJsPDFModule(() => module.default);
-                })
-                .catch((error) => {
-                    console.error("Failed to load jsPDF:", error);
-                });
-        });
-    }, []);
+// Extract the generateStyledHtml function outside the hook for direct import
+export const generateStyledHtml = (surveyData, schematicHtml = null) => {
+    const {
+        refValue,
+        surveyDate,
+        siteDetails,
+        contacts = [],
+        primaryContactIndex,
+        walkAroundContactIndex,
+        structureId,
+        structureTotal,
+        structureSelectionData = [],
+        structureDimensions = {},
+        structureComments = "",
+        // Equipment data
+        surveyData: equipmentEntries = [],
+        equipmentItems = [],
+        specialistEquipmentData = [],
+        // Canopy data
+        canopyTotal,
+        canopyEntries = [],
+        canopyComments = {},
+        // Schematic costs
+        accessDoorPrice,
+        ventilationPrice,
+        airPrice,
+        fanPartsPrice,
+        airInExTotal,
+        schematicItemsTotal,
+        // Form sections
+        ventilation = {},
+        access = {},
+        equipment = {},
+        operations = {},
+        notes = {},
+        modify = 0,
+    } = surveyData || {};
 
-    /**
-     * Captures only the used portion of the schematic as a JPG image
-     * Optimized for smaller file size
-     */
-    const captureSchematic = async (
-        schematicRef,
-        gridSpaces,
-        cellSize,
-        placedItems,
-        specialItems
-    ) => {
-        if (!schematicRef?.current) {
-            console.error("No schematic element found for exporting");
-            return null;
+    // Calculate subtotal
+    const equipmentTotal = (equipmentEntries || []).reduce(
+        (total, item) => total + (item.price || 0),
+        0
+    );
+
+    const subtotal =
+        (structureTotal || 0) +
+        (equipmentTotal || 0) +
+        (canopyTotal || 0) +
+        (accessDoorPrice || 0) +
+        (ventilationPrice || 0) +
+        (airPrice || 0) +
+        (fanPartsPrice || 0) +
+        (airInExTotal || 0) +
+        (typeof schematicItemsTotal === "object"
+            ? schematicItemsTotal.overall || 0
+            : schematicItemsTotal || 0);
+
+    // Calculate grand total with modification
+    const grandTotal = subtotal * (1 + (modify || 0) / 100);
+
+    // The primary contact
+    const primaryContact =
+        contacts && contacts.length > (primaryContactIndex || 0)
+            ? contacts[primaryContactIndex]
+            : null;
+
+    return `
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Kitchen Survey Quote - ${refValue || "Unknown"}</title>
+    <!-- PrimeReact CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/primereact/resources/themes/lara-light-indigo/theme.css" />
+    <link rel="stylesheet" href="https://unpkg.com/primereact/resources/primereact.min.css" />
+    <link rel="stylesheet" href="https://unpkg.com/primeicons/primeicons.css" />
+    
+    <style>
+        /* Set up A4 page dimensions */
+        @page {
+            size: A4;
+            margin: 1cm;
         }
-
-        try {
-            const html2canvas = (await import("html2canvas")).default;
-
-            // Find the canvas element within the schematic reference
-            const canvasElement = schematicRef.current.querySelector(".canvas");
-            if (!canvasElement) {
-                console.error("Canvas element not found in schematic");
-                return null;
+        
+        /* Print-specific styles */
+        @media print {
+            .p-card {
+                break-inside: avoid;
+                page-break-inside: avoid;
             }
-
-            // Step 1: Calculate the minimum and maximum used cells
-            let minX = Infinity,
-                minY = Infinity;
-            let maxX = -Infinity,
-                maxY = -Infinity;
-
-            // Iterate through placed items to find boundaries
-            placedItems.forEach((item) => {
-                const { cellX, cellY } = item;
-                minX = Math.min(minX, cellX);
-                minY = Math.min(minY, cellY);
-                maxX = Math.max(maxX, cellX);
-                maxY = Math.max(maxY, cellY);
-            });
-
-            // Handle special items (measurements, labels)
-            specialItems.forEach((item) => {
-                if (item.type === "label") {
-                    minX = Math.min(minX, item.cellX);
-                    minY = Math.min(minY, item.cellY);
-                    maxX = Math.max(maxX, item.cellX);
-                    maxY = Math.max(maxY, item.cellY);
-                } else if (item.type === "measurement") {
-                    minX = Math.min(minX, item.startCellX, item.endCellX);
-                    minY = Math.min(minY, item.startCellY, item.endCellY);
-                    maxX = Math.max(maxX, item.startCellX, item.endCellX);
-                    maxY = Math.max(maxY, item.startCellY, item.endCellY);
-                }
-            });
-
-            // If no items placed, capture entire grid
-            if (
-                minX === Infinity ||
-                minY === Infinity ||
-                maxX === -Infinity ||
-                maxY === -Infinity
-            ) {
-                console.log("No items placed, capturing entire grid");
-                const canvas = await html2canvas(canvasElement, {
-                    scale: 1, // OPTIMIZATION: Reduced from 2 to decrease size
-                    useCORS: true,
-                    allowTaint: true,
-                    scrollX: 0,
-                    scrollY: 0,
-                });
-                return canvas.toDataURL("image/jpeg", 0.8); // OPTIMIZATION: JPEG with 80% quality
+            
+            h1, h2, h3 {
+                break-after: avoid;
+                page-break-after: avoid;
             }
-
-            // Add some padding (1 cell) around the used area
-            minX = Math.max(0, minX - 1);
-            minY = Math.max(0, minY - 1);
-            maxX = Math.min(gridSpaces - 1, maxX + 1);
-            maxY = Math.min(gridSpaces - 1, maxY + 1);
-
-            // Calculate dimensions in pixels
-            const left = minX * cellSize;
-            const top = minY * cellSize;
-            const width = (maxX - minX + 1) * cellSize;
-            const height = (maxY - minY + 1) * cellSize;
-
-            // Create a temporary container with exact dimensions for the cropped area
-            const tempContainer = document.createElement("div");
-            tempContainer.style.width = `${width}px`;
-            tempContainer.style.height = `${height}px`;
-            tempContainer.style.overflow = "hidden";
-            tempContainer.style.position = "relative";
-
-            // Clone the canvas element
-            const canvasClone = canvasElement.cloneNode(true);
-            canvasClone.style.position = "absolute";
-            canvasClone.style.left = `-${left}px`;
-            canvasClone.style.top = `-${top}px`;
-            tempContainer.appendChild(canvasClone);
-
-            // Temporarily append to document body
-            document.body.appendChild(tempContainer);
-
-            // Capture the cropped area
-            const canvas = await html2canvas(tempContainer, {
-                scale: 1, // OPTIMIZATION: Reduced from 2 to decrease size
-                useCORS: true,
-                allowTaint: true,
-                scrollX: 0,
-                scrollY: 0,
-            });
-
-            // Clean up
-            document.body.removeChild(tempContainer);
-
-            return canvas.toDataURL("image/jpeg", 0.8); // OPTIMIZATION: Using JPEG with 80% quality
-        } catch (error) {
-            console.error("Error capturing schematic:", error);
-            return null;
-        }
-    };
-
-    /**
-     * Generate a quote PDF and save it to Cloudinary
-     * Optimized for smaller file size
-     */
-    const generateQuote = async (
-        savedSurveyId,
-        schematicRef,
-        surveyDataForPDF,
-        computedEquipmentTotal,
-        computedGrandTotals,
-        toast
-    ) => {
-        console.log("⭐⭐⭐ GENERATING QUOTE - OPTIMIZED APPROACH ⭐⭐⭐");
-
-        // Destructure survey data
-        const {
-            refValue,
-            surveyDate,
-            parking,
-            siteDetails,
-            structureId,
-            structureTotal,
-            structureDimensions,
-            structureComments,
-            surveyData,
-            canopyTotal,
-            canopyEntries,
-            accessDoorPrice,
-            ventilationPrice,
-            airPrice,
-            fanPartsPrice,
-            airInExTotal,
-            schematicItemsTotal,
-            operations,
-            access,
-            modify,
-            placedItems,
-            specialItems,
-            gridSpaces,
-            cellSize,
-        } = surveyDataForPDF;
-
-        // Basic validation
-        if (window.__generating_quote) {
-            console.log("Already generating a quote - skipping");
-            return;
-        }
-
-        if (!schematicRef?.current) {
-            console.log("No schematic ref found - skipping quote generation");
-            return;
-        }
-
-        // Lock to prevent duplicate generation
-        window.__generating_quote = true;
-
-        try {
-            // 1. Capture schematic image directly - this works well
-            console.log("Capturing schematic image...");
-            const schematicImgData = await captureSchematic(
-                schematicRef,
-                gridSpaces,
-                cellSize,
-                placedItems,
-                specialItems
-            );
-            console.log("✓ Schematic captured");
-
-            // 2. Get price total
-            let priceTotal = 0;
-            try {
-                // Try to get computed total first
-                const grandTotal = computedGrandTotals();
-
-                if (typeof grandTotal === "number" && !isNaN(grandTotal)) {
-                    priceTotal = grandTotal;
-                } else if (
-                    typeof grandTotal === "object" &&
-                    grandTotal.structureTotal
-                ) {
-                    // Extract the structure total if it's an object
-                    priceTotal = Number(grandTotal.structureTotal) || 0;
-                }
-
-                // Force to a valid number
-                priceTotal = Number(priceTotal) || 0;
-                console.log("Price calculation: ", priceTotal);
-            } catch (err) {
-                console.log("Error calculating price, using 0:", err);
-                priceTotal = 0;
+            
+            .p-datatable {
+                break-inside: auto;
+                page-break-inside: auto;
             }
+            
+            tr {
+                break-inside: avoid;
+                page-break-inside: avoid;
+            }
+            
+            .page-break {
+                page-break-before: always;
+                break-before: page;
+            }
+            
+            .no-break {
+                break-inside: avoid;
+                page-break-inside: avoid;
+            }
+            
+            .header-section {
+                position: running(header);
+            }
+            
+            .footer-section {
+                position: running(footer);
+            }
+        }
+        
+        /* Base styles */
+        body {
+            font-family: var(--font-family, 'Segoe UI', Arial, sans-serif);
+            line-height: 1.6;
+            color: var(--text-color, #3b3b3b);
+            margin: 0;
+            padding: 0;
+            background-color: var(--surface-ground, #fff);
+            font-size: 11pt;
+        }
+        
+        /* Container */
+        .container {
+            width: 210mm; /* A4 width */
+            margin: 0 auto;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        /* Typography */
+        h1 {
+            font-size: 18pt;
+            color: var(--primary-color, #3b3b3b);
+            margin-top: 20px;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+        
+        h2 {
+            font-size: 14pt;
+            color: var(--text-color, #333);
+            margin-top: 20px;
+            margin-bottom: 10px;
+            padding-bottom: 5px;
+            border-bottom: 1px solid var(--surface-border, #ddd);
+        }
+        
+        h3 {
+            font-size: 12pt;
+            color: var(--text-color, #333);
+            margin-top: 15px;
+            margin-bottom: 8px;
+        }
+        
+        p {
+            margin: 5px 0;
+        }
+        
+        /* PrimeReact Card Styling */
+        .p-card {
+            margin-bottom: 1.5rem;
+            box-shadow: 0 2px 1px -1px rgba(0,0,0,0.2), 0 1px 1px 0 rgba(0,0,0,0.14), 0 1px 3px 0 rgba(0,0,0,0.12);
+            border-radius: 6px;
+            background-color: var(--surface-card, #fff);
+            page-break-inside: avoid;
+        }
+        
+        .p-card-title {
+            font-size: 14pt;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+        
+        .p-card-body {
+            padding: 1.25rem;
+        }
+        
+        .p-card-content {
+            padding: 0;
+        }
+        
+        /* PrimeReact Table Styling */
+        .p-datatable {
+            margin-top: 1rem;
+            margin-bottom: 1rem;
+        }
+        
+        .p-datatable-table {
+            border-collapse: collapse;
+            width: 100%;
+            table-layout: auto;
+        }
+        
+        .p-datatable-thead > tr > th {
+            text-align: left;
+            padding: 0.75rem;
+            border: 1px solid var(--surface-border, #ddd);
+            color: var(--primary-color-text, #fff);
+            font-weight: 600;
+            font-size: 10pt;
+        }
+        
+        .p-datatable-tbody > tr > td {
+            text-align: left;
+            padding: 0.75rem;
+            border: 1px solid var(--surface-border, #ddd);
+            font-size: 10pt;
+        }
+        
+        .p-datatable-tbody > tr:nth-child(even) {
+            background-color: var(--surface-hover, #f5f5f5);
+        }
+        
+        /* Header info row with flex layout */
+        .header-info-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.5rem;
+        }
+        
+        .header-info-item {
+            display: flex;
+            align-items: center;
+        }
+        
+        /* Info rows */
+        .info-row {
+            display: flex;
+            margin-bottom: 0.5rem;
+            align-items: baseline;
+        }
+        
+        .label {
+            font-weight: 600;
+            color: var(--text-color-secondary, #555);
+            margin-right: 0.5rem;
+            min-width: 150px;
+        }
+        
+        .data {
+            color: var(--text-color, #333);
+            flex: 1;
+        }
+        
+        /* Comments */
+        .comment {
+            background-color: var(--surface-hover, #f5f5f5);
+            border-left: 3px solid var(--primary-color, #1976d2);
+            padding: 0.75rem;
+            margin: 0.75rem 0;
+            font-style: italic;
+            font-size: 10pt;
+        }
+        
+        /* Pricing table */
+        .price-table .p-datatable-thead > tr > th {
+            background-color: var(--primary-color, #1976d2);
+        }
+        
+        .price-label {
+            font-weight: 600;
+        }
+        
+        .price-value {
+            text-align: right;
+        }
+        
+        .subtotal-row {
+            font-weight: 700;
+            background-color: var(--surface-hover, #f5f5f5) !important;
+        }
+        
+        .total-row {
+            font-weight: 700;
+            font-size: 11pt;
+            background-color: var(--primary-color, #1976d2) !important;
+            color: var(--primary-color-text, #fff) !important;
+        }
+        
+        .total-row td {
+            color: var(--primary-color-text, #fff) !important;
+        }
+        
+        /* Footer */
+        .footer {
+            margin-top: 20px;
+            padding-top: 10px;
+            border-top: 1px solid var(--surface-border, #ddd);
+            font-size: 9pt;
+            color: var(--text-color-secondary, #777);
+            text-align: center;
+        }
+        
+        /* Header/footer for each page */
+        .page-header {
+            text-align: center;
+            font-size: 9pt;
+            color: var(--text-color-secondary, #777);
+            margin-bottom: 10px;
+            display: none; /* Only show in print */
+        }
+        
+        .page-footer {
+            text-align: center;
+            font-size: 9pt;
+            color: var(--text-color-secondary, #777);
+            margin-top: 10px;
+            display: none; /* Only show in print */
+        }
+        
+        @media print {
+            .page-header, .page-footer {
+                display: block;
+            }
+        }
+        
+        /* Schematic */
+        .schematic-container {
+            text-align: center;
+            margin: 15px 0;
+        }
+        
+        /* Helper classes */
+        .text-center {
+            text-align: center;
+        }
+        
+        .text-right {
+            text-align: right;
+        }
+        
+        .mt-20 {
+            margin-top: 20px;
+        }
+        
+        .mb-10 {
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
 
-            // 3. Generate HTML
-            const cleanHtml = `
-                <div style="font-family: Arial, sans-serif; padding: 20px; max-width: 800px;">
-                    <div style="text-align: center; margin-bottom: 30px; border-bottom: 2px solid #f0f0f0; padding-bottom: 15px;">
-                        <h1 style="color: #333; margin-bottom: 10px;">Kitchen Survey</h1>
-                        <p style="font-size: 18px;"><strong>Reference:</strong> ${
-                            refValue || "N/A"
-                        }</p>
-                        <p><strong>Date:</strong> ${new Date(
-                            surveyDate
-                        ).toLocaleDateString()}</p>
-                    </div>
-                    
-                    <!-- Site Details Section -->
-                    <div style="margin-bottom: 30px; border: 1px solid #ddd; padding: 15px; border-radius: 4px;">
-                        <h2 style="background-color: #f0f0f0; padding: 8px; margin-top: 0;">Site Details</h2>
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-                            <div>
-                                <p><strong>Site Name:</strong> ${
-                                    siteDetails?.name ||
-                                    siteDetails?.siteName ||
-                                    "N/A"
-                                }</p>
-                                <p><strong>Address:</strong> ${
-                                    siteDetails?.address || "N/A"
-                                }</p>
-                                <p><strong>Postcode:</strong> ${
-                                    siteDetails?.postcode || "N/A"
-                                }</p>
-                            </div>
-                            <div>
-                                <p><strong>Survey Type:</strong> ${
-                                    operations?.typeOfCooking ||
-                                    "Kitchen Deep Clean"
-                                }</p>
-                                <p><strong>Parking:</strong> ${
-                                    parking || "Not specified"
-                                }</p>
-                                <p><strong>Permit Required:</strong> ${
-                                    access?.permit || "No"
-                                }</p>
-                            </div>
+        <!-- Main Content -->
+        <div class="content">
+            <!-- Header -->
+            <h1>Kitchen Survey Quote</h1>
+            <div class="p-card no-break">
+                <div class="p-card-body">
+                    <div class="header-info-row">
+                        <div class="header-info-item">
+                            <span class="label">Reference:</span>
+                            <span class="data">${refValue || "N/A"}</span>
+                        </div>
+                        <div class="header-info-item">
+                            <span class="label">Date:</span>
+                            <span class="data">${new Date(
+                                surveyDate || Date.now()
+                            ).toLocaleDateString()}</span>
                         </div>
                     </div>
-                    
-                    <!-- Structure Information -->
-                    <div style="margin-bottom: 30px; border: 1px solid #ddd; padding: 15px; border-radius: 4px;">
-                        <h2 style="background-color: #f0f0f0; padding: 8px; margin-top: 0;">Structure</h2>
-                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
-                            <div>
-                                <p><strong>Structure ID:</strong> ${
-                                    structureId || "N/A"
-                                }</p>
-                            </div>
-                            <div>
-                                <p><strong>Length (m):</strong> ${
-                                    structureDimensions?.length || "N/A"
-                                }</p>
-                                <p><strong>Width (m):</strong> ${
-                                    structureDimensions?.width || "N/A"
-                                }</p>
-                                <p><strong>Height (m):</strong> ${
-                                    structureDimensions?.height || "N/A"
-                                }</p>
-                            </div>
-                            <div>
-                                <p><strong>Structure Total:</strong> £${
-                                    structureTotal
-                                        ? structureTotal.toFixed(2)
-                                        : "0.00"
-                                }</p>
-                            </div>
+                </div>
+            </div>
+            
+            <!-- Site Information -->
+            <div class="p-card no-break">
+                <div class="p-card-body">
+                    <div class="p-card-title">Site Information</div>
+                    <div class="p-card-content">
+                        <div class="info-row">
+                            <span class="label">Site Name:</span>
+                            <span class="data">${
+                                siteDetails?.siteName ||
+                                siteDetails?.name ||
+                                "N/A"
+                            }</span>
                         </div>
+                        <div class="info-row">
+                            <span class="label">Address:</span>
+                            <span class="data">${
+                                siteDetails?.address || "N/A"
+                            }</span>
+                        </div>
+                        
                         ${
-                            structureComments
+                            operations?.operationalHours
                                 ? `
-                        <div style="margin-top: 10px;">
-                            <p><strong>Structure Comments:</strong> ${structureComments}</p>
-                        </div>
-                        `
+                        <div class="info-row">
+                            <span class="label">Operational Hours:</span>
+                            <span class="data">
+                                Weekdays ${
+                                    operations.operationalHours.weekdays
+                                        ? `${
+                                              operations.operationalHours
+                                                  .weekdays.start || "N/A"
+                                          } - 
+                                    ${
+                                        operations.operationalHours.weekdays
+                                            .end || "N/A"
+                                    }`
+                                        : "N/A"
+                                }, 
+                                Weekend ${
+                                    operations.operationalHours.weekend
+                                        ? `${
+                                              operations.operationalHours
+                                                  .weekend.start || "N/A"
+                                          } - 
+                                    ${
+                                        operations.operationalHours.weekend
+                                            .end || "N/A"
+                                    }`
+                                        : "N/A"
+                                }
+                            </span>
+                        </div>`
                                 : ""
                         }
-                    </div>
-                    
-                    <!-- Equipment -->
-                    <div style="margin-bottom: 30px; border: 1px solid #ddd; padding: 15px; border-radius: 4px;">
-                        <h2 style="background-color: #f0f0f0; padding: 8px; margin-top: 0;">Equipment</h2>
+                        
                         ${
-                            surveyData && surveyData.length > 0
+                            primaryContact
                                 ? `
-                        <table style="width: 100%; border-collapse: collapse; margin-bottom: 15px;">
-                            <tr style="background-color: #f5f5f5;">
-                                <th style="padding: 8px; text-align: left; border: 1px solid #ddd;">Equipment</th>
-                                <th style="padding: 8px; text-align: left; border: 1px solid #ddd;">Grade</th>
-                                <th style="padding: 8px; text-align: right; border: 1px solid #ddd;">Quantity</th>
-                                <th style="padding: 8px; text-align: right; border: 1px solid #ddd;">Price</th>
-                            </tr>
-                            ${surveyData
-                                .map(
-                                    (item) => `
-                            <tr>
-                                <td style="padding: 8px; border: 1px solid #ddd;">${
-                                    item.name || "N/A"
-                                }</td>
-                                <td style="padding: 8px; border: 1px solid #ddd;">${
-                                    item.grade || "N/A"
-                                }</td>
-                                <td style="padding: 8px; text-align: right; border: 1px solid #ddd;">${
-                                    item.quantity || 0
-                                }</td>
-                                <td style="padding: 8px; text-align: right; border: 1px solid #ddd;">£${(
-                                    item.price || 0
-                                ).toFixed(2)}</td>
-                            </tr>
-                            `
-                                )
-                                .join("")}
-                        </table>
-                        <p><strong>Equipment Total:</strong> £${
-                            computedEquipmentTotal
-                                ? computedEquipmentTotal().toFixed(2)
-                                : "0.00"
-                        }</p>
-                        `
-                                : `<p>No equipment items added</p>`
+                        <div class="info-row">
+                            <span class="label">Primary Contact:</span>
+                            <span class="data">
+                                ${primaryContact.contactFirstName || ""} 
+                                ${primaryContact.contactLastName || ""}
+                            </span>
+                        </div>
+                        ${
+                            primaryContact.number || primaryContact.email
+                                ? `
+                        <div class="info-row">
+                            <span class="label">Contact Details:</span>
+                            <span class="data">
+                                ${primaryContact.number || ""} 
+                                ${
+                                    primaryContact.email
+                                        ? `/ ${primaryContact.email}`
+                                        : ""
+                                }
+                            </span>
+                        </div>`
+                                : ""
                         }
-                    </div>
-                    
-                    <!-- Pricing Summary -->
-                    <div style="margin-bottom: 30px; border: 2px solid #ddd; padding: 15px; border-radius: 4px; background-color: #f9f9f9;">
-                        <h2 style="background-color: #e0e0e0; padding: 8px; margin-top: 0; text-align: center;">Price Summary</h2>
-                        <table style="width: 100%; border-collapse: collapse; margin-bottom: 15px;">
-                            <tr style="background-color: #f0f0f0;">
-                                <th style="padding: 8px; text-align: left; border: 1px solid #ddd;">Item</th>
-                                <th style="padding: 8px; text-align: right; border: 1px solid #ddd;">Price</th>
-                            </tr>
-                            <tr>
-                                <td style="padding: 8px; border: 1px solid #ddd;">Structure</td>
-                                <td style="padding: 8px; text-align: right; border: 1px solid #ddd;">£${
-                                    structureTotal
-                                        ? structureTotal.toFixed(2)
-                                        : "0.00"
-                                }</td>
-                            </tr>
-                            <tr>
-                                <td style="padding: 8px; border: 1px solid #ddd;">Equipment</td>
-                                <td style="padding: 8px; text-align: right; border: 1px solid #ddd;">£${
-                                    computedEquipmentTotal
-                                        ? computedEquipmentTotal().toFixed(2)
-                                        : "0.00"
-                                }</td>
-                            </tr>
-                            <tr>
-                                <td style="padding: 8px; border: 1px solid #ddd;">Canopy</td>
-                                <td style="padding: 8px; text-align: right; border: 1px solid #ddd;">£${
-                                    canopyTotal
-                                        ? canopyTotal.toFixed(2)
-                                        : "0.00"
-                                }</td>
-                            </tr>
-                            <tr>
-                                <td style="padding: 8px; border: 1px solid #ddd;">Access Doors</td>
-                                <td style="padding: 8px; text-align: right; border: 1px solid #ddd;">£${
-                                    accessDoorPrice
-                                        ? accessDoorPrice.toFixed(2)
-                                        : "0.00"
-                                }</td>
-                            </tr>
-                            <tr>
-                                <td style="padding: 8px; border: 1px solid #ddd;">Ventilation</td>
-                                <td style="padding: 8px; text-align: right; border: 1px solid #ddd;">£${
-                                    ventilationPrice
-                                        ? ventilationPrice.toFixed(2)
-                                        : "0.00"
-                                }</td>
-                            </tr>
-                            <tr>
-                                <td style="padding: 8px; border: 1px solid #ddd;">Air Systems</td>
-                                <td style="padding: 8px; text-align: right; border: 1px solid #ddd;">£${
-                                    airPrice ? airPrice.toFixed(2) : "0.00"
-                                }</td>
-                            </tr>
-                            <tr>
-                                <td style="padding: 8px; border: 1px solid #ddd;">Fan Parts</td>
-                                <td style="padding: 8px; text-align: right; border: 1px solid #ddd;">£${
-                                    fanPartsPrice
-                                        ? fanPartsPrice.toFixed(2)
-                                        : "0.00"
-                                }</td>
-                            </tr>
-                            <tr style="font-weight: bold; background-color: #e6e6e6;">
-                                <td style="padding: 8px; border: 1px solid #ddd;">GRAND TOTAL</td>
-                                <td style="padding: 8px; text-align: right; border: 1px solid #ddd;">£${priceTotal.toFixed(
-                                    2
-                                )}</td>
-                            </tr>
-                        </table>
-                        ${
-                            modify > 0
-                                ? `
-                        <p style="text-align: right;"><strong>Price Modifier:</strong> ${modify}%</p>
-                        <p style="text-align: right; font-size: 18px; font-weight: bold;">Final Total: £${(
-                            priceTotal *
-                            (1 + modify / 100)
-                        ).toFixed(2)}</p>
                         `
                                 : ""
                         }
                     </div>
                 </div>
-            `;
+            </div>
+            
+            <!-- Structure Details -->
+            <div class="p-card">
+                <div class="p-card-body">
+                    <div class="p-card-title">Structure Details</div>
+                    <div class="p-card-content">
+                        <div class="info-row">
+                            <span class="label">Structure ID:</span>
+                            <span class="data">${structureId || "N/A"}</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">Dimensions:</span>
+                            <span class="data">
+                                ${structureDimensions?.length || "N/A"}m × 
+                                ${structureDimensions?.width || "N/A"}m × 
+                                ${structureDimensions?.height || "N/A"}m
+                            </span>
+                        </div>
+                        
+                        ${
+                            structureSelectionData &&
+                            structureSelectionData.length > 0
+                                ? `
+                        <h3>Structure Components</h3>
+                        <div class="p-datatable">
+                            <table class="p-datatable-table">
+                                <thead class="p-datatable-thead">
+                                    <tr>
+                                        <th>Type</th>
+                                        <th>Item</th>
+                                        <th>Grade</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="p-datatable-tbody">
+                                    ${structureSelectionData
+                                        .map(
+                                            (item) => `
+                                    <tr>
+                                        <td>${item.type || ""}</td>
+                                        <td>${item.item || ""}</td>
+                                        <td>${item.grade || ""}</td>
+                                    </tr>`
+                                        )
+                                        .join("")}
+                                </tbody>
+                            </table>
+                        </div>`
+                                : ""
+                        }
+                        
+                        ${
+                            structureComments
+                                ? `
+                        <div class="comment">
+                            <strong>Comments:</strong><br>
+                            ${structureComments}
+                        </div>`
+                                : ""
+                        }
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Equipment Survey -->
+            <div class="p-card">
+                <div class="p-card-body">
+                    <div class="p-card-title">Equipment Survey</div>
+                    <div class="p-card-content">
+                        ${
+                            equipmentEntries && equipmentEntries.length > 0
+                                ? `
+                        <div class="p-datatable">
+                            <table class="p-datatable-table">
+                                <thead class="p-datatable-thead">
+                                    <tr>
+                                        <th>Category</th>
+                                        <th>Item</th>
+                                        <th>Quantity</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="p-datatable-tbody">
+                                    ${equipmentEntries
+                                        .map(
+                                            (item, index) => `
+                                    <tr>
+                                        <td>${item.subcategory || "N/A"}</td>
+                                        <td>${
+                                            item.name || item.item || "N/A"
+                                        }</td>
+                                        <td class="text-center">${
+                                            item.quantity || 1
+                                        }</td>
+                                    </tr>
+                                    ${
+                                        index === equipmentEntries.length - 1
+                                            ? ""
+                                            : ""
+                                    }
+                                    `
+                                        )
+                                        .join("")}
+                                </tbody>
+                            </table>
+                        </div>`
+                                : `<p>No equipment items specified</p>`
+                        }
+                        
+                        ${
+                            specialistEquipmentData &&
+                            specialistEquipmentData.length > 0
+                                ? `
+                        <h3>Specialist Equipment</h3>
+                        <div class="p-datatable">
+                            <table class="p-datatable-table">
+                                <thead class="p-datatable-thead">
+                                    <tr>
+                                        <th>Item</th>
+                                        <th>Category</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="p-datatable-tbody">
+                                    ${specialistEquipmentData
+                                        .map(
+                                            (item) => `
+                                    <tr>
+                                        <td>${
+                                            item.name ||
+                                            item.item ||
+                                            "Unnamed Item"
+                                        }</td>
+                                        <td>${item.category || "N/A"}</td>
+                                    </tr>`
+                                        )
+                                        .join("")}
+                                </tbody>
+                            </table>
+                        </div>`
+                                : ""
+                        }
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Canopy Details -->
+            <div class="p-card">
+                <div class="p-card-body">
+                    <div class="p-card-title">Canopy Details</div>
+                    <div class="p-card-content">
+                        ${
+                            canopyEntries && canopyEntries.length > 0
+                                ? `
+                        ${canopyEntries
+                            .map(
+                                (entry, index) => `
+                        <div class="mb-10">
+                            <h3>Canopy ${index + 1}</h3>
+                            ${
+                                entry.canopy
+                                    ? `
+                            <div class="info-row">
+                                <span class="label">Type:</span>
+                                <span class="data">${
+                                    entry.canopy.type || "N/A"
+                                }</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="label">Grade:</span>
+                                <span class="data">${
+                                    entry.canopy.grade || "N/A"
+                                }</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="label">Dimensions:</span>
+                                <span class="data">
+                                    ${entry.canopy.length || "N/A"}m × 
+                                    ${entry.canopy.width || "N/A"}m × 
+                                    ${entry.canopy.height || "N/A"}m
+                                </span>
+                            </div>`
+                                    : ""
+                            }
+                            ${
+                                entry.filter
+                                    ? `
+                            <div class="info-row">
+                                <span class="label">Filter Type:</span>
+                                <span class="data">${
+                                    entry.filter.type || "N/A"
+                                }</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="label">Filter Grade:</span>
+                                <span class="data">${
+                                    entry.filter.grade || "N/A"
+                                }</span>
+                            </div>`
+                                    : ""
+                            }
+                        </div>
+                        `
+                            )
+                            .join("")}`
+                                : `<p>No canopy entries specified</p>`
+                        }
+                        
+                        ${
+                            canopyComments &&
+                            Object.keys(canopyComments).length > 0
+                                ? `
+                        <h3>Canopy Comments</h3>
+                        ${Object.entries(canopyComments)
+                            .filter(
+                                ([key, comment]) =>
+                                    comment && comment.trim().length > 0
+                            )
+                            .map(
+                                ([key, comment]) => `
+                            <div class="comment">
+                                <strong>${key}:</strong> ${comment}
+                            </div>
+                        `
+                            )
+                            .join("")}`
+                                : ""
+                        }
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Schematic Layout - Force page break before schematic -->
+            ${
+                schematicHtml
+                    ? `
+            <div class="page-break"></div>
+            <div class="p-card">
+                <div class="p-card-body">
+                    <div class="p-card-title">Schematic Layout</div>
+                    <div class="p-card-content">
+                        <div class="schematic-container">
+                            ${schematicHtml}
+                        </div>
+                    </div>
+                </div>
+            </div>`
+                    : ""
+            }
+            
+            <!-- Price Breakdown - Important to keep this together -->
+            <div class="p-card no-break">
+                <div class="p-card-body">
+                    <div class="p-card-title">Price Breakdown</div>
+                    <div class="p-card-content">
+                        <div class="p-datatable price-table">
+                            <table class="p-datatable-table">
+                                <thead class="p-datatable-thead">
+                                    <tr>
+                                        <th>Item</th>
+                                        <th class="text-right">Price</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="p-datatable-tbody">
+                                    ${
+                                        structureTotal > 0
+                                            ? `
+                                    <tr>
+                                        <td class="price-label">Structure Total</td>
+                                        <td class="price-value">£${structureTotal.toFixed(
+                                            2
+                                        )}</td>
+                                    </tr>`
+                                            : ""
+                                    }
+                                    
+                                    ${
+                                        equipmentTotal > 0
+                                            ? `
+                                    <tr>
+                                        <td class="price-label">Equipment</td>
+                                        <td class="price-value">£${equipmentTotal.toFixed(
+                                            2
+                                        )}</td>
+                                    </tr>`
+                                            : ""
+                                    }
+                                    
+                                    ${
+                                        canopyTotal > 0
+                                            ? `
+                                    <tr>
+                                        <td class="price-label">Canopy</td>
+                                        <td class="price-value">£${canopyTotal.toFixed(
+                                            2
+                                        )}</td>
+                                    </tr>`
+                                            : ""
+                                    }
+                                    
+                                    ${
+                                        accessDoorPrice > 0
+                                            ? `
+                                    <tr>
+                                        <td class="price-label">Access Door</td>
+                                        <td class="price-value">£${accessDoorPrice.toFixed(
+                                            2
+                                        )}</td>
+                                    </tr>`
+                                            : ""
+                                    }
+                                    
+                                    ${
+                                        ventilationPrice > 0
+                                            ? `
+                                    <tr>
+                                        <td class="price-label">Ventilation</td>
+                                        <td class="price-value">£${ventilationPrice.toFixed(
+                                            2
+                                        )}</td>
+                                    </tr>`
+                                            : ""
+                                    }
+                                    
+                                    ${
+                                        airPrice > 0
+                                            ? `
+                                    <tr>
+                                        <td class="price-label">Air Supply/Extract</td>
+                                        <td class="price-value">£${airPrice.toFixed(
+                                            2
+                                        )}</td>
+                                    </tr>`
+                                            : ""
+                                    }
+                                    
+                                    ${
+                                        fanPartsPrice > 0
+                                            ? `
+                                    <tr>
+                                        <td class="price-label">Fan Parts</td>
+                                        <td class="price-value">£${fanPartsPrice.toFixed(
+                                            2
+                                        )}</td>
+                                    </tr>`
+                                            : ""
+                                    }
+                                    
+                                    ${
+                                        airInExTotal > 0
+                                            ? `
+                                    <tr>
+                                        <td class="price-label">Air In/Ex</td>
+                                        <td class="price-value">£${airInExTotal.toFixed(
+                                            2
+                                        )}</td>
+                                    </tr>`
+                                            : ""
+                                    }
+                                    
+                                    ${
+                                        schematicItemsTotal
+                                            ? `
+                                    <tr>
+                                        <td class="price-label">Schematic Items</td>
+                                        <td class="price-value">£${(typeof schematicItemsTotal ===
+                                        "object"
+                                            ? schematicItemsTotal.overall || 0
+                                            : schematicItemsTotal || 0
+                                        ).toFixed(2)}</td>
+                                    </tr>`
+                                            : ""
+                                    }
+                                    
+                                    <tr class="subtotal-row">
+                                        <td class="price-label">Subtotal</td>
+                                        <td class="price-value">£${subtotal.toFixed(
+                                            2
+                                        )}</td>
+                                    </tr>
+                                    
+                                    ${
+                                        modify
+                                            ? `
+                                    <tr>
+                                        <td class="price-label">Modification (${
+                                            modify > 0 ? "+" : ""
+                                        }${modify}%)</td>
+                                        <td class="price-value">${
+                                            modify > 0 ? "+" : ""
+                                        }£${((subtotal * modify) / 100).toFixed(
+                                                  2
+                                              )}</td>
+                                    </tr>`
+                                            : ""
+                                    }
+                                    
+                                    <tr class="total-row">
+                                        <td class="price-label">GRAND TOTAL</td>
+                                        <td class="price-value">£${grandTotal.toFixed(
+                                            2
+                                        )}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Additional Information - Last section -->
+            <div class="p-card">
+                <div class="p-card-body">
+                    <div class="p-card-title">Additional Information</div>
+                    <div class="p-card-content">
+                        
+                        <!-- Operations Information - Match survey form order -->
+                        ${
+                            operations &&
+                            Object.values(operations).some((v) => v)
+                                ? `
+                        <h3>Operations Information</h3>
+                        <div>
+                            ${
+                                operations.typeOfCooking
+                                    ? `
+                            <div class="info-row">
+                                <span class="label">Type of Cooking:</span> 
+                                <span class="data">${operations.typeOfCooking}</span>
+                            </div>`
+                                    : ""
+                            }
+                            
+                            ${
+                                operations.coversPerDay
+                                    ? `
+                            <div class="info-row">
+                                <span class="label">Covers Per Day:</span> 
+                                <span class="data">${operations.coversPerDay}</span>
+                            </div>`
+                                    : ""
+                            }
+                            
+                            ${
+                                operations.bestServiceTime
+                                    ? `
+                            <div class="info-row">
+                                <span class="label">Best Service Time:</span> 
+                                <span class="data">${operations.bestServiceTime}</span>
+                            </div>`
+                                    : ""
+                            }
+                            
+                            ${
+                                operations.bestServiceDay
+                                    ? `
+                            <div class="info-row">
+                                <span class="label">Best Service Day:</span> 
+                                <span class="data">${operations.bestServiceDay}</span>
+                            </div>`
+                                    : ""
+                            }
+                            
+                            ${
+                                operations.serviceDue
+                                    ? `
+                            <div class="info-row">
+                                <span class="label">Service Due:</span> 
+                                <span class="data">${new Date(
+                                    operations.serviceDue
+                                ).toLocaleDateString()}</span>
+                            </div>`
+                                    : ""
+                            }
+                        </div>`
+                                : ""
+                        }
+                        
+                        <!-- Access Requirements -->
+                        ${
+                            access && Object.values(access).some((v) => v)
+                                ? `
+                        <h3>Access Requirements</h3>
+                        <div>
+                            ${
+                                access.inductionNeeded
+                                    ? `
+                            <div class="info-row">
+                                <span class="label">Induction Needed:</span> 
+                                <span class="data">${access.inductionNeeded}</span>
+                            </div>`
+                                    : ""
+                            }
+                            
+                            ${
+                                access.roofAccess
+                                    ? `
+                            <div class="info-row">
+                                <span class="label">Roof Access:</span> 
+                                <span class="data">${access.roofAccess}</span>
+                            </div>`
+                                    : ""
+                            }
+                            
+                            ${
+                                access.permitToWork
+                                    ? `
+                            <div class="info-row">
+                                <span class="label">Permit to Work:</span> 
+                                <span class="data">${access.permitToWork}</span>
+                            </div>`
+                                    : ""
+                            }
+                            
+                            ${
+                                access.dbs
+                                    ? `
+                            <div class="info-row">
+                                <span class="label">DBS Check:</span> 
+                                <span class="data">${access.dbs}</span>
+                            </div>`
+                                    : ""
+                            }
+                            
+                            ${
+                                access.permit
+                                    ? `
+                            <div class="info-row">
+                                <span class="label">Permit:</span> 
+                                <span class="data">${access.permit}</span>
+                            </div>`
+                                    : ""
+                            }
+                        </div>`
+                                : ""
+                        }
+                        
+                        <!-- Ventilation Information -->
+                        ${
+                            ventilation &&
+                            Object.values(ventilation).some((v) => v)
+                                ? `
+                        <h3>Ventilation Information</h3>
+                        <div>
+                            ${
+                                ventilation.obstructionsToggle
+                                    ? `
+                            <div class="info-row">
+                                <span class="label">Obstructions:</span> 
+                                <span class="data">${ventilation.obstructionsToggle}</span>
+                            </div>`
+                                    : ""
+                            }
+                            
+                            ${
+                                ventilation.damageToggle
+                                    ? `
+                            <div class="info-row">
+                                <span class="label">Damage:</span> 
+                                <span class="data">${ventilation.damageToggle}</span>
+                            </div>`
+                                    : ""
+                            }
+                            
+                            ${
+                                ventilation.inaccessibleAreasToggle
+                                    ? `
+                            <div class="info-row">
+                                <span class="label">Inaccessible Areas:</span> 
+                                <span class="data">${ventilation.inaccessibleAreasToggle}</span>
+                            </div>`
+                                    : ""
+                            }
+                            
+                            ${
+                                ventilation.clientActionsToggle
+                                    ? `
+                            <div class="info-row">
+                                <span class="label">Client Actions:</span> 
+                                <span class="data">${ventilation.clientActionsToggle}</span>
+                            </div>`
+                                    : ""
+                            }
+                            
+                            ${
+                                ventilation.description
+                                    ? `
+                            <div class="info-row">
+                                <span class="label">Description:</span> 
+                                <span class="data">${ventilation.description}</span>
+                            </div>`
+                                    : ""
+                            }
+                        </div>`
+                                : ""
+                        }
+                        
+                        <!-- Notes -->
+                        ${
+                            notes && Object.values(notes).some((note) => note)
+                                ? `
+                        <h3>Notes</h3>
+                        ${
+                            notes.comments
+                                ? `
+                        <div class="comment">
+                            <strong>General Comments:</strong><br>
+                            ${notes.comments}
+                        </div>`
+                                : ""
+                        }
+                        
+                        ${
+                            notes.previousIssues
+                                ? `
+                        <div class="comment">
+                            <strong>Previous Issues:</strong><br>
+                            ${notes.previousIssues}
+                        </div>`
+                                : ""
+                        }
+                        
+                        ${
+                            notes.damage
+                                ? `
+                        <div class="comment">
+                            <strong>Damage:</strong><br>
+                            ${notes.damage}
+                        </div>`
+                                : ""
+                        }
+                        
+                        ${
+                            notes.inaccessibleAreas
+                                ? `
+                        <div class="comment">
+                            <strong>Inaccessible Areas:</strong><br>
+                            ${notes.inaccessibleAreas}
+                        </div>`
+                                : ""
+                        }
+                        
+                        ${
+                            notes.clientActions
+                                ? `
+                        <div class="comment">
+                            <strong>Client Actions:</strong><br>
+                            ${notes.clientActions}
+                        </div>`
+                                : ""
+                        }`
+                                : ""
+                        }
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Footer -->
+            <div class="footer">
+                <p>This quote is valid for 30 days from the date of issue. All prices are subject to final survey confirmation.</p>
+                <p>Reference: ${
+                    refValue || "N/A"
+                } - Generated on ${new Date().toLocaleString()}</p>
+            </div>
+        </div>
+        
+        <!-- Footer for each page -->
+        <div class="page-footer">
+            Reference: ${
+                refValue || "N/A"
+            } - Page <span class="pageNumber"></span> of <span class="totalPages"></span>
+        </div>
+    </div>
+</body>
+</html>
+    `;
+};
 
-            // 4. Create a temporary div to render the clean HTML
-            const tempContainer = document.createElement("div");
-            tempContainer.style.position = "absolute";
-            tempContainer.style.left = "-9999px";
-            tempContainer.style.width = "800px"; // Fixed width for PDF
-            tempContainer.innerHTML = cleanHtml;
-            document.body.appendChild(tempContainer);
+// Create and export a hook that provides PDF functionality
+export const useSavePDF = () => {
+    // State to track PDF module loading
+    const [pdfState, setPdfState] = useState({
+        isLoading: false,
+        isReady: true,
+        error: null,
+    });
 
-            console.log("Created temporary container for PDF content");
+    // Function to capture DOM element as HTML string
+    const captureElementAsHtml = useCallback(async (elementRef) => {
+        if (!elementRef || !elementRef.current) {
+            return null;
+        }
 
-            // 5. Capture the clean content
-            const html2canvas = (await import("html2canvas")).default;
-            const canvas = await html2canvas(tempContainer, {
-                scale: 1, // OPTIMIZATION: Reduced scale from 2 to 1
-                logging: false,
-                windowWidth: 800,
-            });
+        // Get the element's outerHTML
+        const htmlContent = elementRef.current.outerHTML;
 
-            // Get image data - OPTIMIZATION: Using JPEG with 80% quality instead of PNG
-            const imgData = canvas.toDataURL("image/jpeg", 0.8);
-            console.log("✓ PDF content captured");
+        // Normalize the HTML to ensure it's valid
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(htmlContent, "text/html");
 
-            // Clean up temporary element
-            document.body.removeChild(tempContainer);
+        // Return the cleaned HTML
+        return doc.body.innerHTML;
+    }, []);
 
-            // 6. Generate PDF
-            const pdfName = `Quote-${refValue || ""}-${new Date()
-                .toLocaleDateString()
-                .replace(/\//g, "-")}.pdf`;
-            const pdfFolder = getSurveyPdfFolder(
-                siteDetails?.siteName || siteDetails?.name || "unknown-site",
-                refValue || "unknown"
-            );
-
-            console.log(`Saving PDF to Cloudinary folder: ${pdfFolder}`);
-
+    // Helper function to upload PDF to Cloudinary
+    const uploadPdfToCloudinary = useCallback(
+        async (pdfDataUrl, fileName, folder) => {
             try {
-                // Create a jsPDF instance - OPTIMIZATION: Added compress option
-                const pdf = new jsPDFModule({
-                    orientation: "portrait",
-                    unit: "pt",
-                    format: "a4",
-                    compress: true, // OPTIMIZATION: Enable compression
+                // Create file from base64 data
+                const file = await fetch(pdfDataUrl).then((res) => res.blob());
+
+                // Create FormData object for upload
+                const formData = new FormData();
+                formData.append("file", file, fileName);
+                formData.append("folder", folder);
+                formData.append("resource_type", "auto");
+                formData.append("preserveFilename", "true");
+
+                // Upload to Cloudinary via backend route
+                const response = await fetch("/api/cloudinary/upload", {
+                    method: "POST",
+                    body: formData,
                 });
 
-                const pdfWidth = pdf.internal.pageSize.getWidth();
-                const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+                const result = await response.json();
 
-                // Add the image to the PDF
-                pdf.addImage(imgData, "JPEG", 0, 0, pdfWidth, pdfHeight); // OPTIMIZATION: Using JPEG
-
-                // Get the PDF as base64 data URL
-                const pdfDataUrl = pdf.output("dataurlstring");
-
-                // Upload PDF to Cloudinary
-                console.log("Uploading PDF to Cloudinary...");
-                const uploadResult = await uploadPdfToCloudinary(
-                    pdfDataUrl,
-                    pdfName,
-                    pdfFolder
-                );
-
-                if (!uploadResult.success) {
-                    throw new Error(
-                        "Cloudinary upload failed: " + uploadResult.message
-                    );
+                if (!result.success) {
+                    throw new Error(result.message || "Upload failed");
                 }
 
-                console.log("PDF successfully uploaded to Cloudinary");
+                return result;
+            } catch (error) {
+                console.error("Error uploading to Cloudinary:", error);
+                return {
+                    success: false,
+                    message: error.message || "Upload failed",
+                };
+            }
+        },
+        []
+    );
 
-                // 7. Create quote payload with Cloudinary references
-                const quoteName = `Quote-${refValue || ""}-${new Date()
-                    .toLocaleDateString()
-                    .replace(/\//g, "-")}`;
+    // Create a function to compute equipment total
+    const computeEquipmentTotal = useCallback((surveyData, equipmentItems) => {
+        return (
+            (surveyData || []).reduce(
+                (total, item) => total + (item.price || 0),
+                0
+            ) || 0
+        );
+    }, []);
 
+    // Main function to generate PDF quote using server-side puppeteer
+    const generateQuote = useCallback(
+        async (
+            surveyId,
+            schematicRef,
+            surveyData,
+            computeTotalPrice,
+            toast
+        ) => {
+            // Prevent duplicate generation
+            if (window.__generating_quote) {
+                return {
+                    success: false,
+                    message: "Quote generation already in progress",
+                };
+            }
+            window.__generating_quote = true;
+
+            try {
+                // Extract all survey data needed for the quote
+                const { refValue, siteDetails } = surveyData || {};
+
+                // Calculate the grand total price
+                let totalPrice = 0;
+                if (typeof computeTotalPrice === "function") {
+                    const priceResult = computeTotalPrice();
+                    totalPrice =
+                        typeof priceResult === "number"
+                            ? priceResult
+                            : typeof priceResult === "object" &&
+                              priceResult?.grandTotal
+                            ? priceResult.grandTotal
+                            : 0;
+                }
+
+                // Capture schematic HTML if available
+                let schematicHtml = null;
+                if (schematicRef && schematicRef.current) {
+                    schematicHtml = await captureElementAsHtml(schematicRef);
+                }
+
+                // MODIFIED: Remove timestamp from PDF filename
+                const pdfName = `Quote-${refValue || ""}.pdf`;
+
+                // Get folder for storage - UPDATED TO USE IMPORTED FUNCTION
+                const siteName =
+                    siteDetails?.siteName ||
+                    siteDetails?.name ||
+                    "unknown-site";
+                const pdfFolder = getSurveyPdfFolder(
+                    siteName,
+                    refValue || "unknown"
+                );
+
+                // Generate the HTML content for the PDF using the extracted function
+                const htmlContent = generateStyledHtml(
+                    surveyData,
+                    schematicHtml
+                );
+
+                // Call server-side API to generate PDF
+                const response = await fetch("/api/quotes/generate", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                        html: htmlContent,
+                        fileName: pdfName,
+                        options: {
+                            format: "A4",
+                            printBackground: true,
+                            margin: {
+                                top: "1cm",
+                                right: "1cm",
+                                bottom: "1cm",
+                                left: "1cm",
+                            },
+                            displayHeaderFooter: true,
+                            headerTemplate: `
+                            <div style="width: 100%; font-size: 9px; font-family: Arial; color: #777; padding: 0 10mm; display: flex; justify-content: center;">
+                                Kitchen Survey Quote - ${
+                                    refValue || "Unknown"
+                                } - Page <span class="pageNumber"></span> of <span class="totalPages"></span>
+                            </div>`,
+                            footerTemplate: `
+                            <div style="width: 100%; font-size: 9px; font-family: Arial; color: #777; padding: 0 10mm; display: flex; justify-content: center;">
+                                Reference: ${
+                                    refValue || "N/A"
+                                } - Page <span class="pageNumber"></span> of <span class="totalPages"></span>
+                            </div>`,
+                        },
+                        folder: pdfFolder,
+                    }),
+                });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`PDF generation failed: ${errorText}`);
+                }
+
+                const result = await response.json();
+
+                if (!result.success) {
+                    throw new Error(result.message || "PDF generation failed");
+                }
+
+                // Get the correct PDF URL using our standard function
+                const pdfPublicId = result.publicId;
+                const pdfUrl = getCloudinaryPdfUrl(pdfPublicId);
+
+                console.log("PDF Debug Info:", {
+                    publicId: pdfPublicId,
+                    generatedUrl: pdfUrl,
+                    originalUrl: result.pdfUrl,
+                });
+
+                // Prepare quote data for saving to database
                 const quotePayload = {
-                    name: quoteName,
-                    // Store Cloudinary information instead of the PDF data
+                    name: `Quote-${refValue || ""}`,
                     cloudinary: {
-                        publicId: uploadResult.data.public_id,
-                        url: uploadResult.data.secure_url,
+                        publicId: pdfPublicId, // Store the publicId as received from API
+                        url: pdfUrl, // Store the URL generated with our standard function
                     },
-                    // Keep minimal PDF data for backwards compatibility
-                    pdfData: null,
-                    schematicImg: schematicImgData,
-                    surveyData: {
-                        priceTotal,
-                        surveyId: savedSurveyId,
-                    },
-                    surveyId: savedSurveyId,
-                    siteDetails: siteDetails,
+                    surveyId: surveyId,
                     refValue: refValue,
-                    totalPrice: priceTotal,
+                    totalPrice: totalPrice,
                     createdAt: new Date(),
                 };
 
-                console.log("Saving quote to database:", {
-                    name: quoteName,
-                    surveyId: savedSurveyId,
-                    totalPrice: priceTotal,
-                    cloudinaryPublicId: uploadResult.data.public_id,
-                });
-
-                // 8. Send to API
-                const response = await fetch("/api/quotes", {
+                // Save quote to database
+                const saveResponse = await fetch("/api/quotes", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify(quotePayload),
                 });
 
-                const result = await response.json();
-                console.log(
-                    "✓ Quote saved successfully:",
-                    result.success ? "Success" : "Failed"
-                );
+                const saveResult = await saveResponse.json();
 
-                // Show success message
-                if (result.success) {
-                    toast.current?.show({
+                if (saveResult.success) {
+                    toast?.current?.show({
                         severity: "success",
                         summary: "Quote Created",
-                        detail: "Quote has been saved to Cloudinary and database",
+                        detail: "Quote has been saved successfully",
                         life: 3000,
                     });
+                    return { success: true, data: saveResult.data };
+                } else {
+                    throw new Error(
+                        saveResult.message || "Failed to save quote"
+                    );
                 }
-
-                return { success: true, data: result.data };
-            } catch (pdfError) {
-                console.error("Error generating or uploading PDF:", pdfError);
-                toast.current?.show({
+            } catch (error) {
+                console.error("Error generating quote:", error);
+                toast?.current?.show({
                     severity: "error",
-                    summary: "PDF Error",
-                    detail: pdfError.message || "Error generating PDF",
+                    summary: "Quote Error",
+                    detail: error.message || "Error creating quote",
                     life: 5000,
                 });
-                return { success: false, error: pdfError };
+                return { success: false, error };
+            } finally {
+                window.__generating_quote = false;
             }
-        } catch (error) {
-            console.error("Error in quote generation:", error);
-            toast.current?.show({
-                severity: "error",
-                summary: "Quote Error",
-                detail: error.message || "Error creating quote",
-                life: 5000,
-            });
-            return { success: false, error };
-        } finally {
-            // Always unlock
-            window.__generating_quote = false;
-            console.log("⭐⭐⭐ QUOTE GENERATION COMPLETE ⭐⭐⭐");
-        }
-    };
+        },
+        [captureElementAsHtml, computeEquipmentTotal]
+    );
 
-    // Export functions for use in SaveSurvey
+    // Return safe versions of functions and state
     return {
-        captureSchematic,
         generateQuote,
-        jsPDFModule,
+        captureElementAsHtml,
+        uploadPdfToCloudinary,
+        getSurveyPdfFolder, // Now exported from cloudinary.js
+        computeEquipmentTotal,
+        isLoading: pdfState.isLoading,
+        isReady: pdfState.isReady,
+        error: pdfState.error,
+        // Also expose the HTML generation function
+        generateStyledHtml,
     };
-}
+};
+
+// Export the default component (if needed separately)
+const SavePDF = ({
+    surveyId,
+    schematicRef,
+    surveyData,
+    computeTotalPrice,
+    toast,
+}) => {
+    const { isReady, isLoading, error } = useSavePDF();
+
+    if (isLoading) {
+        return <div>Loading PDF generator...</div>;
+    }
+
+    if (!isReady) {
+        return (
+            <div>PDF generator not available: {error || "Unknown error"}</div>
+        );
+    }
+
+    return null; // or actual component JSX
+};
+
+export default SavePDF;

@@ -1,7 +1,7 @@
 // components/kitchenSurvey/pricing/GrandTotalSection.jsx
 
 import React from "react";
-import { calculateGrandTotal } from "./PricingUtils";
+import { calculateGrandTotal, computeStructureTotal } from "./PricingUtils";
 
 /**
  * Component to display the grand total section for the main area only
@@ -21,19 +21,46 @@ export default function GrandTotalSection({
     areasState,
     modify,
     specialistEquipmentData = [],
+    // NEW: Add parameters for parking cost and post-service report
+    parkingCost = 0,
+    postServiceReport = "No",
+    postServiceReportPrice = 0,
+    // NEW: Add parameters for structure entries
+    structureEntries = [],
+    structureItems = [],
 }) {
+    // NEW: Calculate structure total from entries if available
+    let finalStructureTotal = structureTotal;
+    if (
+        Array.isArray(structureEntries) &&
+        structureEntries.length > 0 &&
+        Array.isArray(structureItems) &&
+        structureItems.length > 0
+    ) {
+        const calculatedTotal = computeStructureTotal(
+            structureEntries,
+            structureItems
+        );
+        // If we've calculated a non-zero total, use it
+        if (calculatedTotal > 0) {
+            finalStructureTotal = calculatedTotal;
+        }
+    }
+
     // Don't render if there's no data
     if (
-        structureTotal <= 0 &&
+        finalStructureTotal <= 0 &&
         computedEquipmentTotal <= 0 &&
-        canopyTotal <= 0
+        canopyTotal <= 0 &&
+        parkingCost <= 0 &&
+        postServiceReportPrice <= 0
     ) {
         return null;
     }
 
     // Calculate the grand total for main area only
     const grandTotal = calculateGrandTotal(
-        structureTotal,
+        finalStructureTotal,
         computedEquipmentTotal,
         canopyTotal,
         accessDoorPrice,
@@ -44,7 +71,13 @@ export default function GrandTotalSection({
         schematicItemsTotal,
         [], // Empty array for child areas
         modify,
-        specialistEquipmentData
+        specialistEquipmentData,
+        // NEW: Pass parking cost and post-service report price to calculation
+        parkingCost,
+        postServiceReportPrice,
+        // NEW: Pass structure entries and items
+        structureEntries,
+        structureItems
     );
 
     return (
@@ -85,7 +118,7 @@ export default function GrandTotalSection({
                         <td style={{ textAlign: "right" }}>
                             £
                             {(
-                                (Number(structureTotal) || 0) +
+                                (Number(finalStructureTotal) || 0) +
                                 (Number(computedEquipmentTotal) || 0) +
                                 (Number(canopyTotal) || 0) +
                                 (Number(accessDoorPrice) || 0) +
@@ -107,7 +140,10 @@ export default function GrandTotalSection({
                                           },
                                           0
                                       )
-                                    : 0)
+                                    : 0) +
+                                // NEW: Add parking cost and post-service report price
+                                (Number(parkingCost) || 0) +
+                                (Number(postServiceReportPrice) || 0)
                             ).toFixed(2)}
                         </td>
                     </tr>

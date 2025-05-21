@@ -280,21 +280,6 @@ export default function Images({
             {/* Toast for notifications */}
             <Toast ref={toast} />
 
-            {/* Info message */}
-            <div className="mb-4 p-3 bg-gray-100 rounded">
-                <p className="text-sm text-gray-700">
-                    <i className="pi pi-info-circle mr-2"></i>
-                    Images will be uploaded when you save the survey.
-                </p>
-                {surveyRef && (
-                    <p className="text-xs text-gray-500 mt-1">
-                        <i className="pi pi-folder mr-1"></i>
-                        Path: surveys/{siteName || "unknown-site"}/
-                        {surveyRef || "unknown"}
-                    </p>
-                )}
-            </div>
-
             {/* Categories */}
             {categories.map((category) => (
                 <div key={category} className="mb-6">
@@ -406,8 +391,8 @@ export default function Images({
                                             }
                                             style={{
                                                 position: "relative",
-                                                width: "200px",
-                                                height: "200px",
+                                                width: "140px",
+                                                height: "140px",
                                                 border: "1px solid #ddd",
                                                 borderRadius: "4px",
                                                 overflow: "hidden",

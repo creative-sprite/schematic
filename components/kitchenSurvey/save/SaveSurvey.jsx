@@ -12,7 +12,7 @@ import {
     getSurveyPdfFolder,
     uploadPdfToCloudinary,
 } from "@/lib/cloudinary";
-import SavePDF from "./SavePDF"; // Import our new PDF component
+import { useSavePDF } from "./SavePDF"; // Import our updated PDF component
 
 // Utility function to generate Cloudinary URLs consistently
 const getCloudinaryUrl = (publicId) => {
@@ -32,22 +32,21 @@ export default function SaveSurvey({
     surveyId,
     refValue,
     surveyDate,
-    parking, // Dedicated parking prop
+    parking,
     siteDetails,
     contacts,
     primaryContactIndex,
     walkAroundContactIndex,
     structureId,
     structureTotal,
-    structureSelectionData,
-    structureDimensions,
-    structureComments,
+    // NEW: Add structureEntries parameter as primary data structure
+    structureEntries = [],
     surveyData,
     equipmentItems,
     specialistEquipmentData,
     canopyTotal,
-    canopyEntries = [], // Add default empty array to prevent undefined errors
-    canopyComments = {}, // Add canopyComments prop with default empty object
+    canopyEntries = [],
+    canopyComments = {},
     accessDoorPrice,
     ventilationPrice,
     airPrice,
@@ -57,11 +56,15 @@ export default function SaveSurvey({
     selectedGroupId,
     operations,
     access,
-    equipment = {}, // Add default empty object to prevent undefined errors
+    equipment = {},
     notes,
     ventilation,
     modify,
-    // Survey images directly passed from parent - standardized location only
+    // NEW: Add parking cost and post-service report fields
+    parkingCost = 0,
+    postServiceReport = "No",
+    postServiceReportPrice = 0,
+    // Survey images directly passed from parent
     surveyImages = {},
     // Schematic data props
     placedItems = [],
@@ -71,9 +74,9 @@ export default function SaveSurvey({
     accessDoorSelections = {},
     fanGradeSelections = {},
     flexiDuctSelections = {},
-    // Collection-related props - UPDATED for multiple collections
+    // Collection-related props
     collectionId = null,
-    collections = [], // New prop for multiple collections
+    collections = [],
     areaIndex = 0,
     totalAreas = 1,
     // Survey creation function
@@ -104,8 +107,8 @@ export default function SaveSurvey({
         commentCount: 0,
     });
 
-    // Initialize the PDF generator component
-    const { generateQuote, captureSchematic } = SavePDF();
+    // Initialize the PDF generator component with our updated hook
+    const { generateQuote, captureSchematic } = useSavePDF();
 
     // Update the debug ref when equipment changes
     useEffect(() => {
@@ -117,15 +120,6 @@ export default function SaveSurvey({
                     ? Object.keys(equipment.subcategoryComments).length
                     : 0,
             };
-
-            // console.log(
-            //     "SaveSurvey: Equipment updated:",
-            //     equipment.subcategoryComments
-            //         ? `Has ${
-            //               Object.keys(equipment.subcategoryComments).length
-            //           } comments`
-            //         : "Missing subcategoryComments"
-            // );
         }
     }, [equipment]);
 
@@ -154,7 +148,7 @@ export default function SaveSurvey({
                     setJsPDFModule(() => module.default);
                 })
                 .catch((error) => {
-                    // console.error("Failed to load jsPDF:", error);
+                    console.error("Failed to load jsPDF:", error);
                 });
         });
     }, []);
@@ -175,6 +169,9 @@ export default function SaveSurvey({
                 typeof schematicItemsTotal === "object"
                     ? schematicItemsTotal.overall || 0
                     : schematicItemsTotal,
+            // NEW: Add parking cost and post-service report price to totals
+            parkingCost: parkingCost,
+            postServiceReportPrice: postServiceReportPrice,
             modify: modify,
             groupingId: selectedGroupId,
         };
@@ -184,85 +181,48 @@ export default function SaveSurvey({
     };
 
     /**
-     * Simplified function to generate a quote PDF
+     * Simplified function to generate a quote PDF using the updated hook
+     * Now only passes minimal required data for efficiency
      */
     const generateQuotePDF = async (savedSurveyId) => {
-        // Simple locking mechanism with console
-        // console.log("⭐⭐⭐ GENERATING QUOTE - SIMPLIFIED APPROACH ⭐⭐⭐");
-
-        // Basic validation
-        if (window.__generating_quote) {
-            // console.log("Already generating a quote - skipping");
+        // Skip if already generating or no schematic ref
+        if (window.__generating_quote || !schematicRef?.current) {
             return;
         }
-
-        if (!schematicRef?.current) {
-            // console.log("No schematic ref found - skipping quote generation");
-            return;
-        }
-
-        // Lock to prevent duplicate generation
-        window.__generating_quote = true;
 
         try {
-            // Gather all survey data for the PDF generator
-            const surveyDataForPDF = {
+            // Gather minimal essential data for the quote generation
+            const essentialData = {
                 refValue,
                 surveyDate,
-                parking,
                 siteDetails,
                 structureId,
-                structureTotal,
-                structureSelectionData,
-                structureDimensions,
-                structureComments,
-                surveyData,
-                canopyTotal,
-                canopyEntries,
-                canopyComments,
-                accessDoorPrice,
-                ventilationPrice,
-                airPrice,
-                fanPartsPrice,
-                airInExTotal,
-                schematicItemsTotal,
-                selectedGroupId,
-                operations,
-                access,
-                equipment,
-                notes,
-                ventilation,
-                modify,
                 placedItems,
                 specialItems,
                 gridSpaces,
                 cellSize,
-                accessDoorSelections,
-                fanGradeSelections,
-                flexiDuctSelections,
+                // NEW: Include parking cost and post-service report data
+                parkingCost,
+                postServiceReport,
+                postServiceReportPrice,
             };
 
-            // Call the generateQuote function from SavePDF
+            // Call the streamlined generateQuote function from our updated hook
             await generateQuote(
                 savedSurveyId,
                 schematicRef,
-                surveyDataForPDF,
-                computedEquipmentTotal,
+                essentialData,
                 computedGrandTotals,
                 toast
             );
         } catch (error) {
-            // console.error("Error in quote generation:", error);
+            console.error("Error in quote generation:", error);
             toast.current?.show({
                 severity: "error",
                 summary: "Quote Error",
                 detail: error.message || "Error creating quote",
                 life: 5000,
             });
-        } finally {
-            // Always unlock
-            window.__generating_quote = false;
-            // console.log("⭐⭐⭐ QUOTE GENERATION COMPLETE ⭐⭐⭐");
         }
     };
 
@@ -272,15 +232,12 @@ export default function SaveSurvey({
      */
     const uploadSingleImage = async (image, category, siteName, surveyRef) => {
         if (!image || !image.file) {
-            // console.log(`[SaveSurvey] Cannot upload image - missing file`);
             return null;
         }
 
         try {
             // Create folder path using helper function
             const folder = getSurveyImageFolder(siteName, surveyRef, category);
-
-            // console.log(`[SaveSurvey] Uploading image to folder: ${folder}`);
 
             // Create form data for upload
             const formData = new FormData();
@@ -317,7 +274,7 @@ export default function SaveSurvey({
                 uploaded: true,
             };
         } catch (error) {
-            // console.error(`[SaveSurvey] Error uploading image:`, error);
+            console.error(`Error uploading image:`, error);
             return null;
         }
     };
@@ -346,7 +303,6 @@ export default function SaveSurvey({
 
         // If no images to upload, return original images
         if (totalImagesToUpload === 0) {
-            // console.log("[SaveSurvey] No images need uploading");
             return images;
         }
 
@@ -429,11 +385,6 @@ export default function SaveSurvey({
                     '[id^="subcategory-comment-"]'
                 );
 
-                // Log the total found
-                // console.log(
-                //     `[SaveSurvey] Found ${commentTextareas.length} equipment comment textareas in DOM`
-                // );
-
                 commentTextareas.forEach((textarea) => {
                     if (textarea.value && textarea.value.trim()) {
                         // Extract subcategory from ID by removing the prefix and converting hyphens back to spaces
@@ -446,10 +397,6 @@ export default function SaveSurvey({
                             );
                             capturedComments[subcategory] =
                                 textarea.value.trim();
-
-                            // console.log(
-                            //     `[SaveSurvey] Captured comment for subcategory: "${subcategory}"`
-                            // );
                         }
                     }
                 });
@@ -458,10 +405,6 @@ export default function SaveSurvey({
                 const orphanedCommentTextareas = document.querySelectorAll(
                     '[id^="orphaned-comment-"]'
                 );
-
-                // console.log(
-                //     `[SaveSurvey] Found ${orphanedCommentTextareas.length} orphaned comment textareas in DOM`
-                // );
 
                 orphanedCommentTextareas.forEach((textarea) => {
                     if (textarea.value && textarea.value.trim()) {
@@ -474,24 +417,11 @@ export default function SaveSurvey({
                             );
                             capturedComments[subcategory] =
                                 textarea.value.trim();
-
-                            // console.log(
-                            //     `[SaveSurvey] Captured orphaned comment for subcategory: "${subcategory}"`
-                            // );
                         }
                     }
                 });
-
-                // console.log(
-                //     "[SaveSurvey] Directly captured",
-                //     Object.keys(capturedComments).length,
-                //     "comments from DOM"
-                // );
             } catch (error) {
-                // console.error(
-                //     "[SaveSurvey] Error capturing comments from DOM:",
-                //     error
-                // );
+                console.error("Error capturing comments from DOM:", error);
             }
         }
 
@@ -512,12 +442,6 @@ export default function SaveSurvey({
                     '[id^="category-comment-"]'
                 );
 
-                // console.log(
-                //     "[SaveSurvey] Found",
-                //     commentTextareas.length,
-                //     "specialist category comment textareas in DOM"
-                // );
-
                 commentTextareas.forEach((textarea) => {
                     if (textarea.value && textarea.value.trim()) {
                         // Extract category from ID by removing the prefix and converting hyphens back to spaces
@@ -526,24 +450,14 @@ export default function SaveSurvey({
                             const categoryId = idParts.slice(2).join("-");
                             const category = categoryId.replace(/-/g, " ");
                             capturedComments[category] = textarea.value.trim();
-                            // console.log(
-                            //     "[SaveSurvey] Captured comment for category:",
-                            //     category
-                            // );
                         }
                     }
                 });
-
-                // console.log(
-                //     "[SaveSurvey] Directly captured",
-                //     Object.keys(capturedComments).length,
-                //     "specialist category comments from DOM"
-                // );
             } catch (error) {
-                // console.error(
-                //     "[SaveSurvey] Error capturing specialist category comments from DOM:",
-                //     error
-                // );
+                console.error(
+                    "Error capturing specialist category comments from DOM:",
+                    error
+                );
             }
         }
 
@@ -555,8 +469,6 @@ export default function SaveSurvey({
      * This directly calls component methods to force updates
      */
     const syncComponentStates = () => {
-        // console.log("[SaveSurvey] Syncing component states before saving");
-
         // Try to sync canopy comments using Area1Logic's method
         let canopySynced = false;
         if (
@@ -565,7 +477,6 @@ export default function SaveSurvey({
             typeof window.area1LogicInstance.syncCanopyComments === "function"
         ) {
             canopySynced = window.area1LogicInstance.syncCanopyComments();
-            // console.log("[SaveSurvey] Canopy comments synced:", canopySynced);
         }
 
         // Try to sync equipment subcategory comments
@@ -578,10 +489,6 @@ export default function SaveSurvey({
         ) {
             equipmentSynced =
                 window.equipmentComponentInstance.syncSubcategoryComments();
-            // console.log(
-            //     "[SaveSurvey] Equipment comments synced:",
-            //     equipmentSynced
-            // );
         }
 
         // Try to sync specialist equipment category comments
@@ -592,14 +499,15 @@ export default function SaveSurvey({
             typeof window.specialistEquipmentInstance.syncChanges === "function"
         ) {
             specialistSynced = window.specialistEquipmentInstance.syncChanges();
-            // console.log(
-            //     "[SaveSurvey] Specialist equipment category comments synced:",
-            //     specialistSynced
-            // );
-        } else {
-            // console.log(
-            //     "[SaveSurvey] No specialist equipment instance found for syncing"
-            // );
+        }
+
+        // Try to sync schematic pricing breakdown
+        if (
+            typeof window !== "undefined" &&
+            window.schematicInstance &&
+            typeof window.schematicInstance.syncDoorPrices === "function"
+        ) {
+            const schematicSynced = window.schematicInstance.syncDoorPrices();
         }
 
         // Try direct component access as fallback
@@ -614,10 +522,6 @@ export default function SaveSurvey({
             ) {
                 canopySynced =
                     window.canopyComponentInstance.forceUpdateComments();
-                // console.log(
-                //     "[SaveSurvey] Canopy comments synced via direct component access:",
-                //     canopySynced
-                // );
             }
         }
 
@@ -626,7 +530,7 @@ export default function SaveSurvey({
     };
 
     /**
-     * FIXED: Simplified save survey function
+     * FIXED: Simplified save survey function with improved structure entries handling
      */
     const handleSaveSurvey = async (
         shouldRedirect = true,
@@ -634,7 +538,6 @@ export default function SaveSurvey({
     ) => {
         // Protect against double submission
         if (isSubmitting) {
-            // console.log("[SaveSurvey] Already submitting - ignoring click");
             return;
         }
 
@@ -682,48 +585,6 @@ export default function SaveSurvey({
                 isWalkAroundContact: index === walkAroundContactIndex,
             }));
 
-            // 4. Prepare normalized structure data
-            const normalizedSelectionData = (structureSelectionData || []).map(
-                (item) => ({
-                    type: item.type || "",
-                    item: item.item || "",
-                    grade: item.grade || "",
-                })
-            );
-
-            const normalizedDimensions = {
-                length:
-                    structureDimensions?.length !== undefined
-                        ? Number(structureDimensions.length)
-                        : null,
-                width:
-                    structureDimensions?.width !== undefined
-                        ? Number(structureDimensions.width)
-                        : null,
-                height:
-                    structureDimensions?.height !== undefined
-                        ? Number(structureDimensions.height)
-                        : null,
-            };
-
-            // Log equipment and comments state before saving
-            // console.log(
-            //     "[SaveSurvey] Equipment object at save time:",
-            //     equipment ? "present" : "missing",
-            //     equipment?.subcategoryComments
-            //         ? `with ${
-            //               Object.keys(equipment.subcategoryComments).length
-            //           } comments`
-            //         : "WITHOUT subcategoryComments"
-            // );
-
-            // console.log(
-            //     "[SaveSurvey] Canopy comments at save time:",
-            //     canopyComments
-            //         ? `${Object.keys(canopyComments).length} comments`
-            //         : "None"
-            // );
-
             // IMPROVED: Direct capture of equipment comments from DOM
             const domCapturedComments = captureEquipmentCommentsFromDOM();
 
@@ -746,22 +607,6 @@ export default function SaveSurvey({
                 // Add any comments captured from DOM (these will override if keys match)
                 ...domCapturedSpecialistComments,
             };
-
-            // console.log(
-            //     "[SaveSurvey] Final subcategoryComments for saving:",
-            //     Object.keys(finalSubcategoryComments).length > 0
-            //         ? `${Object.keys(finalSubcategoryComments).length} comments`
-            //         : "Empty object"
-            // );
-
-            // console.log(
-            //     "[SaveSurvey] Final specialist categoryComments for saving:",
-            //     Object.keys(finalSpecialistCategoryComments).length > 0
-            //         ? `${
-            //               Object.keys(finalSpecialistCategoryComments).length
-            //           } comments`
-            //         : "Empty object"
-            // );
 
             // Use provided collection ID if available
             const effectiveCollectionId = manualCollectionId || collectionId;
@@ -786,6 +631,72 @@ export default function SaveSurvey({
                 ];
             }
 
+            // FIXED: Preserve schematicItemsTotal object with breakdown if it exists
+            const schematicItemsTotalForSave =
+                typeof schematicItemsTotal === "object" &&
+                schematicItemsTotal !== null &&
+                schematicItemsTotal.breakdown &&
+                Object.keys(schematicItemsTotal.breakdown).length > 0
+                    ? {
+                          overall:
+                              typeof schematicItemsTotal.overall === "number"
+                                  ? schematicItemsTotal.overall
+                                  : 0,
+                          breakdown: { ...schematicItemsTotal.breakdown },
+                      }
+                    : typeof schematicItemsTotal === "object" &&
+                      schematicItemsTotal !== null
+                    ? schematicItemsTotal.overall || 0
+                    : schematicItemsTotal || 0;
+
+            // UPDATED: Process structure entries for saving
+            let structureEntriesForSave = [];
+
+            // Check if we have entries in the structureEntries array
+            if (
+                structureEntries &&
+                Array.isArray(structureEntries) &&
+                structureEntries.length > 0
+            ) {
+                console.log(
+                    "SaveSurvey: Using structure entries array with",
+                    structureEntries.length,
+                    "entries"
+                );
+
+                // Deep copy the entries to avoid reference issues
+                structureEntriesForSave = structureEntries.map((entry) => {
+                    // Ensure each entry has properly formatted data
+                    return {
+                        id: entry.id,
+                        selectionData: Array.isArray(entry.selectionData)
+                            ? entry.selectionData.map((row) => ({
+                                  type: row.type || "",
+                                  item: row.item || "",
+                                  grade: row.grade || "",
+                              }))
+                            : [],
+                        dimensions: entry.dimensions
+                            ? {
+                                  length: Number(entry.dimensions.length) || 0,
+                                  width: Number(entry.dimensions.width) || 0,
+                                  height: Number(entry.dimensions.height) || 0,
+                              }
+                            : {
+                                  length: 0,
+                                  width: 0,
+                                  height: 0,
+                              },
+                        comments: entry.comments || "",
+                    };
+                });
+
+                console.log(
+                    "Final structure entries for save:",
+                    JSON.stringify(structureEntriesForSave)
+                );
+            }
+
             // 6. Create the survey payload with simplified structure
             const surveyPayload = {
                 // Basic info
@@ -804,6 +715,13 @@ export default function SaveSurvey({
                     parking: parking || "",
                     dbs: access.dbs || "Not Required",
                     permit: access.permit || "No",
+                },
+
+                // NEW: Add additional services section with parking cost and post-service report data
+                additionalServices: {
+                    parkingCost: parkingCost,
+                    postServiceReport: postServiceReport,
+                    postServiceReportPrice: postServiceReportPrice,
                 },
 
                 // Images in standardized format - just publicId and category
@@ -833,13 +751,12 @@ export default function SaveSurvey({
                     })).filter((img) => img.publicId),
                 },
 
-                // Section data
+                // UPDATED: Structure section - now supports multiple entries
                 structure: {
                     structureId,
                     structureTotal,
-                    selectionData: normalizedSelectionData,
-                    dimensions: normalizedDimensions,
-                    structureComments: structureComments || "",
+                    // NEW: Always include the entries array as primary storage
+                    entries: structureEntriesForSave,
                 },
 
                 // IMPROVED: Use finalSubcategoryComments that combines state and DOM captures
@@ -887,16 +804,14 @@ export default function SaveSurvey({
                     comments: canopyComments || {}, // Use current state
                 },
 
+                // FIXED: Preserve the full schematicItemsTotal object with breakdown
                 schematic: {
                     accessDoorPrice,
                     ventilationPrice,
                     airPrice,
                     fanPartsPrice,
                     airInExTotal,
-                    schematicItemsTotal:
-                        typeof schematicItemsTotal === "object"
-                            ? schematicItemsTotal.overall || 0
-                            : schematicItemsTotal,
+                    schematicItemsTotal: schematicItemsTotalForSave, // Now preserving object structure
                     selectedGroupId,
                     gridSpaces,
                     cellSize,
@@ -932,7 +847,7 @@ export default function SaveSurvey({
                 operations: operations,
                 notes: notes,
 
-                // UPDATED: Simplified totals with main area only
+                // FIXED: Preserve the full schematicItemsTotal in totals too
                 totals: {
                     mainArea: {
                         structureTotal,
@@ -943,46 +858,51 @@ export default function SaveSurvey({
                         airPrice,
                         fanPartsPrice,
                         airInExTotal,
-                        schematicItemsTotal:
-                            typeof schematicItemsTotal === "object"
-                                ? schematicItemsTotal.overall || 0
-                                : schematicItemsTotal,
+                        schematicItemsTotal: schematicItemsTotalForSave, // Now preserving object structure
+                        // NEW: Add parking cost and post-service report price to main area totals
+                        parkingCost: parkingCost,
+                        postServiceReportPrice: postServiceReportPrice,
                         modify,
                         groupingId: selectedGroupId,
                     },
-                    grandTotal: computedGrandTotals(),
+                    duplicatedAreas: [],
+                    grandTotal: {
+                        structureTotal,
+                        equipmentTotal: computedEquipmentTotal(),
+                        canopyTotal,
+                        accessDoorPrice,
+                        ventilationPrice,
+                        airPrice,
+                        fanPartsPrice,
+                        airInExTotal,
+                        schematicItemsTotal: schematicItemsTotalForSave,
+
+                        parkingCost: parkingCost,
+                        postServiceReportPrice: postServiceReportPrice,
+                        modify,
+                        groupingId: selectedGroupId,
+                    },
+                    duplicatedAreas: [], // FIXED: Use empty array instead of mongoose Schema reference
+                    grandTotal: {
+                        structureTotal,
+                        equipmentTotal: computedEquipmentTotal(),
+                        canopyTotal,
+                        accessDoorPrice,
+                        ventilationPrice,
+                        airPrice,
+                        fanPartsPrice,
+                        airInExTotal,
+                        schematicItemsTotal: schematicItemsTotalForSave, // Now preserving object structure
+                        // NEW: Add parking cost and post-service report price to grand total
+                        parkingCost: parkingCost,
+                        postServiceReportPrice: postServiceReportPrice,
+                    },
                     modify: modify,
                 },
             };
 
-            // Log critical parts of the payload
-            // console.log("[SaveSurvey] Final payload structure:", {
-            //     hasEquipmentSurvey: !!surveyPayload.equipmentSurvey,
-            //     hasSubcategoryComments:
-            //         !!surveyPayload.equipmentSurvey?.subcategoryComments,
-            //     subcategoryCommentsCount: Object.keys(
-            //         surveyPayload.equipmentSurvey?.subcategoryComments || {}
-            //     ).length,
-            //     hasCanopyComments: !!surveyPayload.canopySurvey?.comments,
-            //     canopyCommentsCount: Object.keys(
-            //         surveyPayload.canopySurvey?.comments || {}
-            //     ).length,
-            //     hasSpecialistCategoryComments:
-            //         Object.keys(
-            //             surveyPayload.specialistEquipmentSurvey
-            //                 .categoryComments || {}
-            //         ).length > 0,
-            //     collectionsCount: surveyPayload.collections?.length || 0,
-            // });
-
             // 6. Save the survey
             let res;
-
-            // console.log(
-            //     `[SaveSurvey] ${
-            //         surveyId ? "Updating" : "Creating"
-            //     } survey with payload`
-            // );
 
             // If editing existing, use PUT; otherwise POST
             if (surveyId) {
@@ -1005,10 +925,6 @@ export default function SaveSurvey({
             // FIXED: Enhanced error handling for the API response
             if (!res.ok) {
                 const errorText = await res.text();
-                // console.error(
-                //     `[SaveSurvey] HTTP Error: ${res.status} ${res.statusText}`,
-                //     errorText
-                // );
                 throw new Error(
                     `Failed to save survey: ${res.status} ${res.statusText}`
                 );
@@ -1017,13 +933,6 @@ export default function SaveSurvey({
             const json = await res.json();
 
             if (json.success) {
-                // console.log(
-                //     `[SaveSurvey] Survey ${
-                //         surveyId ? "updated" : "created"
-                //     } successfully:`,
-                //     json.data
-                // );
-
                 toast.current.show({
                     severity: "success",
                     summary: "Success",
@@ -1032,27 +941,17 @@ export default function SaveSurvey({
                         : "Survey saved successfully!",
                 });
 
-                // Generate quote
+                // Generate quote with a delay
                 if (json.data && (json.data._id || json.data.id)) {
                     const savedId = json.data._id || json.data.id;
-                    // console.log(
-                    //     `[SaveSurvey] Survey saved with ID: ${savedId}`
-                    // );
 
                     // Use a timer to delay quote generation
                     if (quoteGenerationTimerRef.current) {
                         clearTimeout(quoteGenerationTimerRef.current);
                     }
 
-                    quoteGenerationTimerRef.current = setTimeout(async () => {
-                        try {
-                            await generateQuotePDF(savedId);
-                        } catch (quoteError) {
-                            // console.error(
-                            //     "[SaveSurvey] Error generating quote:",
-                            //     quoteError
-                            // );
-                        }
+                    quoteGenerationTimerRef.current = setTimeout(() => {
+                        generateQuotePDF(savedId);
                     }, 500);
                 }
 
@@ -1077,11 +976,9 @@ export default function SaveSurvey({
                 return { success: true, data: json.data };
             } else {
                 // Enhanced error handling
-                // console.error("[SaveSurvey] API Error:", json);
                 throw new Error(json.message || "Failed to save survey");
             }
         } catch (error) {
-            // console.error("[SaveSurvey] Error saving survey:", error);
             toast.current.show({
                 severity: "error",
                 summary: "Error",

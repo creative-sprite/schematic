@@ -63,7 +63,7 @@ const getCloudinaryUrl = (publicId) => {
 
 /**
  * Custom hook for loading survey data with simplified image handling
- * UPDATED to remove parent-child area structure
+ * UPDATED to prioritize entries array for structure data
  */
 export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
     // Loading state
@@ -75,6 +75,11 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
 
     // Dedicated parking state
     const [parking, setParking] = useState("");
+
+    // NEW: Additional services state
+    const [parkingCost, setParkingCost] = useState(0);
+    const [postServiceReport, setPostServiceReport] = useState("No");
+    const [postServiceReportPrice, setPostServiceReportPrice] = useState(0);
 
     // Survey images state - standardized location
     const [surveyImages, setSurveyImages] = useState({
@@ -100,11 +105,11 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
         categoryComments: {},
     });
 
-    // Structure data
+    // Structure data - UPDATED: Now primarily focused on structureEntries
     const [structureTotal, setStructureTotal] = useState(0);
-    const [structureSelectionData, setStructureSelectionData] = useState([]);
-    const [structureDimensions, setStructureDimensions] = useState({});
-    const [structureComments, setStructureComments] = useState("");
+
+    // NEW MAIN DATA STRUCTURE: State for structure entries
+    const [structureEntries, setStructureEntries] = useState([]);
 
     // Canopy data
     const [canopyTotal, setCanopyTotal] = useState(0);
@@ -396,17 +401,112 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
                     }
                 }
 
-                // Set structure data
+                // NEW: Load additional services data (parking cost and post-service report)
+                if (survey.additionalServices) {
+                    setParkingCost(survey.additionalServices.parkingCost || 0);
+                    setPostServiceReport(
+                        survey.additionalServices.postServiceReport || "No"
+                    );
+                    setPostServiceReportPrice(
+                        survey.additionalServices.postServiceReportPrice || 0
+                    );
+                    console.log("Loaded additional services:", {
+                        parkingCost: survey.additionalServices.parkingCost || 0,
+                        postServiceReport:
+                            survey.additionalServices.postServiceReport || "No",
+                        postServiceReportPrice:
+                            survey.additionalServices.postServiceReportPrice ||
+                            0,
+                    });
+                } else {
+                    // Alternatively, load from totals if it's stored there
+                    if (survey.totals && survey.totals.mainArea) {
+                        if (survey.totals.mainArea.parkingCost !== undefined) {
+                            setParkingCost(survey.totals.mainArea.parkingCost);
+                        }
+                        if (
+                            survey.totals.mainArea.postServiceReportPrice !==
+                            undefined
+                        ) {
+                            setPostServiceReportPrice(
+                                survey.totals.mainArea.postServiceReportPrice
+                            );
+                            setPostServiceReport(
+                                survey.totals.mainArea.postServiceReportPrice >
+                                    0
+                                    ? "Yes"
+                                    : "No"
+                            );
+                        }
+                    }
+                }
+
+                // Set structure data - UPDATED for entries-first approach
                 if (survey.structure) {
+                    // Set the total (for backward compatibility and pricing)
                     setStructureTotal(survey.structure.structureTotal || 0);
                     setStructureId(survey.structure.structureId || "");
-                    setStructureSelectionData(
-                        survey.structure.selectionData || []
-                    );
-                    setStructureDimensions(survey.structure.dimensions || {});
-                    setStructureComments(
-                        survey.structure.structureComments || ""
-                    );
+
+                    // Process structure entries
+                    if (
+                        survey.structure.entries &&
+                        Array.isArray(survey.structure.entries) &&
+                        survey.structure.entries.length > 0
+                    ) {
+                        console.log(
+                            "Loading structure entries from entries array:",
+                            survey.structure.entries.length
+                        );
+
+                        // Process entries to ensure they have the expected format
+                        const processedEntries = survey.structure.entries.map(
+                            (entry) => ({
+                                id:
+                                    entry.id ||
+                                    `entry-${Date.now()}-${Math.random()
+                                        .toString(36)
+                                        .substr(2, 9)}`,
+                                selectionData: Array.isArray(
+                                    entry.selectionData
+                                )
+                                    ? entry.selectionData.map((row) => ({
+                                          type: row.type || "Ceiling",
+                                          item: row.item || "",
+                                          grade: row.grade || "",
+                                      }))
+                                    : [],
+                                dimensions: entry.dimensions
+                                    ? {
+                                          length:
+                                              Number(entry.dimensions.length) ||
+                                              0,
+                                          width:
+                                              Number(entry.dimensions.width) ||
+                                              0,
+                                          height:
+                                              Number(entry.dimensions.height) ||
+                                              0,
+                                      }
+                                    : {
+                                          length: 0,
+                                          width: 0,
+                                          height: 0,
+                                      },
+                                comments: entry.comments || "",
+                            })
+                        );
+
+                        console.log(
+                            "Processed structure entries:",
+                            processedEntries
+                        );
+
+                        // Use the processed entries
+                        setStructureEntries(processedEntries);
+                    } else {
+                        // Start with empty array if no entries
+                        setStructureEntries([]);
+                    }
                 }
 
                 // SIMPLIFIED: Load images from standardized location with consistent URL handling
@@ -654,6 +754,7 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
                         setCanopyEntries([
                             {
                                 id: Date.now().toString(),
+                                canopyTotal: survey.totals.mainArea.canopyTotal,
                                 canopy: {
                                     type: "Canopy",
                                     item: "Standard Canopy",
@@ -671,7 +772,6 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
                                     width: null,
                                     height: null,
                                 },
-                                canopyTotal: survey.totals.mainArea.canopyTotal,
                             },
                         ]);
                     } else {
@@ -745,6 +845,10 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
                                   height:
                                       item.height !== undefined
                                           ? String(item.height)
+                                          : "",
+                                  inaccessible:
+                                      item.inaccessible !== undefined
+                                          ? String(item.inaccessible)
                                           : "",
                               }))
                             : [];
@@ -1108,6 +1212,14 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
         parking,
         setParking,
 
+        // NEW: Add additional services state values
+        parkingCost,
+        setParkingCost,
+        postServiceReport,
+        setPostServiceReport,
+        postServiceReportPrice,
+        setPostServiceReportPrice,
+
         // Add surveyImages to return values - standardized location only
         surveyImages,
         setSurveyImages,
@@ -1129,12 +1241,10 @@ export default function useSurveyDataLoader(surveyId, siteIdParam, toast) {
         // Structure data
         structureTotal,
         setStructureTotal,
-        structureSelectionData,
-        setStructureSelectionData,
-        structureDimensions,
-        setStructureDimensions,
-        structureComments,
-        setStructureComments,
+
+        // NEW PRIMARY DATA: Structure entries array
+        structureEntries,
+        setStructureEntries,
 
         // Canopy data
         canopyTotal,

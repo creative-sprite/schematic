@@ -22,7 +22,7 @@ This stages all files (modified, deleted, and new) to be committed.
 
 Commit Changes
 
-git commit -m "Your commit message here"
+git commit -m "Pre Quote Build"
 Replace with a descriptive message about your changes.
 
 Push to GitHub

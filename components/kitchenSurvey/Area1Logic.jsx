@@ -22,12 +22,9 @@ export default function Area1Logic({
     setStructureTotal,
     structureId,
     setStructureId,
-    structureSelectionData,
-    setStructureSelectionData,
-    structureDimensions,
-    setStructureDimensions,
-    structureComments,
-    setStructureComments,
+    // PRIMARY structure data
+    structureEntries = [],
+    setStructureEntries,
     surveyData,
     setSurveyData,
     equipmentId,
@@ -104,6 +101,34 @@ export default function Area1Logic({
     // State to track if Area ID has been filled
     const [areaIdFilled, setAreaIdFilled] = useState(!!structureId);
 
+    // Debugging reference for structure entries
+    const structureDebugRef = useRef({
+        lastUpdateTime: Date.now(),
+        entriesCount: 0,
+        updateCount: 0,
+    });
+
+    // Log structure entries changes for debugging
+    useEffect(() => {
+        if (structureEntries) {
+            structureDebugRef.current.entriesCount = structureEntries.length;
+            structureDebugRef.current.updateCount++;
+            structureDebugRef.current.lastUpdateTime = Date.now();
+
+            console.log(
+                `Area1Logic: Structure entries updated (${structureDebugRef.current.updateCount}): ${structureEntries.length} entries`
+            );
+            if (structureEntries.length > 0) {
+                console.log(`First entry ID: ${structureEntries[0].id}`);
+                console.log(
+                    `Selection data rows: ${
+                        structureEntries[0].selectionData?.length || 0
+                    }`
+                );
+            }
+        }
+    }, [structureEntries]);
+
     // Register global instance for component access
     useEffect(() => {
         if (typeof window !== "undefined") {
@@ -121,6 +146,31 @@ export default function Area1Logic({
                     }
                     return false;
                 },
+                // Add method to force sync structure entries
+                syncStructureEntries: () => {
+                    console.log("Area1Logic: Force syncing structure entries");
+                    if (
+                        structureEntries &&
+                        Array.isArray(structureEntries) &&
+                        structureEntries.length > 0 &&
+                        typeof setStructureEntries === "function"
+                    ) {
+                        // Create deep copy to avoid reference issues
+                        const entriesCopy = structureEntries.map((entry) => ({
+                            ...entry,
+                            selectionData: Array.isArray(entry.selectionData)
+                                ? entry.selectionData.map((row) => ({ ...row }))
+                                : [],
+                            dimensions: entry.dimensions
+                                ? { ...entry.dimensions }
+                                : {},
+                        }));
+
+                        setStructureEntries(entriesCopy);
+                        return true;
+                    }
+                    return false;
+                },
             };
 
             // Store in window for global access
@@ -133,7 +183,12 @@ export default function Area1Logic({
                 delete window.area1LogicInstance;
             }
         };
-    }, [canopyComments, setCanopyComments]);
+    }, [
+        canopyComments,
+        setCanopyComments,
+        structureEntries,
+        setStructureEntries,
+    ]);
 
     // Check if Area ID has been filled
     useEffect(() => {
@@ -237,66 +292,53 @@ export default function Area1Logic({
         [setStructureId]
     );
 
-    const handleStructureSelectionDataChange = useCallback(
-        (data) => {
-            // Validate data
-            if (!data || !Array.isArray(data)) {
-                console.error(
-                    "Area1Logic: Invalid selection data received:",
-                    data
-                );
-                return;
+    // PRIMARY HANDLER: For structure entries array with improved logging
+    const handleStructureEntriesChange = useCallback(
+        (entries) => {
+            console.log(
+                "Area1Logic: Received structure entries update:",
+                entries.length,
+                "entries"
+            );
+
+            if (setStructureEntries && Array.isArray(entries)) {
+                // Create a deep copy to avoid reference issues
+                const entriesCopy = entries.map((entry) => ({
+                    id: entry.id,
+                    selectionData: Array.isArray(entry.selectionData)
+                        ? entry.selectionData.map((row) => ({
+                              type: row.type || "",
+                              item: row.item || "",
+                              grade: row.grade || "",
+                          }))
+                        : [],
+                    dimensions: entry.dimensions
+                        ? {
+                              length: Number(entry.dimensions.length) || 0,
+                              width: Number(entry.dimensions.width) || 0,
+                              height: Number(entry.dimensions.height) || 0,
+                          }
+                        : {
+                              length: 0,
+                              width: 0,
+                              height: 0,
+                          },
+                    comments: entry.comments || "",
+                }));
+
+                setStructureEntries(entriesCopy);
+
+                // Log the first entry for debugging
+                if (entriesCopy.length > 0) {
+                    console.log("First entry detail:", {
+                        id: entriesCopy[0].id,
+                        selectionDataCount: entriesCopy[0].selectionData.length,
+                        dimensions: entriesCopy[0].dimensions,
+                    });
+                }
             }
-
-            // Normalize data format
-            const validatedData = data.map((item) => ({
-                type: item.type || "",
-                item: item.item || "",
-                grade: item.grade || "",
-            }));
-
-            setStructureSelectionData(validatedData);
         },
-        [setStructureSelectionData]
-    );
-
-    const handleStructureDimensionsChange = useCallback(
-        (dimensions) => {
-            // Validate dimensions
-            if (!dimensions) {
-                console.error(
-                    "Area1Logic: Invalid dimensions received:",
-                    dimensions
-                );
-                return;
-            }
-
-            // Convert dimensions to numbers
-            const validatedDimensions = {
-                length:
-                    dimensions.length !== undefined
-                        ? Number(dimensions.length)
-                        : null,
-                width:
-                    dimensions.width !== undefined
-                        ? Number(dimensions.width)
-                        : null,
-                height:
-                    dimensions.height !== undefined
-                        ? Number(dimensions.height)
-                        : null,
-            };
-
-            setStructureDimensions(validatedDimensions);
-        },
-        [setStructureDimensions]
-    );
-
-    const handleStructureCommentsChange = useCallback(
-        (comments) => {
-            setStructureComments(comments);
-        },
-        [setStructureComments]
+        [setStructureEntries]
     );
 
     // Canopy handlers
@@ -485,18 +527,11 @@ export default function Area1Logic({
                     <Structure
                         onStructureTotalChange={handleStructureTotalChange}
                         onStructureIdChange={handleStructureIdChange}
-                        onSelectionDataChange={
-                            handleStructureSelectionDataChange
-                        }
-                        onDimensionsChange={handleStructureDimensionsChange}
-                        onStructureCommentsChange={
-                            handleStructureCommentsChange
-                        }
                         initialStructureId={structureId}
                         initialStructureTotal={structureTotal}
-                        initialSelectionData={structureSelectionData}
-                        initialDimensions={structureDimensions}
-                        initialStructureComments={structureComments}
+                        // PRIMARY DATA: Use structure entries as primary data
+                        initialStructureEntries={structureEntries}
+                        onStructureEntriesChange={handleStructureEntriesChange}
                     />
                 )}
             </div>
@@ -660,20 +695,6 @@ export default function Area1Logic({
                 {visibleSections.includes("images") && (
                     <div>
                         <h3>Image Gallery</h3>
-                        {surveyImages &&
-                        Object.keys(surveyImages).length > 0 &&
-                        Object.values(surveyImages).flat().length > 0 ? (
-                            <p>
-                                Found{" "}
-                                {Object.values(surveyImages).flat().length}{" "}
-                                saved images
-                            </p>
-                        ) : (
-                            <p>
-                                No saved images found. Add images using the
-                                buttons below.
-                            </p>
-                        )}
                         <Images
                             initialImages={surveyImages}
                             onImagesChange={handleImagesChange}

@@ -1,4 +1,4 @@
-// components\kitchenSurvey\storedQuotes\QuotesList.jsx
+// components/kitchenSurvey/storedQuotes/QuotesList.jsx
 "use client";
 
 import { useState, useEffect, useRef } from "react";
@@ -11,9 +11,10 @@ import { confirmDialog, ConfirmDialog } from "primereact/confirmdialog";
 import { useRouter } from "next/navigation";
 import { Dialog } from "primereact/dialog";
 import { InputTextarea } from "primereact/inputtextarea";
-
-// Configuration to control behavior
-const FETCH_SURVEY_REFS = true; // Enable survey reference checking to identify removed surveys
+// Import the new ViewDownloadPDF component
+import ViewDownloadPDF from "./ViewDownloadPDF";
+// Make sure getCloudinaryPdfUrl is imported
+import { getCloudinaryPdfUrl } from "@/lib/cloudinary";
 
 export default function QuotesList({ siteId, onCountChange }) {
     const [quotes, setQuotes] = useState([]);
@@ -210,147 +211,22 @@ export default function QuotesList({ siteId, onCountChange }) {
                 onCountChange(sortedQuotes.length);
             }
 
-            // Skip orphaned quote notes API calls to prevent 404 errors
-            // await fetchOrphanedQuoteNotes(sortedQuotes);
-
-            // Only fetch survey refs if the feature flag is enabled
-            if (FETCH_SURVEY_REFS && sortedQuotes.length > 0) {
-                // Fetch survey references for each quote
-                const surveyIds = [
-                    ...new Set(
-                        sortedQuotes.map((q) => q.surveyId).filter(Boolean)
-                    ),
-                ];
-                if (surveyIds.length > 0) {
-                    // Use setTimeout to delay API calls slightly
-                    setTimeout(() => {
-                        fetchSurveyRefs(surveyIds, sortedQuotes);
-                    }, 50);
-                }
-            } else {
-                // If FETCH_SURVEY_REFS is disabled, manually create refs for all quotes
-                // This ensures quotes display properly without making problematic API calls
-                const manualRefs = {};
-                sortedQuotes.forEach((quote) => {
-                    if (quote.surveyId && quote.refValue) {
-                        manualRefs[quote.surveyId] = quote.refValue;
-                    }
-                });
-                setSurveyRefs(manualRefs);
+            // Only fetch survey refs if we have quotes
+            if (sortedQuotes.length > 0) {
+                // Use setTimeout to delay API calls slightly
+                setTimeout(() => {
+                    fetchSurveyRefs(sortedQuotes);
+                }, 50);
             }
         } catch (error) {
             // Only log errors in development to keep production console clean
             if (process.env.NODE_ENV !== "production") {
-                // Use console.warn instead of console.error to reduce visual noise
-                console.warn(
-                    "Error fetching quotes (suppressed in production):",
-                    error
-                );
+                console.warn("Error fetching quotes:", error);
             }
             setError(error.message);
         } finally {
             setLoading(false);
         }
-    };
-
-    // Function to fetch orphaned quote notes
-    const fetchOrphanedQuoteNotes = async (quotes) => {
-        try {
-            // Skip API call if we know the endpoint likely doesn't exist to avoid 404s
-            // This assumes the orphanedQuotes API is optional and may not be implemented yet
-            // Return empty object instead of making the API call that will likely 404
-            return {};
-
-            /* Commented out to prevent unnecessary 404 errors
-            // Use silent fetch to prevent 404 errors in console
-            const res = await silentFetch(
-                `/api/orphanedQuotes?siteId=${siteId}`
-            );
-
-            if (!res.ok) {
-                // If the endpoint doesn't exist yet, don't error out
-                if (res.status === 404) {
-                    return {};
-                }
-                throw new Error(`HTTP error! Status: ${res.status}`);
-            }
-
-            const data = await res.json();
-
-            // Create a map of quote ID to notes
-            const notesMap = {};
-            data.forEach((item) => {
-                notesMap[item.quoteId] = item.notes;
-            });
-
-            setOrphanedQuotes(notesMap);
-            return notesMap;
-            */
-        } catch (error) {
-            // Return empty object without logging
-            return {};
-        }
-    };
-
-    // Function to fetch survey references without causing 404 errors
-    const fetchSurveyRefs = async (surveyIds, quotesData) => {
-        if (!surveyIds || !surveyIds.length) return;
-
-        const refsMap = {};
-        let newMissingSurveys = false;
-
-        // Filter out survey IDs that we already know are missing
-        const surveyIdsToCheck = surveyIds.filter(
-            (id) => id && !missingSurveyIds.has(id)
-        );
-
-        // If all surveys are known to be missing, skip API calls entirely
-        if (surveyIdsToCheck.length === 0) {
-            setSurveyRefs(refsMap);
-            return;
-        }
-
-        // Process remaining survey IDs in sequential batches
-        const batchSize = 3;
-        for (let i = 0; i < surveyIdsToCheck.length; i += batchSize) {
-            const batch = surveyIdsToCheck.slice(i, i + batchSize);
-
-            // Process each batch in parallel
-            const promises = batch.map(async (id) => {
-                if (!id) return; // Skip if id is null or undefined
-
-                // Use safeFetch that won't make requests for known missing surveys
-                const res = await safeFetch(
-                    `/api/surveys/kitchenSurveys/viewAll/${id}`,
-                    id
-                );
-
-                // Only process successful responses
-                if (res.ok) {
-                    try {
-                        const json = await res.json();
-                        if (json.success && json.data && json.data.refValue) {
-                            refsMap[id] = json.data.refValue;
-                        }
-                    } catch (e) {
-                        // Silently ignore JSON parsing errors
-                    }
-                } else if (res.status === 404) {
-                    // Mark this survey as missing for future reference
-                    newMissingSurveys = true;
-                }
-            });
-
-            await Promise.all(promises);
-
-            // Small delay between batches
-            if (i + batchSize < surveyIdsToCheck.length) {
-                await new Promise((resolve) => setTimeout(resolve, 100));
-            }
-        }
-
-        // Update the survey references
-        setSurveyRefs(refsMap);
     };
 
     // Function to save a note for an orphaned quote
@@ -392,10 +268,7 @@ export default function QuotesList({ siteId, onCountChange }) {
         } catch (error) {
             // Only log in development
             if (process.env.NODE_ENV !== "production") {
-                console.warn(
-                    "Error saving note (suppressed in production):",
-                    error
-                );
+                console.warn("Error saving note:", error);
             }
 
             toast.current.show({
@@ -416,7 +289,81 @@ export default function QuotesList({ siteId, onCountChange }) {
         setNotesModalVisible(true);
     };
 
-    // Function to view PDF directly
+    // Function to check if surveys still exist and get their references
+    const fetchSurveyRefs = async (quotesData) => {
+        // Get unique survey IDs
+        const surveyIds = [
+            ...new Set(quotesData.map((q) => q.surveyId).filter(Boolean)),
+        ];
+
+        if (surveyIds.length === 0) return;
+
+        const refsMap = {};
+
+        // Process in small batches to avoid overwhelming the server
+        const batchSize = 3;
+        for (let i = 0; i < surveyIds.length; i += batchSize) {
+            const batch = surveyIds.slice(i, i + batchSize);
+
+            // Process each survey in parallel
+            const promises = batch.map(async (id) => {
+                if (!id) return;
+
+                // Skip known missing surveys
+                if (missingSurveyIds.has(id)) return;
+
+                try {
+                    const res = await fetch(
+                        `/api/surveys/kitchenSurveys/viewAll/${id}`
+                    );
+
+                    if (res.ok) {
+                        const json = await res.json();
+                        if (json.success && json.data) {
+                            refsMap[id] = json.data.refValue || "";
+                        }
+                    } else if (res.status === 404) {
+                        // Mark this survey as missing
+                        setMissingSurveyIds((prev) => {
+                            const updated = new Set(prev);
+                            updated.add(id);
+                            return updated;
+                        });
+                    }
+                } catch (error) {
+                    console.warn(`Error checking survey ${id}:`, error);
+                }
+            });
+
+            await Promise.all(promises);
+
+            // Add small delay between batches
+            if (i + batchSize < surveyIds.length) {
+                await new Promise((resolve) => setTimeout(resolve, 100));
+            }
+        }
+
+        setSurveyRefs(refsMap);
+    };
+
+    // UPDATED: Function to get quote PDF URL using the standard function
+    const getQuotePdfUrl = (quote) => {
+        if (!quote || !quote.cloudinary?.publicId) return null;
+
+        // Use the standard function to generate a proper PDF URL
+        const url = getCloudinaryPdfUrl(quote.cloudinary.publicId);
+
+        // Log information about the PDF for debugging
+        console.log("PDF Debug Info:", {
+            publicId: quote.cloudinary.publicId,
+            generatedUrl: url,
+            originalUrl: quote.cloudinary.url,
+        });
+
+        return url;
+    };
+
+    // UPDATED: Function to view PDF directly using the new component
     const handleViewPdf = (quote) => {
         if (!quote) {
             toast.current.show({
@@ -428,10 +375,10 @@ export default function QuotesList({ siteId, onCountChange }) {
             return;
         }
 
-        // Get the PDF URL - prefer Cloudinary storage but fall back to direct pdfData
-        const hasPdf = quote.cloudinary?.url || quote.pdfData;
+        // Check if the PDF is available
+        const pdfUrl = getQuotePdfUrl(quote);
 
-        if (!hasPdf) {
+        if (!pdfUrl) {
             toast.current.show({
                 severity: "error",
                 summary: "Error",
@@ -447,7 +394,9 @@ export default function QuotesList({ siteId, onCountChange }) {
 
     // Fetch quotes when component mounts or siteId changes
     useEffect(() => {
-        fetchQuotes();
+        if (siteId) {
+            fetchQuotes();
+        }
     }, [siteId]);
 
     // Function to fetch survey by ID with 404 prevention
@@ -467,31 +416,6 @@ export default function QuotesList({ siteId, onCountChange }) {
 
         setLoadingSurvey(true);
         try {
-            // Skip the API call if feature flag is disabled
-            if (!FETCH_SURVEY_REFS) {
-                // Instead of making the API call, just show a message and return default data
-                setTimeout(() => {
-                    // Find quote reference if available
-                    const quoteRef = selectedQuote?.refValue || "Unknown";
-
-                    // Show a toast with more helpful information
-                    toast.current.show({
-                        severity: "info",
-                        summary: "Info",
-                        detail: `Viewing quote ${quoteRef}`,
-                        life: 3000,
-                    });
-                }, 500);
-
-                // Return minimal survey data to avoid UI errors
-                return {
-                    _id: surveyId,
-                    refValue: selectedQuote?.refValue || "Unknown",
-                    createdAt: new Date().toISOString(),
-                    general: { surveyType: "Kitchen Survey" },
-                };
-            }
-
             // Use safeFetch to avoid 404 network errors
             const res = await safeFetch(
                 `/api/surveys/kitchenSurveys/viewAll/${surveyId}`,
@@ -520,7 +444,6 @@ export default function QuotesList({ siteId, onCountChange }) {
                 throw new Error(json.message || "Failed to fetch survey");
             }
         } catch (error) {
-            // No console logging
             toast.current.show({
                 severity: "error",
                 summary: "Error",
@@ -579,10 +502,7 @@ export default function QuotesList({ siteId, onCountChange }) {
                 } catch (error) {
                     // Only log in development
                     if (process.env.NODE_ENV !== "production") {
-                        console.warn(
-                            "Error deleting quote (suppressed in production):",
-                            error
-                        );
+                        console.warn("Error deleting quote:", error);
                     }
 
                     toast.current.show({
@@ -598,20 +518,14 @@ export default function QuotesList({ siteId, onCountChange }) {
         });
     };
 
-    // Get PDF URL from quote - prioritize Cloudinary URL but fall back to direct pdfData
-    const getQuotePdfUrl = (quote) => {
-        if (!quote) return null;
-        return quote.cloudinary?.url || quote.pdfData || null;
-    };
-
     // Render a quote item in the list
     const quoteTemplate = (quote) => {
         // Get the survey ref for this quote
         const surveyRef = surveyRefs[quote.surveyId];
-        const isSurveyMissing = !surveyRef;
+        const isSurveyMissing = !surveyRef && quote.surveyId;
         const hasNotes = orphanedQuotes[quote._id];
 
-        // Check if the quote has a PDF via Cloudinary or direct storage
+        // Check if the quote has a PDF using our updated function
         const hasPdf = !!getQuotePdfUrl(quote);
 
         return (
@@ -624,10 +538,11 @@ export default function QuotesList({ siteId, onCountChange }) {
                     {/* Vertical buttons on the left side */}
                     <div className="vertical-buttons">
                         <Button
-                            tooltip="View Quote Details"
+                            tooltip="View Quote PDF"
                             icon="pi pi-file-pdf"
                             className="p-button-success"
-                            onClick={() => handleViewQuote(quote)}
+                            onClick={() => handleViewPdf(quote)}
+                            disabled={!hasPdf}
                         />
                         {isSurveyMissing ? (
                             <Button
@@ -664,8 +579,9 @@ export default function QuotesList({ siteId, onCountChange }) {
                     {/* Quote information */}
                     <div className="quote-info">
                         <h3>
-                            {surveyRef ? (
-                                `REF: ${surveyRef}`
+                            {quote.refValue || surveyRef ? (
+                                ` 
+                                ${quote.refValue || surveyRef}`
                             ) : (
                                 <span style={{ color: "red" }}>
                                     Survey removed
@@ -682,15 +598,15 @@ export default function QuotesList({ siteId, onCountChange }) {
                                 ? `£${quote.totalPrice.toFixed(2)}`
                                 : "N/A"}
                         </p>
-                        {quote.cloudinary?.publicId && (
+                        {/* {quote.cloudinary?.publicId && (
                             <p>
                                 <span
                                     className="pi pi-cloud-upload"
                                     style={{ color: "#4CAF50" }}
                                 ></span>{" "}
-                                Stored in Cloudinary
+                                PDF in Cloudinary
                             </p>
-                        )}
+                        )} */}
                     </div>
                 </Card>
             </div>
@@ -731,7 +647,8 @@ export default function QuotesList({ siteId, onCountChange }) {
             <div>
                 <h3>Survey Details</h3>
                 <p>
-                    <strong>REF:</strong> {selectedSurvey.refValue || "N/A"}
+                    <strong>REF:</strong>
+                    {selectedSurvey.refValue || "N/A"}
                 </p>
                 <p>
                     <strong>Date:</strong>{" "}
@@ -770,16 +687,16 @@ export default function QuotesList({ siteId, onCountChange }) {
         const surveyRef = surveyRefs[selectedQuote.surveyId];
         const hasNotes = orphanedQuotes[selectedQuote._id];
 
-        // Check if the quote has a PDF via Cloudinary or direct storage
+        // Get the PDF URL using our standard function
         const pdfUrl = getQuotePdfUrl(selectedQuote);
-        const isCloudinaryPdf = !!selectedQuote.cloudinary?.url;
+        const isCloudinaryPdf = !!selectedQuote.cloudinary?.publicId;
 
         return (
             <div>
                 <h3>Quote Details</h3>
                 <p>
                     <strong>Survey REF:</strong>{" "}
-                    {surveyRef || "Missing Reference"}
+                    {surveyRef || selectedQuote.refValue || "Missing Reference"}
                 </p>
                 <p>
                     <strong>Title:</strong> {selectedQuote.name || "N/A"}
@@ -796,15 +713,8 @@ export default function QuotesList({ siteId, onCountChange }) {
                 </p>
                 {isCloudinaryPdf && (
                     <p>
-                        <strong>Storage:</strong> Cloudinary (optimized)
+                        <strong>Storage:</strong> Cloudinary PDF
                     </p>
-                )}
-
-                {selectedQuote.description && (
-                    <div>
-                        <h4>Description</h4>
-                        <p>{selectedQuote.description}</p>
-                    </div>
                 )}
 
                 {/* Display notes for orphaned quotes */}
@@ -874,9 +784,9 @@ export default function QuotesList({ siteId, onCountChange }) {
                                     // Create a temporary link to download the PDF
                                     const link = document.createElement("a");
                                     link.href = pdfUrl;
-                                    link.download = `Quote_${
-                                        selectedQuote.refValue ||
-                                        selectedQuote._id
+                                    // Force the download filename to have .pdf extension
+                                    link.download = `${
+                                        selectedQuote.name || "Quote"
                                     }.pdf`;
                                     document.body.appendChild(link);
                                     link.click();
@@ -945,32 +855,13 @@ export default function QuotesList({ siteId, onCountChange }) {
                 {renderQuoteContent()}
             </Dialog>
 
-            {/* PDF Viewer Modal */}
-            <Dialog
-                header={`PDF Quote - ${selectedQuote?.name || "Quote"}`}
+            {/* PDF Viewer Modal - Now using the new component */}
+            <ViewDownloadPDF
                 visible={pdfModalVisible}
-                style={{ width: "80vw", height: "80vh" }}
                 onHide={() => setPdfModalVisible(false)}
-                maximizable
-                modal
-                blockScroll
-            >
-                {selectedQuote && getQuotePdfUrl(selectedQuote) ? (
-                    <iframe
-                        src={getQuotePdfUrl(selectedQuote)}
-                        style={{
-                            width: "100%",
-                            height: "calc(80vh - 120px)",
-                            border: "none",
-                        }}
-                        title="PDF Viewer"
-                    />
-                ) : (
-                    <div style={{ textAlign: "center", padding: "2rem" }}>
-                        <p>No PDF available for this quote.</p>
-                    </div>
-                )}
-            </Dialog>
+                quote={selectedQuote}
+                toast={toast}
+            />
 
             {/* Notes Modal */}
             <Dialog

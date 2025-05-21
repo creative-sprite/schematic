@@ -125,7 +125,7 @@ export default function SchematicListGrid(props) {
         }));
 
         // Reset selection fields
-        setSelectedVentilationProduct(null);
+        // setSelectedVentilationProduct(null);
         setVentilationQuantity(1);
     };
 
@@ -380,21 +380,20 @@ export default function SchematicListGrid(props) {
         );
     };
 
-    // Selected value template for dropdown to control overflow - MODIFIED: Removed price
+    // FIXED: Selected value template for dropdown to properly handle option structure
     const selectedValueTemplate = (option) => {
         if (!option) return "Select a product";
 
-        const diameter = getDiameterFromProduct(option);
+        // Handle both direct product object and formatted option with label/value
+        const product =
+            option.value && typeof option.value === "object"
+                ? option.value
+                : option;
+
+        const diameter = getDiameterFromProduct(product);
         return (
-            <div
-                style={{
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                    width: "100%",
-                }}
-            >
-                {option.name}
+            <div>
+                {product.name}
                 {diameter ? ` (D: ${diameter})` : ""}
             </div>
         );
@@ -635,7 +634,7 @@ export default function SchematicListGrid(props) {
             <div
                 style={{
                     margin: "20px",
-                    width: "425px",
+                    width: "100%",
                     position: "relative",
                 }}
                 className="p-card p-component"
@@ -643,13 +642,18 @@ export default function SchematicListGrid(props) {
                 <div
                     className="p-card-body"
                     style={{
-                        display: "flex",
-                        flexDirection: "column",
+                        // display: "flex",
+                        // flexDirection: "column",
                         gap: "1rem",
                     }}
                 >
                     {/* Top row: Image and name */}
-                    <div style={{ display: "flex", alignItems: "center" }}>
+                    <div
+                        style={{
+                            display: "flex",
+                            alignItems: "center",
+                        }}
+                    >
                         <img
                             src={item.image}
                             alt={item.name}
@@ -759,9 +763,6 @@ export default function SchematicListGrid(props) {
                         <div
                             style={{
                                 marginTop: "10px",
-                                border: "1px solid #ddd",
-                                padding: "10px",
-                                borderRadius: "4px",
                             }}
                         >
                             {isEditing ? (
@@ -769,18 +770,8 @@ export default function SchematicListGrid(props) {
                                 <>
                                     <div
                                         style={{
-                                            fontWeight: "bold",
-                                            marginBottom: "10px",
-                                        }}
-                                    >
-                                        Add Ventilation Products
-                                    </div>
-
-                                    <div
-                                        style={{
                                             display: "flex",
                                             gap: "8px",
-                                            marginBottom: "8px",
                                             alignItems: "center",
                                         }}
                                     >
@@ -797,9 +788,10 @@ export default function SchematicListGrid(props) {
                                             placeholder="Select a product"
                                             style={{
                                                 flex: 2,
-                                                maxWidth: "250px",
+                                                width: "100%",
                                                 height: "40px",
                                             }}
+                                            appendTo={document.body}
                                             valueTemplate={
                                                 selectedValueTemplate
                                             }

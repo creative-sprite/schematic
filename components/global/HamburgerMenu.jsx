@@ -36,21 +36,21 @@ export default function HamburgerMenu() {
     // Group new app pages under a "Products" submenu
     const items = [
         {
-            label: "Forms",
+            label: "Surveys",
             icon: "pi pi-fw pi-th-large",
             items: [
                 {
-                    label: "Kitchen Survey",
+                    label: "Create",
                     icon: "pi pi-fw pi-pen-to-square",
                     command: () =>
                         (window.location.href = "/surveys/kitchenSurvey"),
                 },
                 {
-                    label: "Surveys",
+                    label: "Quote Template",
                     icon: "pi pi-fw pi-check-square",
                     command: () =>
                         (window.location.href =
-                            "/surveys/kitchenSurvey/storedKitchenSurveys"),
+                            "/surveys/kitchenSurvey/quotes"),
                 },
             ],
         },

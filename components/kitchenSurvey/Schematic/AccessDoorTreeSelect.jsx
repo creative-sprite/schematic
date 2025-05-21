@@ -502,7 +502,9 @@ export default function AccessDoorTreeSelect({
                             // Create label with Type - Name: Dimensions | Price
                             const productLabel = `${name} - ${type}: ${
                                 dimensionString || "No dimensions"
-                            }${priceLabel}`;
+                            }
+                            
+                            `;
 
                             // Add dimensions as a field to the product
                             product.dimensions = dimensionString;

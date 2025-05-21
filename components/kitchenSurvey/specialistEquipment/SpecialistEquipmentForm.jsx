@@ -59,22 +59,22 @@ export default function SpecialistEquipmentForm(props) {
             );
 
             // Log a sample item with customData for debugging
-            if (itemsWithCustomData.length > 0) {
-                console.log(
-                    "[SpecialistEquipmentForm] Sample item with customData:",
-                    itemsWithCustomData[0].name,
-                    JSON.stringify(itemsWithCustomData[0].customData, null, 2)
-                );
-            }
+            // if (itemsWithCustomData.length > 0) {
+            //     console.log(
+            //         "[SpecialistEquipmentForm] Sample item with customData:",
+            //         itemsWithCustomData[0].name,
+            //         JSON.stringify(itemsWithCustomData[0].customData, null, 2)
+            //     );
+            // }
         }
     }, [sortedFilteredItems]);
 
     // Initialize activeTabIndex when component mounts
     useEffect(() => {
-        console.log("[SpecialistEquipmentForm] Component mounted with:");
-        console.log(`- ${categories?.length || 0} categories`);
-        console.log(`- ${sortedFilteredItems?.length || 0} filtered items`);
-        console.log(`- ${surveyList?.length || 0} existing survey items`);
+        // console.log("[SpecialistEquipmentForm] Component mounted with:");
+        // console.log(`- ${categories?.length || 0} categories`);
+        // console.log(`- ${sortedFilteredItems?.length || 0} filtered items`);
+        // console.log(`- ${surveyList?.length || 0} existing survey items`);
 
         if (!categories || categories.length === 0) return;
 

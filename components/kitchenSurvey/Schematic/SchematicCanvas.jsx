@@ -96,6 +96,7 @@ function SchematicCanvas(props) {
             length: "",
             width: "",
             height: "",
+            inaccessible: "",
         };
         setPlacedItems((prev) => [...prev, newItem]);
         lastPlacedCell.current = { cellX, cellY };

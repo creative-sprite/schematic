@@ -21,13 +21,14 @@ export default function CombineAreas({
     siteId,
     collections = [],
     onToggleSelectionMode = () => {},
+    selectedAreas = {}, // Accept selectedAreas from parent
 }) {
     const router = useRouter();
     const toast = useRef(null);
 
     // State for tracking component status
     const [isSelectionMode, setIsSelectionMode] = useState(false);
-    const [selectedAreas, setSelectedAreas] = useState({});
+    // No longer need local selectedAreas state since we get it from props
     const [isCreating, setIsCreating] = useState(false);
     const [showConfirmDialog, setShowConfirmDialog] = useState(false);
     const [newSurveyName, setNewSurveyName] = useState("");
@@ -43,13 +44,6 @@ export default function CombineAreas({
         onToggleSelectionMode(isSelectionMode);
     }, [isSelectionMode, onToggleSelectionMode]);
 
-    // Reset selections when exiting selection mode
-    useEffect(() => {
-        if (!isSelectionMode) {
-            setSelectedAreas({});
-        }
-    }, [isSelectionMode]);
-
     // Enter selection mode to combine areas
     const startSelectionMode = () => {
         setIsSelectionMode(true);
@@ -60,29 +54,6 @@ export default function CombineAreas({
     // Exit selection mode (cancel)
     const cancelSelectionMode = () => {
         setIsSelectionMode(false);
-    };
-
-    // Toggle area selection for combining
-    const toggleAreaSelection = (areaId, collection) => {
-        setSelectedAreas((prev) => {
-            // Create a copy of the previous state
-            const updated = { ...prev };
-
-            if (updated[areaId]) {
-                // If already selected, unselect
-                delete updated[areaId];
-            } else {
-                // If not selected, add with collection info
-                updated[areaId] = {
-                    areaId,
-                    collectionId: collection._id,
-                    firstAreaName: collection.firstAreaName,
-                    collectionRef: collection.collectionRef,
-                };
-            }
-
-            return updated;
-        });
     };
 
     // Confirm selection and open dialog for naming
@@ -286,7 +257,7 @@ export default function CombineAreas({
                 // Button to start combination mode
                 <Button
                     icon="pi pi-object-group"
-                    label="+ Survey"
+                    label="Combine areas"
                     className="p-button-outlined p-button-info"
                     onClick={startSelectionMode}
                     style={{ paddingRight: "1.4rem" }}

@@ -1,6 +1,6 @@
 // components\kitchenSurvey\Schematic\SchematicList.jsx
 "use client";
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import SchematicListGrid from "./SchematicListParts/SchematicListGrid";
 import { calculateItemPrice } from "../../../lib/priceCalculator";
 // Add new import for ventilation calculations
@@ -17,7 +17,6 @@ function isVentilationOrGreaseItem(item) {
         const category = item.category.toLowerCase();
         if (
             category.includes("grease") ||
-            category.includes("ventilation") ||
             category.includes("air intake") ||
             category.includes("extract") ||
             category === "air"
@@ -31,7 +30,6 @@ function isVentilationOrGreaseItem(item) {
         const subcategory = item.subcategory.toLowerCase();
         if (
             subcategory.includes("grease") ||
-            subcategory.includes("ventilation") ||
             subcategory.includes("air intake") ||
             subcategory.includes("extract")
         ) {
@@ -44,7 +42,6 @@ function isVentilationOrGreaseItem(item) {
         const name = (item.name || item.item).toLowerCase();
         if (
             name.includes("grease") ||
-            name.includes("vent") ||
             name.includes("air intake") ||
             name.includes("extract") ||
             name.includes("duct") ||
@@ -58,12 +55,43 @@ function isVentilationOrGreaseItem(item) {
     return !!item.requiresDimensions;
 }
 
+/**
+ * Standardize category names to ensure consistent naming
+ */
+function standardizeCategory(category) {
+    if (!category) return "Other";
+
+    // Normalize to lowercase for comparison
+    const normalizedCategory = category.toLowerCase();
+
+    // Check for system-related categories and standardize to "Fan Unit"
+    if (
+        normalizedCategory === "system" ||
+        normalizedCategory === "system components" ||
+        normalizedCategory.includes("system") ||
+        normalizedCategory.includes("component")
+    ) {
+        return "Fan Unit";
+    }
+
+    // Check for ventilation and standardize to "Flexi-Duct"
+    if (
+        normalizedCategory === "ventilation" ||
+        normalizedCategory.includes("ventil")
+    ) {
+        return "Flexi-Duct";
+    }
+
+    // Return the original category if no standardization needed
+    return category;
+}
+
 export default function SchematicListContainer(props) {
     const {
         placedItems,
         setPlacedItems, // We'll modify this to update item dimensions directly
         onAccessDoorSelect,
-        onVentilationPriceChange,
+        onVentilationPriceChange, // NOT USED ANYMORE - Keep for backward compatibility
         onFanPartsPriceChange,
         onAirInExPriceChange,
         structureIds = [],
@@ -80,11 +108,10 @@ export default function SchematicListContainer(props) {
     const [displayList, setDisplayList] = useState([]);
 
     // State to track ventilation price from Flexi-Duct/Flexi Hose items
-    const [flexiDuctVentilationPrice, setFlexiDuctVentilationPrice] =
-        useState(0);
+    // RENAMED: from flexiDuctVentilationPrice to flexiDuctPrice to avoid confusion
+    const [flexiDuctPrice, setFlexiDuctPrice] = useState(0);
 
-    // Flag to track if ventilation price was already set to prevent duplicates
-    const ventilationPriceSetRef = useRef(false);
+    // REMOVED: ventilationPriceSetRef - no longer needed as we don't track ventilation separately
 
     // Track access door price separately to avoid reconciliation issues
     const [accessDoorPriceState, setAccessDoorPriceState] = useState(0);
@@ -103,10 +130,10 @@ export default function SchematicListContainer(props) {
 
         // Log any changes to parent accessDoorSelections for debugging
         if (Object.keys(accessDoorSelections).length > 0) {
-            console.log(
-                "SchematicList received updated accessDoorSelections:",
-                Object.keys(accessDoorSelections)
-            );
+            // console.log(
+            //     "SchematicList received updated accessDoorSelections:",
+            //     Object.keys(accessDoorSelections)
+            // );
         }
     }, [accessDoorSelections, setAccessDoorSelections]);
 
@@ -114,11 +141,9 @@ export default function SchematicListContainer(props) {
         schematicTotalCallbackRef.current = onSchematicItemsTotalChange;
     }, [onSchematicItemsTotalChange]);
 
-    // Use refs for price change callbacks to avoid dependency changes
-    const ventilationPriceCallbackRef = useRef(onVentilationPriceChange);
-    useEffect(() => {
-        ventilationPriceCallbackRef.current = onVentilationPriceChange;
-    }, [onVentilationPriceChange]);
+    // IMPORTANT: DO NOT USE ventilationPriceCallback AT ALL
+    // Completely ignore the ventilation callback to prevent any ventilation category from appearing
+    const ventilationPriceCallbackRef = useRef(null); // Set to null to ensure it's never called
 
     const accessDoorSelectCallbackRef = useRef(onAccessDoorSelect);
     useEffect(() => {
@@ -127,10 +152,10 @@ export default function SchematicListContainer(props) {
 
     // Log placedItems for debugging.
     useEffect(() => {
-        console.log(
-            "SchematicListContainer - placedItems:",
-            placedItems.length
-        );
+        // console.log(
+        //     "SchematicListContainer - placedItems:",
+        //     placedItems.length
+        // );
     }, [placedItems]);
 
     // Compute displayList: for connectors, only one card per pair; for others, group by aggregateEntry
@@ -163,29 +188,47 @@ export default function SchematicListContainer(props) {
         });
 
         const newDisplayList = [...Object.values(aggregated), ...nonAggregated];
-        console.log("Display list computed. Count:", newDisplayList.length);
+        // console.log("Display list computed. Count:", newDisplayList.length);
         setDisplayList(newDisplayList);
     }, [placedItems]);
 
-    // UPDATED: Modified to update dimensions directly on items
+    // UPDATED: Modified to update dimensions directly on items and ensure recalculation
     const handleDimensionChange = (item, field, value) => {
         if (!item || !item.id) {
-            console.error("Invalid item for dimension change:", item);
+            console.warn("Invalid item for dimension change:", item);
             return;
         }
 
+        // Add first console log here for debugging
         console.log(
-            `Changing dimension for item "${item.name}" (${item.id}): ${field} = ${value}`
+            `Dimension change: ${field} = ${value} for item ${item.id}`
         );
 
-        // Update the item's dimension directly
+        // Update the item's dimension directly with a modified timestamp to ensure change detection
         setPlacedItems((prevItems) =>
             prevItems.map((prevItem) => {
                 if (prevItem.id === item.id) {
-                    return {
+                    const updatedItem = {
                         ...prevItem,
                         [field]: value,
+                        _lastModified: Date.now(), // Add timestamp to ensure React detects the change
                     };
+
+                    // Add second console log here to show the updated item
+                    console.log(
+                        "Updated item:",
+                        JSON.stringify({
+                            id: updatedItem.id,
+                            length: updatedItem.length,
+                            width: updatedItem.width,
+                            height: updatedItem.height,
+                            inaccessible: updatedItem.inaccessible,
+                            field: field,
+                            value: value,
+                        })
+                    );
+
+                    return updatedItem;
                 }
                 return prevItem;
             })
@@ -223,12 +266,11 @@ export default function SchematicListContainer(props) {
         }
     }, [accessDoorSelections, accessDoorPriceState]);
 
-    // Compute a breakdown by category and an overall total.
-    // UPDATED: Get dimensions directly from items instead of groupDimensions
+    // CORRECTLY FIXED: Compute prices by category with no ventilation duplication
     useEffect(() => {
         console.log("Starting price calculation from items...");
         let overallTotal = 0;
-        const groupedTotals = {}; // e.g., { "Access Door": 123, "Air": 456 }
+        const groupedTotals = {}; // e.g., { "Air": 456, "Grease": 789, "Flexi-Duct": 101 }
 
         // For aggregated pricing, track by item name + original ID
         const aggregatedItems = {};
@@ -260,44 +302,103 @@ export default function SchematicListContainer(props) {
                 length: item.length || "",
                 width: item.width || "",
                 height: item.height || "",
+                inaccessible: item.inaccessible,
             };
 
             // Special handling for ventilation and grease extract items
             let price = 0;
             if (isVentilationOrGreaseItem(item)) {
-                console.log(
-                    `Using specialized calculation for item "${item.name}"`
-                );
+                // console.log(
+                //     `Using specialized calculation for item "${item.name}"`
+                // );
                 price = calculateVentilationPrice(item, dims);
             } else {
                 price = calculateItemPrice(item, dims) || 0;
             }
 
-            const category = item.category || "Other";
-            console.log(
-                `Calculated price for item "${item.name}" in category "${category}" with dimensions`,
-                dims,
-                ":",
-                price
-            );
+            // Use the standardizeCategory function to ensure consistent naming
+            let category = standardizeCategory(item.category || "Other");
+
+            // console.log(
+            //     `Calculated price for item "${item.name}" in category "${category}" with dimensions`,
+            //     dims,
+            //     ":",
+            //     price
+            // );
 
             groupedTotals[category] = (groupedTotals[category] || 0) + price;
             overallTotal += price;
         });
 
-        // Include access door prices in the groupedTotals and overallTotal
-        if (accessDoorPriceState > 0) {
-            groupedTotals["Access Door"] =
-                (groupedTotals["Access Door"] || 0) + accessDoorPriceState;
-            overallTotal += accessDoorPriceState;
+        // FIXED: Don't include access door prices in groupedTotals to prevent duplication
+        // The accessDoorPrice is already tracked separately and will be added directly
+        // in the PriceTables component
+
+        // FIXED: Do NOT include accessDoorPriceState in the overall total
+        // It will be displayed separately in PriceTables component
+        // This prevents the duplicated entry in both Access Door and Schematic sections
+
+        // Add Flexi-Duct selections to the proper Flexi-Duct category
+        // NOTE: Ventilation and Flexi-Duct are the same thing, only count once
+        if (flexiDuctPrice > 0) {
+            groupedTotals["Flexi-Duct"] =
+                (groupedTotals["Flexi-Duct"] || 0) + flexiDuctPrice;
+
+            // Add to overall total
+            overallTotal += flexiDuctPrice;
         }
 
-        console.log(
-            "SchematicList -> computed grouped schematic items totals:",
-            groupedTotals,
-            "Overall total:",
-            overallTotal
-        );
+        // AGGRESSIVE CHECK: Ensure no Ventilation category exists in final output
+        // Delete the Ventilation category if it somehow got created
+        if (groupedTotals["Ventilation"]) {
+            // Move any remaining value to Flexi-Duct and delete Ventilation
+            if (groupedTotals["Ventilation"] > 0) {
+                groupedTotals["Flexi-Duct"] =
+                    (groupedTotals["Flexi-Duct"] || 0) +
+                    groupedTotals["Ventilation"];
+            }
+            delete groupedTotals["Ventilation"]; // Always delete Ventilation category
+        }
+
+        // FINAL CHECK: Scan all keys and rename any containing "Ventilation"
+        Object.keys(groupedTotals).forEach((key) => {
+            if (key.includes("Ventilation") || key.includes("ventilation")) {
+                const value = groupedTotals[key];
+                delete groupedTotals[key];
+                groupedTotals["Flexi-Duct"] =
+                    (groupedTotals["Flexi-Duct"] || 0) + value;
+            }
+        });
+
+        // FINAL CHECK: Also rename any "System Components" to "Fan Unit" if they still exist
+        if (groupedTotals["System Components"]) {
+            const value = groupedTotals["System Components"];
+            delete groupedTotals["System Components"];
+            groupedTotals["Fan Unit"] =
+                (groupedTotals["Fan Unit"] || 0) + value;
+        }
+
+        // ADDITIONAL CHECK: Check for any keys containing "System" or "Components" and rename
+        Object.keys(groupedTotals).forEach((key) => {
+            if (
+                key.includes("System") ||
+                key.includes("Components") ||
+                key.includes("system") ||
+                key.includes("components")
+            ) {
+                const value = groupedTotals[key];
+                delete groupedTotals[key];
+                groupedTotals["Fan Unit"] =
+                    (groupedTotals["Fan Unit"] || 0) + value;
+            }
+        });
+
+        // console.log(
+        //     "SchematicList -> computed grouped schematic items totals:",
+        //     groupedTotals,
+        //     "Overall total:",
+        //     overallTotal
+        // );
 
         // Ensure we pass a consistent object (overall: number, breakdown: object)
         const result = { overall: overallTotal, breakdown: groupedTotals };
@@ -306,25 +407,17 @@ export default function SchematicListContainer(props) {
         if (schematicTotalCallbackRef.current) {
             schematicTotalCallbackRef.current(result);
         }
-    }, [placedItems, accessDoorPriceState]);
+    }, [placedItems, accessDoorPriceState, flexiDuctPrice]);
 
-    // Calculate total ventilation price from all flexi-duct/hose selections
+    // FIXED: Calculate total Flexi-Duct price from selections (renamed from ventilation)
     useEffect(() => {
-        // Skip if selections were already processed
-        if (
-            ventilationPriceSetRef.current &&
-            Object.keys(flexiDuctSelections).length === 0
-        ) {
-            return;
-        }
-
         // Skip completely if canvas is empty but keep price if already set
-        if (placedItems.length === 0 && flexiDuctVentilationPrice === 0) {
+        if (placedItems.length === 0 && flexiDuctPrice === 0) {
             return;
         }
 
-        // Memoize the calculation of ventilation price
-        const calculateTotalVentilationPrice = () => {
+        // Calculate total price from Flexi-Duct selections
+        const calculateTotalFlexiDuctPrice = () => {
             let totalPrice = 0;
 
             Object.values(flexiDuctSelections).forEach((itemSelections) => {
@@ -338,66 +431,50 @@ export default function SchematicListContainer(props) {
             return totalPrice;
         };
 
-        const totalPrice = calculateTotalVentilationPrice();
+        const totalPrice = calculateTotalFlexiDuctPrice();
 
         // Only update if there's a meaningful change to prevent infinite loops
-        if (Math.abs(flexiDuctVentilationPrice - totalPrice) > 0.001) {
-            console.log(
-                `Ventilation price from Flexi-Duct/Flexi Hose: ${totalPrice}`
-            );
-            setFlexiDuctVentilationPrice(totalPrice);
-            ventilationPriceSetRef.current = true;
+        if (Math.abs(flexiDuctPrice - totalPrice) > 0.001) {
+            // console.log(`Flexi-Duct price: ${totalPrice}`);
+            setFlexiDuctPrice(totalPrice);
 
-            // Pass the ventilation price up to parent component
-            if (ventilationPriceCallbackRef.current) {
-                ventilationPriceCallbackRef.current(totalPrice);
-            }
+            // DO NOT call ventilation callback at all to completely avoid
+            // any possibility of creating a ventilation category
+            // This completely removes the ventilation logic
         }
-    }, [flexiDuctSelections, flexiDuctVentilationPrice, placedItems.length]);
+    }, [flexiDuctSelections, flexiDuctPrice, placedItems.length]);
 
-    // Helper function to update access door price based on selections
-    const updateAccessDoorPrice = useCallback(
-        (selections) => {
-            let totalPrice = 0;
+    // REMOVED: Unused helper function that could cause duplicate updates
 
-            // Sum up all door prices
-            Object.values(selections).forEach((door) => {
-                if (door && door.price) {
-                    totalPrice += Number(door.price);
-                }
-            });
-
-            // Only update if there's a meaningful change
-            if (Math.abs(accessDoorPriceState - totalPrice) > 0.001) {
-                console.log(
-                    `[SchematicList] Total access door price updated: ${totalPrice}`
-                );
-                setAccessDoorPriceState(totalPrice);
-
-                // Pass to parent component if callback exists
-                if (accessDoorSelectCallbackRef.current) {
-                    accessDoorSelectCallbackRef.current(totalPrice);
-                }
-            }
-        },
-        [accessDoorPriceState]
-    );
-
-    // State and ref for handling door selections
+    // State and ref for handling door selections - extended timeout to prevent race conditions
     const isUpdatingRef = useRef(false);
+    const doorUpdateTimeoutRef = useRef(null);
 
-    // Updated to ensure door selections are properly saved - modified to be simpler
+    // Updated to ensure door selections are properly saved without duplicates
     const handleAccessDoorSelect = useCallback(
         (itemId, selectedDoor) => {
+            // Clear any pending update timeouts
+            if (doorUpdateTimeoutRef.current) {
+                clearTimeout(doorUpdateTimeoutRef.current);
+                doorUpdateTimeoutRef.current = null;
+            }
+
             // Prevent duplicate/recursive updates
             if (isUpdatingRef.current) return;
             isUpdatingRef.current = true;
 
+            // Log the current selections to help debug duplicates
+            // console.log(
+            //     `[SchematicList] Current access door count before update: ${
+            //         Object.keys(accessDoorSelections || {}).length
+            //     }`
+            // );
+
             try {
                 if (!selectedDoor) {
-                    console.log(
-                        `[SchematicList] Clearing door for item ${itemId}`
-                    );
+                    // console.log(
+                    //     `[SchematicList] Clearing door for item ${itemId}`
+                    // );
 
                     // Update parent state directly using setAccessDoorSelections
                     if (setAccessDoorSelections) {
@@ -410,11 +487,14 @@ export default function SchematicListContainer(props) {
                     return;
                 }
 
-                // Log the selection for debugging
-                console.log(
-                    `[SchematicList] Processing door selection for item ${itemId}:`,
-                    selectedDoor
-                );
+                // Log the selection for debugging with more details
+                // console.log(
+                //     `[SchematicList] Processing door selection for item ${itemId}:`,
+                //     selectedDoor,
+                //     `- Will ${
+                //         !selectedDoor ? "remove" : "add/update"
+                //     } selection`
+                // );
 
                 // Extract MongoDB ID, ensuring we get a consistent ID
                 const mongoId =
@@ -424,9 +504,9 @@ export default function SchematicListContainer(props) {
                     "";
 
                 if (!mongoId) {
-                    console.error(
-                        `[SchematicList] Door selection missing ID for item ${itemId}`
-                    );
+                    // console.error(
+                    //     `[SchematicList] Door selection missing ID for item ${itemId}`
+                    // );
                     return;
                 }
 
@@ -445,23 +525,51 @@ export default function SchematicListContainer(props) {
                     price: doorPrice,
                 };
 
-                console.log(
-                    `[SchematicList] Formatted door selection for ${itemId}:`,
-                    doorSelection
-                );
+                // console.log(
+                //     `[SchematicList] Formatted door selection for ${itemId}:`,
+                //     doorSelection
+                // );
 
-                // Update ONLY the parent state directly
+                // Deduplicate by explicitly checking if this exact door is already selected
                 if (setAccessDoorSelections) {
-                    setAccessDoorSelections((prev) => ({
-                        ...prev,
-                        [itemId]: doorSelection,
-                    }));
+                    setAccessDoorSelections((prev) => {
+                        // Check if this exact door is already in selections to prevent duplication
+                        const existing = prev[itemId];
+                        if (
+                            existing &&
+                            existing.mongoId === doorSelection.mongoId &&
+                            existing.price === doorSelection.price
+                        ) {
+                            // console.log(
+                            //     `[SchematicList] Door ${doorSelection.mongoId} already exists for item ${itemId}, skipping duplicate`
+                            // );
+                            return prev; // No change needed, return previous state
+                        }
+
+                        // Otherwise update with the new selection
+                        // console.log(
+                        //     `[SchematicList] Adding/updating door for item ${itemId}:`,
+                        //     doorSelection
+                        // );
+                        return {
+                            ...prev,
+                            [itemId]: doorSelection,
+                        };
+                    });
                 }
             } finally {
-                // Reset update flag after a short delay to allow React to process updates
-                setTimeout(() => {
+                // Use a ref to track the timeout so it can be cleared if needed
+                doorUpdateTimeoutRef.current = setTimeout(() => {
                     isUpdatingRef.current = false;
-                }, 0);
+                    doorUpdateTimeoutRef.current = null;
+
+                    // After update completes, log the final state for debugging
+                    // console.log(
+                    //     `[SchematicList] Access door count after update: ${
+                    //         Object.keys(accessDoorSelections || {}).length
+                    //     }`
+                    // );
+                }, 100); // Longer timeout to ensure React has fully processed the update
             }
         },
         [setAccessDoorSelections]
@@ -476,13 +584,10 @@ export default function SchematicListContainer(props) {
                 handleAccessDoorSelect={handleAccessDoorSelect}
                 accessDoorSelections={accessDoorSelections}
                 onVentilationPriceChange={(price) => {
-                    // Only update if there's a meaningful change to prevent infinite loops
-                    if (Math.abs(flexiDuctVentilationPrice - price) > 0.001) {
-                        setFlexiDuctVentilationPrice(price);
-                        ventilationPriceSetRef.current = true;
-                        if (ventilationPriceCallbackRef.current) {
-                            ventilationPriceCallbackRef.current(price);
-                        }
+                    // ONLY update Flexi-Duct price, do NOT call ventilation callback
+                    if (Math.abs(flexiDuctPrice - price) > 0.001) {
+                        setFlexiDuctPrice(price);
+                        // NO ventilation callback to ensure it never appears in price tables
                     }
                 }}
                 fanGradeSelections={fanGradeSelections}

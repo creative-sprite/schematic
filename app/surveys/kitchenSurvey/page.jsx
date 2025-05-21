@@ -9,7 +9,6 @@ import { ProgressBar } from "primereact/progressbar";
 import { Button } from "primereact/button";
 import SurveyInfo from "@/components/kitchenSurvey/surveyInfo";
 import Area1Logic from "@/components/kitchenSurvey/Area1Logic";
-// Removed ExportPDF import
 
 // Import our new extracted components
 import AreaPagination from "@/components/kitchenSurvey/pagination/AreaPagination";
@@ -29,6 +28,9 @@ import SaveSurvey from "@/components/kitchenSurvey/save/SaveSurvey";
 
 // Import data loading hook
 import useSurveyDataLoader from "@/components/kitchenSurvey/surveyDataLoading";
+
+// NEW: Import the ParkingPostServiceReport component
+import ParkingPostServiceReport from "@/components/kitchenSurvey/parkingPostServiceReport/parkingPostServiceReport";
 
 export default function SurveyForm() {
     const router = useRouter();
@@ -52,6 +54,14 @@ export default function SurveyForm() {
     const prevSiteIdRef = useRef(siteIdParam);
     // Add state to track navigation loading state
     const [isNavigatingToNewArea, setIsNavigatingToNewArea] = useState(false);
+
+    // NEW: Add debug ref to track structure entries changes
+    const structureDebugRef = useRef({
+        lastUpdateTime: Date.now(),
+        entriesCount: 0,
+        updateCount: 0,
+        hasBeenLoaded: false,
+    });
 
     // MULTI-COLLECTION: Add state for survey's collection memberships
     const [surveyCollections, setSurveyCollections] = useState([]);
@@ -99,6 +109,8 @@ export default function SurveyForm() {
     const updatingVentilationRef = useRef(false);
     const updatingNotesRef = useRef(false);
     const updatingOperationsRef = useRef(false);
+    // NEW: Add ref to prevent circular structure entries updates
+    const updatingStructureEntriesRef = useRef(false);
 
     // Refs to store previous values for comparison
     const prevSurveyDataRef = useRef([]);
@@ -109,6 +121,8 @@ export default function SurveyForm() {
     const prevVentilationRef = useRef({});
     const prevNotesRef = useRef({});
     const prevOperationsRef = useRef({});
+    // NEW: Add ref for previous structure entries
+    const prevStructureEntriesRef = useRef([]);
 
     // Load all survey data using our custom hook
     const {
@@ -124,6 +138,14 @@ export default function SurveyForm() {
         // Get parking from the data loader
         parking,
         setParking,
+
+        // NEW: Add additional services state values
+        parkingCost,
+        setParkingCost,
+        postServiceReport,
+        setPostServiceReport,
+        postServiceReportPrice,
+        setPostServiceReportPrice,
 
         // Top-level survey images - standardized location only
         surveyImages,
@@ -145,12 +167,9 @@ export default function SurveyForm() {
         // Structure data
         structureTotal,
         setStructureTotal,
-        structureSelectionData,
-        setStructureSelectionData,
-        structureDimensions,
-        setStructureDimensions,
-        structureComments,
-        setStructureComments,
+        structureEntries,
+        setStructureEntries,
+
         // Canopy data
         canopyTotal,
         setCanopyTotal,
@@ -234,6 +253,51 @@ export default function SurveyForm() {
 
     // Track if we've already created a draft survey for this site
     const [hasDraftSurvey, setHasDraftSurvey] = useState(!!surveyId);
+
+    // NEW: Monitor structure entries for debugging
+    useEffect(() => {
+        if (structureEntries) {
+            structureDebugRef.current.entriesCount = structureEntries.length;
+            structureDebugRef.current.updateCount++;
+            structureDebugRef.current.lastUpdateTime = Date.now();
+
+            // Track if data has been loaded
+            if (
+                structureEntries.length > 0 &&
+                !structureDebugRef.current.hasBeenLoaded
+            ) {
+                structureDebugRef.current.hasBeenLoaded = true;
+                console.log(
+                    `Page: Structure entries loaded from data loader: ${structureEntries.length} entries`
+                );
+
+                // Log the first entry to verify data structure
+                if (structureEntries.length > 0) {
+                    const firstEntry = structureEntries[0];
+                    console.log(`First entry ID: ${firstEntry.id}`);
+                    console.log(
+                        `First entry selection data: ${
+                            Array.isArray(firstEntry.selectionData)
+                                ? firstEntry.selectionData.length + " rows"
+                                : "missing or invalid"
+                        }`
+                    );
+                    console.log(
+                        `First entry dimensions: ${
+                            firstEntry.dimensions
+                                ? `${firstEntry.dimensions.length}x${firstEntry.dimensions.width}x${firstEntry.dimensions.height}`
+                                : "missing"
+                        }`
+                    );
+                }
+            } else if (structureDebugRef.current.updateCount % 5 === 0) {
+                // Log every 5 updates to avoid console spam
+                console.log(
+                    `Page: Structure entries updated (${structureDebugRef.current.updateCount}): ${structureEntries.length} entries`
+                );
+            }
+        }
+    }, [structureEntries]);
 
     // MULTI-COLLECTION: Add a new effect to fetch and process the survey's collections
     useEffect(() => {
@@ -1251,6 +1315,27 @@ export default function SurveyForm() {
             prevNotesRef.current = notes ? { ...notes } : {};
             prevOperationsRef.current = operations ? { ...operations } : {};
 
+            // NEW: Initialize structure entries ref with deep copy
+            if (structureEntries && Array.isArray(structureEntries)) {
+                prevStructureEntriesRef.current = structureEntries.map(
+                    (entry) => ({
+                        ...entry,
+                        selectionData: Array.isArray(entry.selectionData)
+                            ? entry.selectionData.map((row) => ({ ...row }))
+                            : [],
+                        dimensions: entry.dimensions
+                            ? { ...entry.dimensions }
+                            : {},
+                    })
+                );
+
+                console.log(
+                    `Page: Initialized prevStructureEntriesRef with ${prevStructureEntriesRef.current.length} entries`
+                );
+            } else {
+                prevStructureEntriesRef.current = [];
+            }
+
             initializedRef.current = true;
         }
     }, [
@@ -1263,6 +1348,7 @@ export default function SurveyForm() {
         ventilation,
         notes,
         operations,
+        structureEntries,
     ]);
 
     // Function to handle site details change
@@ -1326,6 +1412,7 @@ export default function SurveyForm() {
                 structure: {
                     structureId: structureId || "Area 1",
                     structureTotal: 0,
+                    entries: [],
                 },
                 // MULTI-COLLECTION: Use collections array
                 collections: [
@@ -1348,6 +1435,12 @@ export default function SurveyForm() {
                 equipment: {
                     subcategoryComments: {},
                     categoryComments: {},
+                },
+                // NEW: Initialize additional services
+                additionalServices: {
+                    parkingCost: 0,
+                    postServiceReport: "No",
+                    postServiceReportPrice: 0,
                 },
             };
 
@@ -1516,6 +1609,98 @@ export default function SurveyForm() {
         setCanopyComments(comments);
     };
 
+    // NEW: Handler for structure entries changes with protection against circular updates
+    const handleStructureEntriesChange = (newEntries) => {
+        // Skip if currently updating
+        if (updatingStructureEntriesRef.current) return;
+
+        console.log(
+            `Page: handleStructureEntriesChange called with ${
+                newEntries?.length || 0
+            } entries`
+        );
+
+        // Check if data has actually changed to avoid unnecessary updates
+        const newEntriesStr = JSON.stringify(newEntries);
+        const prevEntriesStr = JSON.stringify(prevStructureEntriesRef.current);
+
+        if (newEntriesStr === prevEntriesStr) {
+            console.log(
+                "Page: Skipping structure entries update - data unchanged"
+            );
+            return;
+        }
+
+        // Set flag to prevent circular updates
+        updatingStructureEntriesRef.current = true;
+
+        try {
+            // Create a proper deep copy to avoid reference issues
+            if (Array.isArray(newEntries)) {
+                // Update previous entries reference
+                prevStructureEntriesRef.current = newEntries.map((entry) => ({
+                    ...entry,
+                    selectionData: Array.isArray(entry.selectionData)
+                        ? entry.selectionData.map((row) => ({ ...row }))
+                        : [],
+                    dimensions: entry.dimensions ? { ...entry.dimensions } : {},
+                }));
+
+                // Make sure all entries have proper structure
+                const validatedEntries = newEntries.map((entry) => ({
+                    id:
+                        entry.id ||
+                        `entry-${Date.now()}-${Math.random()
+                            .toString(36)
+                            .substr(2, 9)}`,
+                    selectionData: Array.isArray(entry.selectionData)
+                        ? entry.selectionData.map((row) => ({
+                              type: row.type || "",
+                              item: row.item || "",
+                              grade: row.grade || "",
+                          }))
+                        : [],
+                    dimensions: entry.dimensions
+                        ? {
+                              length: Number(entry.dimensions.length) || 0,
+                              width: Number(entry.dimensions.width) || 0,
+                              height: Number(entry.dimensions.height) || 0,
+                          }
+                        : {
+                              length: 0,
+                              width: 0,
+                              height: 0,
+                          },
+                    comments: entry.comments || "",
+                }));
+
+                setStructureEntries(validatedEntries);
+
+                // Log the update
+                console.log(
+                    `Page: Structure entries updated: ${validatedEntries.length} entries`
+                );
+                if (validatedEntries.length > 0) {
+                    console.log(`First entry ID: ${validatedEntries[0].id}`);
+                }
+            } else {
+                console.warn(
+                    "Page: Received invalid structure entries data (not an array)"
+                );
+                // Reset to empty array if invalid data received
+                setStructureEntries([]);
+                prevStructureEntriesRef.current = [];
+            }
+        } catch (error) {
+            console.error("Page: Error updating structure entries:", error);
+        } finally {
+            // Clear update flag after a short delay to ensure React has time to process the update
+            setTimeout(() => {
+                updatingStructureEntriesRef.current = false;
+            }, 50);
+        }
+    };
+
     const handleEquipmentChange = (newEquipment) => {
         console.log(
             "Page: Received equipment update:",
@@ -1580,6 +1765,9 @@ export default function SurveyForm() {
             fanPartsPrice: fanPartsPrice,
             airInExTotal: airInExTotal,
             schematicItemsTotal: schematicItemsTotal,
+            // NEW: Include parking cost and post-service report price in totals
+            parkingCost: parkingCost,
+            postServiceReportPrice: postServiceReportPrice,
         };
 
         // Use utility function to compute totals (with empty child areas array)
@@ -1589,6 +1777,43 @@ export default function SurveyForm() {
     const handleVentilationPriceChange = (price) => {
         console.log(`Main page: Setting ventilation price to ${price}`);
         setVentilationPrice(price);
+    };
+
+    // NEW: Handlers for parking cost and post-service report
+    const handleParkingCostChange = (cost) => {
+        console.log(`Main page: Setting parking cost to ${cost}`);
+        setParkingCost(cost);
+    };
+
+    const handlePostServiceReportChange = (isEnabled, price) => {
+        console.log(
+            `Main page: Post-service report ${isEnabled} with price ${price}`
+        );
+        setPostServiceReport(isEnabled);
+        setPostServiceReportPrice(isEnabled === "Yes" ? price : 0);
+    };
+
+    // NEW: Function to force sync all component states before saving
+    const forceSyncAllComponents = () => {
+        console.log("Page: Force syncing all component states before saving");
+
+        // Try to sync structure entries using Area1Logic's method
+        let structureSynced = false;
+        if (
+            typeof window !== "undefined" &&
+            window.area1LogicInstance &&
+            typeof window.area1LogicInstance.syncStructureEntries === "function"
+        ) {
+            structureSynced = window.area1LogicInstance.syncStructureEntries();
+            console.log(
+                "Page: Structure entries sync result:",
+                structureSynced
+            );
+        }
+
+        // Try other component syncs as needed
+
+        return true;
     };
 
     if (isLoading) {
@@ -1665,9 +1890,7 @@ export default function SurveyForm() {
         // Structure data
         structureId,
         structureTotal,
-        structureSelectionData,
-        structureDimensions,
-        structureComments,
+        structureEntries,
 
         // Equipment data
         surveyData,
@@ -1688,6 +1911,11 @@ export default function SurveyForm() {
         schematicItemsTotal,
         selectedGroupId,
         modify,
+
+        // NEW: Additional services data
+        parkingCost,
+        postServiceReport,
+        postServiceReportPrice,
 
         // Form sections
         operations,
@@ -1717,7 +1945,7 @@ export default function SurveyForm() {
         <div className="survey-container">
             <Toast ref={toast} />
 
-            {/* Initial Site Information Section - Always Visible */}
+            {/* Site Information Section - Always visible */}
             <div className="initial-setup-container">
                 {/* Site Selection Section */}
                 <div
@@ -1798,242 +2026,302 @@ export default function SurveyForm() {
                             }, 0);
                         }}
                         isEditingMode={!!internalSurveyId}
+                        // Pass prop to determine whether sections should be hidden
+                        // Only show certain sections if site is selected
+                        hideContacts={
+                            !siteDetails ||
+                            (!siteDetails._id && !siteDetails.id)
+                        }
+                        hideOperations={
+                            !siteDetails ||
+                            (!siteDetails._id && !siteDetails.id)
+                        }
+                        hideNotes={
+                            !siteDetails ||
+                            (!siteDetails._id && !siteDetails.id)
+                        }
                     />
                 </div>
             </div>
 
-            {/* Main Survey Content */}
-            <>
-                {/* Collection information display if in a collection - USING UPDATED COMPONENT WITH COLLECTIONS */}
-                {areasPagination.totalAreas > 1 && (
-                    <CollectionInfoBanner
-                        areasPagination={areasPagination}
-                        structureId={structureId}
-                        collections={surveyCollections}
-                        onSwitchCollection={(newCollectionId) => {
-                            // Handle switching to a different collection
-                            if (
-                                newCollectionId &&
-                                newCollectionId !== areasPagination.collectionId
-                            ) {
-                                router.push(
-                                    `/surveys/kitchenSurvey?id=${surveyId}&collection=${newCollectionId}`
-                                );
-                            }
-                        }}
-                    />
-                )}
-
-                {/* Main content area */}
-                <div ref={contentRef}>
-                    {/* Main Area */}
-                    <div ref={mainAreaRef}>
-                        <div ref={schematicRef}>
-                            <Area1Logic
-                                isMainArea={true}
-                                visibleSections={visibleSections}
-                                setVisibleSections={setVisibleSections}
-                                structureTotal={structureTotal}
-                                setStructureTotal={handleStructureTotalChange}
-                                structureId={structureId}
-                                setStructureId={setStructureId}
-                                structureSelectionData={structureSelectionData}
-                                setStructureSelectionData={
-                                    setStructureSelectionData
-                                }
-                                structureDimensions={structureDimensions}
-                                setStructureDimensions={setStructureDimensions}
-                                structureComments={structureComments}
-                                setStructureComments={setStructureComments}
-                                surveyData={surveyData}
-                                setSurveyData={handleSurveyDataChange}
-                                equipmentId={equipmentId}
-                                setEquipmentId={setEquipmentId}
-                                canopyTotal={canopyTotal}
-                                setCanopyTotal={handleCanopyTotalChange}
-                                canopyId={canopyId}
-                                setCanopyId={setCanopyId}
-                                canopyEntries={canopyEntries}
-                                setCanopyEntries={setCanopyEntries}
-                                canopyComments={canopyComments}
-                                setCanopyComments={handleCanopyCommentsChange}
-                                specialistEquipmentData={
-                                    specialistEquipmentData
-                                }
-                                setSpecialistEquipmentData={
-                                    handleSpecialistEquipmentDataChange
-                                }
-                                specialistEquipmentId={specialistEquipmentId}
-                                setSpecialistEquipmentId={
-                                    setSpecialistEquipmentId
-                                }
-                                selectedGroupId={selectedGroupId}
-                                setSelectedGroupId={setSelectedGroupId}
-                                accessDoorPrice={accessDoorPrice}
-                                setAccessDoorPrice={setAccessDoorPrice}
-                                ventilationPrice={ventilationPrice}
-                                setVentilationPrice={
-                                    handleVentilationPriceChange
-                                }
-                                airPrice={airPrice}
-                                setAirPrice={setAirPrice}
-                                fanPartsPrice={fanPartsPrice}
-                                setFanPartsPrice={setFanPartsPrice}
-                                airInExTotal={airInExTotal}
-                                setAirInExTotal={setAirInExTotal}
-                                schematicItemsTotal={schematicItemsTotal}
-                                setSchematicItemsTotal={setSchematicItemsTotal}
-                                ventilation={ventilation}
-                                setVentilation={(newVent) => {
-                                    if (updatingVentilationRef.current) return;
-
-                                    const newVentStr = JSON.stringify(newVent);
-                                    const prevVentStr = JSON.stringify(
-                                        prevVentilationRef.current
-                                    );
-                                    if (newVentStr === prevVentStr) return;
-
-                                    updatingVentilationRef.current = true;
-                                    prevVentilationRef.current =
-                                        JSON.parse(newVentStr);
-                                    setVentilation(newVent);
-
-                                    setTimeout(() => {
-                                        updatingVentilationRef.current = false;
-                                    }, 0);
-                                }}
-                                access={access}
-                                setAccess={(newAccess) => {
-                                    if (updatingAccessRef.current) return;
-
-                                    const newAccessStr =
-                                        JSON.stringify(newAccess);
-                                    const prevAccessStr = JSON.stringify(
-                                        prevAccessRef.current
-                                    );
-                                    if (newAccessStr === prevAccessStr) return;
-
-                                    updatingAccessRef.current = true;
-                                    prevAccessRef.current =
-                                        JSON.parse(newAccessStr);
-                                    setAccess(newAccess);
-
-                                    setTimeout(() => {
-                                        updatingAccessRef.current = false;
-                                    }, 0);
-                                }}
-                                accordion={accordion}
-                                toggleAccordion={toggleAccordion}
-                                equipment={equipment}
-                                setEquipment={handleEquipmentChange}
-                                operations={operations}
-                                setOperations={setOperations}
-                                notes={notes}
-                                setNotes={setNotes}
-                                // Schematic visual data
-                                placedItems={placedItems}
-                                setPlacedItems={setPlacedItems}
-                                specialItems={specialItems}
-                                setSpecialItems={setSpecialItems}
-                                gridSpaces={gridSpaces}
-                                setGridSpaces={setGridSpaces}
-                                cellSize={cellSize}
-                                setCellSize={setCellSize}
-                                flexiDuctSelections={flexiDuctSelections}
-                                setFlexiDuctSelections={setFlexiDuctSelections}
-                                accessDoorSelections={accessDoorSelections}
-                                setAccessDoorSelections={
-                                    setAccessDoorSelections
-                                }
-                                groupDimensions={groupDimensions}
-                                setGroupDimensions={setGroupDimensions}
-                                fanGradeSelections={fanGradeSelections}
-                                setFanGradeSelections={setFanGradeSelections}
-                                // Survey images
-                                surveyImages={surveyImages}
-                                setSurveyImages={(images) => {
-                                    const imagesStr = JSON.stringify(images);
-                                    const currImagesStr =
-                                        JSON.stringify(surveyImages);
-                                    if (imagesStr !== currImagesStr) {
-                                        setSurveyImages(images);
-                                    }
-                                }}
-                                // Site details and reference
-                                siteDetails={siteDetails}
-                                refValue={refValue}
-                                // Specialist equipment survey
-                                initialSpecialistEquipmentSurvey={
-                                    initialSpecialistEquipmentSurvey
-                                }
-                                equipmentItems={equipmentItems}
-                            />
-                        </div>
-                    </div>
-
-                    {/* PriceTables for the main area */}
-                    <PriceTables
-                        structureTotal={structureTotal}
-                        structureId={structureId}
-                        equipmentTotal={computedEquipmentTotal()}
-                        equipmentId={equipmentId}
-                        canopyTotal={canopyTotal}
-                        canopyId={canopyId}
-                        accessDoorPrice={accessDoorPrice}
-                        ventilationPrice={ventilationPrice}
-                        airPrice={airPrice}
-                        fanPartsPrice={fanPartsPrice}
-                        airInExTotal={airInExTotal}
-                        modify={modify}
-                        setModify={setModify}
-                        groupingId={selectedGroupId}
-                        schematicItemsTotal={schematicItemsTotal}
-                        specialistEquipmentData={specialistEquipmentData}
-                        areaLabel={structureId}
-                    />
-
-                    {/* Grand Total Section with main area only */}
-                    <GrandTotalSection
-                        structureTotal={structureTotal}
-                        structureId={structureId}
-                        computedEquipmentTotal={computedEquipmentTotal()}
-                        canopyTotal={canopyTotal}
-                        accessDoorPrice={accessDoorPrice}
-                        ventilationPrice={ventilationPrice}
-                        airPrice={airPrice}
-                        fanPartsPrice={fanPartsPrice}
-                        airInExTotal={airInExTotal}
-                        schematicItemsTotal={schematicItemsTotal}
-                        areasState={[]} // Empty array since we're removing child areas
-                        modify={modify}
-                        specialistEquipmentData={specialistEquipmentData}
-                    />
-                </div>
-
-                {/* Bottom section with area pagination and save buttons */}
-                <div style={{ position: "relative", marginBottom: "4rem" }}>
-                    {/* Area Pagination - UPDATED TO PASS SURVEY DATA */}
+            {/* Main Survey Content - Only show when site is selected */}
+            {siteDetails && (siteDetails._id || siteDetails.id) && (
+                <>
+                    {/* Collection information display if in a collection - USING UPDATED COMPONENT WITH COLLECTIONS */}
                     {areasPagination.totalAreas > 1 && (
-                        <AreaPagination
-                            paginationData={areasPagination}
-                            currentSurveyId={internalSurveyId}
-                            surveyData={surveyDataForComponents}
-                            fixedPosition={true}
+                        <CollectionInfoBanner
+                            areasPagination={areasPagination}
+                            structureId={structureId}
+                            collections={surveyCollections}
+                            onSwitchCollection={(newCollectionId) => {
+                                // Handle switching to a different collection
+                                if (
+                                    newCollectionId &&
+                                    newCollectionId !==
+                                        areasPagination.collectionId
+                                ) {
+                                    router.push(
+                                        `/surveys/kitchenSurvey?id=${surveyId}&collection=${newCollectionId}`
+                                    );
+                                }
+                            }}
                         />
                     )}
 
-                    {/* Save and Add New Area buttons - USING CONSOLIDATED COMPONENT WITH COLLECTIONS */}
-                    <SurveyActionButtonsConsolidated
-                        contentRef={contentRef}
-                        schematicRef={schematicRef}
-                        surveyData={surveyDataForComponents}
-                        internalSurveyId={internalSurveyId}
-                        areasPagination={areasPagination}
-                        createSurveyIfNeeded={createMainSurveyInBackground}
-                        fixedPosition={true}
-                    />
-                </div>
-            </>
+                    {/* Main content area */}
+                    <div ref={contentRef}>
+                        {/* Main Area */}
+                        <div ref={mainAreaRef}>
+                            <div ref={schematicRef}>
+                                <Area1Logic
+                                    isMainArea={true}
+                                    visibleSections={visibleSections}
+                                    setVisibleSections={setVisibleSections}
+                                    structureTotal={structureTotal}
+                                    setStructureTotal={
+                                        handleStructureTotalChange
+                                    }
+                                    structureId={structureId}
+                                    setStructureId={setStructureId}
+                                    // PRIMARY DATA: Structure entries with enhanced handler
+                                    structureEntries={structureEntries}
+                                    setStructureEntries={
+                                        handleStructureEntriesChange
+                                    }
+                                    surveyData={surveyData}
+                                    setSurveyData={handleSurveyDataChange}
+                                    equipmentId={equipmentId}
+                                    setEquipmentId={setEquipmentId}
+                                    canopyTotal={canopyTotal}
+                                    setCanopyTotal={handleCanopyTotalChange}
+                                    canopyId={canopyId}
+                                    setCanopyId={setCanopyId}
+                                    canopyEntries={canopyEntries}
+                                    setCanopyEntries={setCanopyEntries}
+                                    canopyComments={canopyComments}
+                                    setCanopyComments={
+                                        handleCanopyCommentsChange
+                                    }
+                                    specialistEquipmentData={
+                                        specialistEquipmentData
+                                    }
+                                    setSpecialistEquipmentData={
+                                        handleSpecialistEquipmentDataChange
+                                    }
+                                    specialistEquipmentId={
+                                        specialistEquipmentId
+                                    }
+                                    setSpecialistEquipmentId={
+                                        setSpecialistEquipmentId
+                                    }
+                                    selectedGroupId={selectedGroupId}
+                                    setSelectedGroupId={setSelectedGroupId}
+                                    accessDoorPrice={accessDoorPrice}
+                                    setAccessDoorPrice={setAccessDoorPrice}
+                                    ventilationPrice={ventilationPrice}
+                                    setVentilationPrice={
+                                        handleVentilationPriceChange
+                                    }
+                                    airPrice={airPrice}
+                                    setAirPrice={setAirPrice}
+                                    fanPartsPrice={fanPartsPrice}
+                                    setFanPartsPrice={setFanPartsPrice}
+                                    airInExTotal={airInExTotal}
+                                    setAirInExTotal={setAirInExTotal}
+                                    schematicItemsTotal={schematicItemsTotal}
+                                    setSchematicItemsTotal={
+                                        setSchematicItemsTotal
+                                    }
+                                    ventilation={ventilation}
+                                    setVentilation={(newVent) => {
+                                        if (updatingVentilationRef.current)
+                                            return;
+
+                                        const newVentStr =
+                                            JSON.stringify(newVent);
+                                        const prevVentStr = JSON.stringify(
+                                            prevVentilationRef.current
+                                        );
+                                        if (newVentStr === prevVentStr) return;
+
+                                        updatingVentilationRef.current = true;
+                                        prevVentilationRef.current =
+                                            JSON.parse(newVentStr);
+                                        setVentilation(newVent);
+
+                                        setTimeout(() => {
+                                            updatingVentilationRef.current = false;
+                                        }, 0);
+                                    }}
+                                    access={access}
+                                    setAccess={(newAccess) => {
+                                        if (updatingAccessRef.current) return;
+
+                                        const newAccessStr =
+                                            JSON.stringify(newAccess);
+                                        const prevAccessStr = JSON.stringify(
+                                            prevAccessRef.current
+                                        );
+                                        if (newAccessStr === prevAccessStr)
+                                            return;
+
+                                        updatingAccessRef.current = true;
+                                        prevAccessRef.current =
+                                            JSON.parse(newAccessStr);
+                                        setAccess(newAccess);
+
+                                        setTimeout(() => {
+                                            updatingAccessRef.current = false;
+                                        }, 0);
+                                    }}
+                                    accordion={accordion}
+                                    toggleAccordion={toggleAccordion}
+                                    equipment={equipment}
+                                    setEquipment={handleEquipmentChange}
+                                    operations={operations}
+                                    setOperations={setOperations}
+                                    notes={notes}
+                                    setNotes={setNotes}
+                                    // Schematic visual data
+                                    placedItems={placedItems}
+                                    setPlacedItems={setPlacedItems}
+                                    specialItems={specialItems}
+                                    setSpecialItems={setSpecialItems}
+                                    gridSpaces={gridSpaces}
+                                    setGridSpaces={setGridSpaces}
+                                    cellSize={cellSize}
+                                    setCellSize={setCellSize}
+                                    flexiDuctSelections={flexiDuctSelections}
+                                    setFlexiDuctSelections={
+                                        setFlexiDuctSelections
+                                    }
+                                    accessDoorSelections={accessDoorSelections}
+                                    setAccessDoorSelections={
+                                        setAccessDoorSelections
+                                    }
+                                    groupDimensions={groupDimensions}
+                                    setGroupDimensions={setGroupDimensions}
+                                    fanGradeSelections={fanGradeSelections}
+                                    setFanGradeSelections={
+                                        setFanGradeSelections
+                                    }
+                                    // Survey images
+                                    surveyImages={surveyImages}
+                                    setSurveyImages={(images) => {
+                                        const imagesStr =
+                                            JSON.stringify(images);
+                                        const currImagesStr =
+                                            JSON.stringify(surveyImages);
+                                        if (imagesStr !== currImagesStr) {
+                                            setSurveyImages(images);
+                                        }
+                                    }}
+                                    // Site details and reference
+                                    siteDetails={siteDetails}
+                                    refValue={refValue}
+                                    // Specialist equipment survey
+                                    initialSpecialistEquipmentSurvey={
+                                        initialSpecialistEquipmentSurvey
+                                    }
+                                    equipmentItems={equipmentItems}
+                                />
+                            </div>
+                        </div>
+
+                        {/* NEW: Add ParkingPostServiceReport component */}
+                        <div
+                            style={{
+                                marginBottom: "3rem",
+                                border: "3px solid #ddd",
+                                padding: "1rem",
+                            }}
+                        >
+                            <ParkingPostServiceReport
+                                initialParkingCost={parkingCost}
+                                initialPostServiceReport={postServiceReport}
+                                initialPostServiceReportPrice={
+                                    postServiceReportPrice
+                                }
+                                onParkingCostChange={handleParkingCostChange}
+                                onPostServiceReportChange={
+                                    handlePostServiceReportChange
+                                }
+                            />
+                        </div>
+
+                        {/* PriceTables for the main area - UPDATED with parking and post-service report */}
+                        <PriceTables
+                            structureTotal={structureTotal}
+                            structureId={structureId}
+                            equipmentTotal={computedEquipmentTotal()}
+                            equipmentId={equipmentId}
+                            canopyTotal={canopyTotal}
+                            canopyId={canopyId}
+                            accessDoorPrice={accessDoorPrice}
+                            ventilationPrice={ventilationPrice}
+                            airPrice={airPrice}
+                            fanPartsPrice={fanPartsPrice}
+                            airInExTotal={airInExTotal}
+                            modify={modify}
+                            setModify={setModify}
+                            groupingId={selectedGroupId}
+                            schematicItemsTotal={schematicItemsTotal}
+                            specialistEquipmentData={specialistEquipmentData}
+                            // NEW: Pass parking cost and post-service report data
+                            parkingCost={parkingCost}
+                            postServiceReport={postServiceReport}
+                            postServiceReportPrice={postServiceReportPrice}
+                            areaLabel={structureId}
+                        />
+
+                        {/* Grand Total Section with main area only - UPDATED with parking and post-service report */}
+                        <GrandTotalSection
+                            structureTotal={structureTotal}
+                            structureId={structureId}
+                            computedEquipmentTotal={computedEquipmentTotal()}
+                            canopyTotal={canopyTotal}
+                            accessDoorPrice={accessDoorPrice}
+                            ventilationPrice={ventilationPrice}
+                            airPrice={airPrice}
+                            fanPartsPrice={fanPartsPrice}
+                            airInExTotal={airInExTotal}
+                            schematicItemsTotal={schematicItemsTotal}
+                            areasState={[]} // Empty array since we're removing child areas
+                            modify={modify}
+                            specialistEquipmentData={specialistEquipmentData}
+                            // NEW: Pass parking cost and post-service report data
+                            parkingCost={parkingCost}
+                            postServiceReport={postServiceReport}
+                            postServiceReportPrice={postServiceReportPrice}
+                        />
+                    </div>
+
+                    {/* Bottom section with area pagination and save buttons */}
+                    <div style={{ position: "relative", marginBottom: "4rem" }}>
+                        {/* Area Pagination - UPDATED TO PASS SURVEY DATA */}
+                        {areasPagination.totalAreas > 1 && (
+                            <AreaPagination
+                                paginationData={areasPagination}
+                                currentSurveyId={internalSurveyId}
+                                surveyData={surveyDataForComponents}
+                                fixedPosition={true}
+                            />
+                        )}
+
+                        {/* Save and Add New Area buttons - USING CONSOLIDATED COMPONENT WITH COLLECTIONS */}
+                        <SurveyActionButtonsConsolidated
+                            contentRef={contentRef}
+                            schematicRef={schematicRef}
+                            surveyData={surveyDataForComponents}
+                            internalSurveyId={internalSurveyId}
+                            areasPagination={areasPagination}
+                            createSurveyIfNeeded={createMainSurveyInBackground}
+                            fixedPosition={true}
+                            forceSyncComponents={forceSyncAllComponents}
+                        />
+                    </div>
+                </>
+            )}
         </div>
     );
 }

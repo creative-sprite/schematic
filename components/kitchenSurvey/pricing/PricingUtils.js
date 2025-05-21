@@ -30,6 +30,50 @@ export const computeEquipmentTotal = (surveyData, equipmentItems) => {
 };
 
 /**
+ * NEW: Calculate structure total from multiple structure entries
+ * @param {Array} structureEntries - Array of structure entries
+ * @param {Array} structureItems - Array of structure items with prices
+ * @returns {number} - Total structure price
+ */
+export const computeStructureTotal = (structureEntries, structureItems) => {
+    if (!Array.isArray(structureEntries) || !Array.isArray(structureItems)) {
+        console.warn("Invalid data passed to computeStructureTotal", { structureEntries, structureItems });
+        return 0;
+    }
+    
+    return structureEntries.reduce((total, entry) => {
+        // Calculate type temp for this entry (sum of prices for ceiling, wall, floor)
+        const typeTemp = entry.selectionData.reduce((acc, row) => {
+            let price = 0;
+            if (row.item && row.grade) {
+                const found = structureItems.find(
+                    (itm) => itm.subcategory === row.type && itm.item === row.item
+                );
+                if (found && found.prices && found.prices[row.grade] != null) {
+                    price = Number(found.prices[row.grade]);
+                }
+            }
+            return acc + price;
+        }, 0);
+        
+        // Calculate size temp for this entry (product of dimensions)
+        const dimensionsLength = entry.dimensions?.length || 1;
+        const dimensionsWidth = entry.dimensions?.width || 1;
+        const dimensionsHeight = entry.dimensions?.height || 1;
+        
+        const sizeTemp = dimensionsLength * dimensionsWidth * dimensionsHeight;
+        
+        // Total for this entry is type temp * size temp
+        const entryTotal = typeTemp * sizeTemp;
+        
+        console.log(`PricingUtils - Structure entry total: ${entryTotal} (typeTemp: ${typeTemp}, sizeTemp: ${sizeTemp})`);
+        
+        // Add to running total
+        return total + entryTotal;
+    }, 0);
+};
+
+/**
  * Helper to ensure values are numeric
  * @param {any} value - Value to convert to numeric
  * @returns {number} - Numeric value
@@ -66,6 +110,9 @@ export const computeGrandTotals = (mainTotals, childAreas) => {
             fanPartsPrice: 0,
             airInExTotal: 0,
             schematicItemsTotal: 0,
+            // NEW: Add parking cost and post-service report fields
+            parkingCost: 0,
+            postServiceReportPrice: 0,
         };
     }
     
@@ -80,6 +127,9 @@ export const computeGrandTotals = (mainTotals, childAreas) => {
         fanPartsPrice: ensureNumeric(mainTotals.fanPartsPrice),
         airInExTotal: ensureNumeric(mainTotals.airInExTotal),
         schematicItemsTotal: ensureNumeric(mainTotals.schematicItemsTotal),
+        // NEW: Add parking cost and post-service report fields
+        parkingCost: ensureNumeric(mainTotals.parkingCost),
+        postServiceReportPrice: ensureNumeric(mainTotals.postServiceReportPrice),
     };
 };
 
@@ -98,6 +148,10 @@ export const computeGrandTotals = (mainTotals, childAreas) => {
  * @param {Array} childAreas - Empty array (kept for compatibility)
  * @param {number} modify - Modification factor percentage
  * @param {Array} specialistEquipmentData - Specialist equipment items
+ * @param {number} parkingCost - Parking cost
+ * @param {number} postServiceReportPrice - Post-service report price
+ * @param {Array} structureEntries - Structure entries (optional)
+ * @param {Array} structureItems - Structure items with prices (optional)
  * @returns {number} - Grand total
  */
 export const calculateGrandTotal = (
@@ -112,7 +166,13 @@ export const calculateGrandTotal = (
     schematicItemsTotal,
     childAreas,
     modify,
-    specialistEquipmentData = []
+    specialistEquipmentData = [],
+    // NEW: Add parameters for parking cost and post-service report
+    parkingCost = 0,
+    postServiceReportPrice = 0,
+    // NEW: Add parameters for structure entries and items
+    structureEntries = [],
+    structureItems = []
 ) => {
     // Helper function to calculate specialist equipment total
     const calculateSpecialistTotal = (items = []) => {
@@ -138,12 +198,25 @@ export const calculateGrandTotal = (
             return total + (itemPrice * quantity);
         }, 0);
     };
+    
     // Calculate specialist equipment total
     const specialistTotal = calculateSpecialistTotal(specialistEquipmentData);
     
+    // NEW: Calculate structure total from entries if provided
+    let finalStructureTotal = ensureNumeric(structureTotal);
+    
+    // If we have structure entries and items data, and no explicit structure total provided,
+    // calculate the total from the entries
+    if (Array.isArray(structureEntries) && structureEntries.length > 0 && 
+        Array.isArray(structureItems) && structureItems.length > 0 && 
+        (!structureTotal || structureTotal === 0)) {
+        finalStructureTotal = computeStructureTotal(structureEntries, structureItems);
+        console.log(`PricingUtils - Calculated structure total from ${structureEntries.length} entries: ${finalStructureTotal}`);
+    }
+    
     // Calculate main area totals
     const mainArea = {
-        structureTotal: ensureNumeric(structureTotal),
+        structureTotal: finalStructureTotal,
         equipmentTotal: ensureNumeric(equipmentTotal),
         canopyTotal: ensureNumeric(canopyTotal),
         accessDoorPrice: ensureNumeric(accessDoorPrice),
@@ -153,13 +226,24 @@ export const calculateGrandTotal = (
         airInExTotal: ensureNumeric(airInExTotal),
         schematicItemsTotal: ensureNumeric(schematicItemsTotal),
         specialistTotal: specialistTotal,
+        // NEW: Add parking cost and post-service report
+        parkingCost: ensureNumeric(parkingCost),
+        postServiceReportPrice: ensureNumeric(postServiceReportPrice),
     };
 
     // Log specific parts to help debug
+    console.log(`PricingUtils - Main structure total: ${mainArea.structureTotal}`);
     console.log(`PricingUtils - Main ventilation price: ${mainArea.ventilationPrice}`);
     console.log(`PricingUtils - Main accessDoorPrice: ${mainArea.accessDoorPrice}`);
     if (specialistTotal > 0) {
         console.log(`PricingUtils - Main specialist equipment total: ${specialistTotal}`);
+    }
+    // NEW: Log new fields
+    if (parkingCost > 0) {
+        console.log(`PricingUtils - Parking cost: ${mainArea.parkingCost}`);
+    }
+    if (postServiceReportPrice > 0) {
+        console.log(`PricingUtils - Post-service report price: ${mainArea.postServiceReportPrice}`);
     }
 
     // Calculate the sum of all totals from main area
@@ -173,7 +257,10 @@ export const calculateGrandTotal = (
         mainArea.fanPartsPrice +
         mainArea.airInExTotal +
         mainArea.schematicItemsTotal +
-        mainArea.specialistTotal;
+        mainArea.specialistTotal +
+        // NEW: Add parking cost and post-service report to total
+        mainArea.parkingCost +
+        mainArea.postServiceReportPrice;
 
     // Apply modification factor
     const factor = 1 + (ensureNumeric(modify) / 100);

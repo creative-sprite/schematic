@@ -28,6 +28,7 @@ const PlacedItemSchema = new Schema({
   length: { type: String },
   width: { type: String },
   height: { type: String },
+  inaccessible: { type: String },
   selectedDoorId: { type: String },
   selectedDoorType: { type: String },
   selectedDoorName: { type: String },
@@ -191,7 +192,6 @@ const SpecialistEquipmentInfoSchema = new Schema({
   flexiHoseCircumference: { type: String },
   flexiHoseLength: { type: String },
   mewp: { type: String },
-  // REMOVED: notes field for specialist equipment
   categoryComments: { type: Schema.Types.Mixed }, // Store category-specific comments as a key-value object
 });
 
@@ -219,21 +219,27 @@ const SiteOperationsSchema = new Schema({
   approxServiceDue: { type: Boolean },
 });
 
-// Sub-schema for structure section
+// Sub-schema for selection data (used in structure entries)
+const SelectionDataSchema = new Schema({
+  type: { type: String },
+  item: { type: String },
+  grade: { type: String },
+});
+
+// Sub-schema for individual structure entry
+const StructureEntrySchema = new Schema({
+  id: { type: String },
+  selectionData: [SelectionDataSchema],
+  dimensions: DimensionsSchema,
+  comments: { type: String }
+});
+
+// Revised: Sub-schema for structure section - only uses entries array
 const StructureSchema = new Schema({
   structureId: { type: String },
   structureTotal: { type: Number },
-  selectionData: [{
-    type: { type: String },
-    item: { type: String },
-    grade: { type: String },
-  }],
-  dimensions: {
-    length: { type: Number },
-    width: { type: Number },
-    height: { type: Number },
-  },
-  structureComments: { type: String },
+  // PRIMARY WAY: Store all structure entries in this array
+  entries: [StructureEntrySchema]
 });
 
 // Sub-schema for schematic section
@@ -248,10 +254,16 @@ const SchematicSchema = new Schema({
   airPrice: { type: Number },
   fanPartsPrice: { type: Number },
   airInExTotal: { type: Number },
-  schematicItemsTotal: { type: Number },
+  schematicItemsTotal: { type: Schema.Types.Mixed },
   flexiDuctSelections: { type: Schema.Types.Mixed }, // Map of item IDs to ventilation selections
   accessDoorSelections: { type: Schema.Types.Mixed }, // Map of item IDs to door selections
   fanGradeSelections: { type: Schema.Types.Mixed }, // Map of item IDs to fan grade selections
+});
+
+// NEW: Add a sub-schema for additional services, like post-service report
+const AdditionalServicesSchema = new Schema({
+  postServiceReport: { type: String, default: "No" }, // Yes/No toggle
+  postServiceReportPrice: { type: Number, default: 0 }, // Price for post-service report
 });
 
 // Sub-schema for duplicated area
@@ -265,7 +277,7 @@ const DuplicatedAreaSchema = new Schema({
   airPrice: { type: Number },
   fanPartsPrice: { type: Number },
   airInExTotal: { type: Number },
-  schematicItemsTotal: { type: Number },
+  schematicItemsTotal: { type: Schema.Types.Mixed },
   specialistEquipmentData: [SpecialistEquipmentEntrySchema],
   groupingId: { type: String },
   structure: StructureSchema,
@@ -293,13 +305,7 @@ const KitchenSurveySchema = new Schema(
     // Link to the selected Site document
     site: { type: Schema.Types.ObjectId, ref: "Site", required: true },
 
-    // UPDATED: Collection membership information
-    // REMOVED: Single collection fields
-    // collectionId: { type: Schema.Types.ObjectId, ref: "SurveyCollection" },
-    // areaIndex: { type: Number },
-    // collectionRef: { type: String },
-    
-    // NEW: Array of collection memberships
+    // Array of collection memberships
     collections: [CollectionMembershipSchema],
 
     // Primary Contact Details
@@ -328,10 +334,13 @@ const KitchenSurveySchema = new Schema(
     // General Information
     general: {
       surveyType: { type: String },
-      parking: { type: String },
+      parking: { type: String }, // This is for parking availability, not cost
       dbs: { type: String },
       permit: { type: String },
     },
+
+    // NEW: Additional Services section
+    additionalServices: AdditionalServicesSchema,
 
     // Site Operations Section
     operations: SiteOperationsSchema,
@@ -364,10 +373,10 @@ const KitchenSurveySchema = new Schema(
       Ventilation: [{ type: Schema.Types.Mixed }]
     },
 
-    // Structure Section
+    // Structure Section - only using entries array
     structure: StructureSchema,
 
-    // Equipment Section - MODIFIED: Removed notes field
+    // Equipment Section
     equipmentSurvey: {
       entries: [EquipmentEntrySchema],
       subcategoryComments: { type: Schema.Types.Mixed }, // Store subcategory-specific comments as a key-value object
@@ -377,7 +386,6 @@ const KitchenSurveySchema = new Schema(
     specialistEquipmentSurvey: {
       entries: [SpecialistEquipmentEntrySchema],
       categoryComments: { type: Schema.Types.Mixed }, // Store category-specific comments as a key-value object
-      // REMOVED: notes field here too
     },
 
     // Canopy Section
@@ -406,7 +414,9 @@ const KitchenSurveySchema = new Schema(
         airPrice: { type: Number },
         fanPartsPrice: { type: Number },
         airInExTotal: { type: Number },
-        schematicItemsTotal: { type: Number },
+        schematicItemsTotal: { type: Schema.Types.Mixed },
+        parkingCost: { type: Number, default: 0 },
+        postServiceReportPrice: { type: Number, default: 0 },
         modify: { type: Number },
         groupingId: { type: String },
       },
@@ -420,7 +430,9 @@ const KitchenSurveySchema = new Schema(
         airPrice: { type: Number },
         fanPartsPrice: { type: Number },
         airInExTotal: { type: Number },
-        schematicItemsTotal: { type: Number },
+        schematicItemsTotal: { type: Schema.Types.Mixed },
+        parkingCost: { type: Number, default: 0 },
+        postServiceReportPrice: { type: Number, default: 0 },
       },
       modify: { type: Number, default: 0 },
     },

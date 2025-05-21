@@ -689,12 +689,12 @@ export default function KitchenSurveyList({ siteId, onCountChange }) {
                                 </h3>
                                 <p>
                                     {collection.collectionRef
-                                        ? `REF: ${collection.collectionRef}`
+                                        ? `${collection.collectionRef}`
                                         : "No Reference"}
                                 </p>
                                 <p>
                                     {collection.surveyDate
-                                        ? `Date: ${new Date(
+                                        ? `Created: ${new Date(
                                               collection.surveyDate
                                           ).toLocaleDateString()}`
                                         : `Areas: ${
@@ -704,7 +704,6 @@ export default function KitchenSurveyList({ siteId, onCountChange }) {
                                           }`}
                                 </p>
                                 <p>
-                                    <strong>Type:</strong>{" "}
                                     {collection.surveyType || "Kitchen Survey"}
                                 </p>
 

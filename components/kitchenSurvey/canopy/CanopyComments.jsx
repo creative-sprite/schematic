@@ -24,6 +24,9 @@ const CanopyComments = ({
     // Local state for immediate UI feedback
     const [localValue, setLocalValue] = useState(value);
 
+    // Track if the field has content
+    const hasContent = localValue && localValue.trim().length > 0;
+
     // Update local state when prop value changes
     useEffect(() => {
         setLocalValue(value || "");
@@ -54,7 +57,12 @@ const CanopyComments = ({
                 onChange={handleChange}
                 autoResize
                 rows={3}
-                style={{ width: "100%", marginTop: "0.5rem" }}
+                className={hasContent ? "p-filled" : ""}
+                style={{
+                    width: "100%",
+                    marginTop: "0.5rem",
+                    ...(hasContent && { borderColor: "var(--primary-color)" }),
+                }}
                 placeholder={placeholder}
                 aria-label={label || "Comment field"}
             />

@@ -149,8 +149,9 @@ const NotesTab = ({ entryId }) => {
                         <div dangerouslySetInnerHTML={{ __html: item.note }} />
                     </div>
                 </div>
-                <div>
+                <div style={{ gap: "0.5rem" }}>
                     <Button
+                        style={{ marginRight: "0.5rem" }}
                         icon="pi pi-pencil"
                         className="p-button-rounded p-button-text"
                         onClick={() => handleEditNote(item)}
@@ -168,18 +169,35 @@ const NotesTab = ({ entryId }) => {
     return (
         <div
             style={{
-                display: "flex",
-                gap: "1rem",
-                height: "calc(100vh - 200px)",
+                width: "100%",
             }}
         >
-            {/* Left Card: Note Input */}
-            <div style={{ flex: 1 }}>
-                <Card title="Add/Edit Note" style={{ height: "100%" }}>
-                    <div className="p-fluid">
+            {/* Note Input */}
+            <div style={{ marginBottom: "1rem" }}>
+                <Card title="Add/Edit Note">
+                    <div
+                        className="p-fluid"
+                        style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                        }}
+                    >
                         <div className="p-field">
-                            <label>Date</label>
+                            <InputText
+                                style={{
+                                    margin: "0 0 1rem 0",
+                                }}
+                                placeholder={"title"}
+                                value={noteTitle}
+                                onChange={(e) => setNoteTitle(e.target.value)}
+                            />
+                        </div>
+                        <div className="p-field">
                             <Calendar
+                                style={{
+                                    margin: "0 0 1rem 0",
+                                    gap: "0.5rem",
+                                }}
                                 value={noteDate}
                                 onChange={(e) => setNoteDate(e.value)}
                                 dateFormat="mm/dd/yy"
@@ -197,34 +215,31 @@ const NotesTab = ({ entryId }) => {
                                 />
                             </div>
                         )}
-                        <div className="p-field">
-                            <label>Title</label>
-                            <InputText
-                                value={noteTitle}
-                                onChange={(e) => setNoteTitle(e.target.value)}
-                            />
-                        </div>
-                        <div className="p-field">
-                            <label>Note</label>
-                            <Editor
-                                style={{ height: "150px" }}
-                                value={note}
-                                onTextChange={(e) => setNote(e.htmlValue)}
-                            />
-                        </div>
-                        <Button
-                            label={editingNoteId ? "Update Note" : "Add Note"}
-                            onClick={addOrUpdateNote}
+                    </div>
+                    <div className="p-field">
+                        <Editor
+                            style={{
+                                height: "100px",
+                            }}
+                            value={note}
+                            onTextChange={(e) => setNote(e.htmlValue)}
                         />
                     </div>
+                    <Button
+                        style={{
+                            margin: "1rem 0 0 0",
+                        }}
+                        label={editingNoteId ? "Update Note" : "Add Note"}
+                        onClick={addOrUpdateNote}
+                    />
                 </Card>
             </div>
 
-            {/* Right Card: DataView of Notes */}
-            <div style={{ flex: 1 }}>
+            {/* Saved Notes */}
+            <div>
                 <Card
                     title="Notes"
-                    style={{ height: "100%", overflowY: "auto" }}
+                    style={{ width: "100%", overflowY: "auto" }}
                 >
                     <DataView
                         value={notes}

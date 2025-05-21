@@ -3,10 +3,11 @@
 
 import { useParams } from "next/navigation";
 import { Card } from "primereact/card";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react"; // Add useCallback
 import EntityDetailLayout from "@/components/database/clients/common/EntityDetailLayout";
 import EntityTab from "@/components/database/clients/common/EntityTab";
 import EntityInfoCard from "@/components/database/clients/common/EntityInfoCard";
+import StartSurveyButton from "@/components/kitchenSurvey/storedSiteSurveys/StartSurveyButton";
 import RelationshipsTab from "@/components/database/clients/common/RelationshipsTab";
 import NotesTab from "@/components/database/clients/common/NotesTab";
 import useEntityData from "@/components/database/clients/common/useEntityData";
@@ -21,6 +22,10 @@ export default function SiteDetail() {
     const [areaCount, setAreaCount] = useState(0);
     const [quoteCount, setQuoteCount] = useState(0);
     const [collections, setCollections] = useState([]);
+    // State for area selection and combining
+    const [isSelectionMode, setIsSelectionMode] = useState(false);
+    const [selectedAreas, setSelectedAreas] = useState({});
+
     const {
         entity: site,
         loading,
@@ -30,6 +35,35 @@ export default function SiteDetail() {
         handleEntityUpdate,
         relationshipOptions,
     } = useEntityData("site", id);
+
+    // Function to toggle selection mode - Wrapped in useCallback
+    const handleToggleSelectionMode = useCallback((mode) => {
+        setIsSelectionMode(mode);
+        // Reset selections when exiting selection mode
+        if (!mode) {
+            setSelectedAreas({});
+        }
+    }, []); // Empty dependency array since we only need to create this once
+
+    // Function to toggle area selection
+    const handleAreaSelection = (areaId, collection) => {
+        setSelectedAreas((prev) => {
+            const updated = { ...prev };
+            if (updated[areaId]) {
+                delete updated[areaId];
+            } else {
+                updated[areaId] = {
+                    areaId,
+                    collectionId: collection._id,
+                    firstAreaName: collection.firstAreaName,
+                    collectionRef: collection.collectionRef,
+                };
+            }
+            return updated;
+        });
+    };
+
+    // Rest of the component remains the same...
 
     // Fetch survey count
     useEffect(() => {
@@ -114,9 +148,23 @@ export default function SiteDetail() {
                 }}
             >
                 <span>Surveys</span>
-                <span style={{ fontSize: "0.9rem", color: "#666" }}>
-                    {surveyCount} {surveyCount === 1 ? "Survey" : "Surveys"}
-                </span>
+                <div
+                    style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "1rem",
+                    }}
+                >
+                    {site && site._id && (
+                        <StartSurveyButton
+                            siteId={site._id}
+                            className="p-button-sm"
+                        />
+                    )}
+                    <span style={{ fontSize: "0.9rem", color: "#666" }}>
+                        {surveyCount} {surveyCount === 1 ? "Survey" : "Surveys"}
+                    </span>
+                </div>
             </div>
         );
     };
@@ -143,7 +191,8 @@ export default function SiteDetail() {
                         <CombineAreas
                             siteId={site._id}
                             collections={collections || []}
-                            onToggleSelectionMode={() => {}}
+                            onToggleSelectionMode={handleToggleSelectionMode}
+                            selectedAreas={selectedAreas}
                         />
                     )}
                     <span style={{ fontSize: "0.9rem", color: "#666" }}>
@@ -222,6 +271,9 @@ export default function SiteDetail() {
                             <AreaSurveyList
                                 siteId={site._id}
                                 onCountChange={setAreaCount}
+                                isSelectionMode={isSelectionMode}
+                                selectedAreas={selectedAreas}
+                                onToggleAreaSelection={handleAreaSelection}
                             />
                         )}
                     </Card>

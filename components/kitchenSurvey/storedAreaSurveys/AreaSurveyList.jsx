@@ -8,11 +8,18 @@ import { ProgressSpinner } from "primereact/progressspinner";
 import { Toast } from "primereact/toast";
 import { ConfirmDialog, confirmDialog } from "primereact/confirmdialog";
 import { useRouter } from "next/navigation";
+import { AreaSelectionCheckbox } from "./CombineAreas";
 
 /**
  * Component to display and manage individual areas from all collections
  */
-export default function AreaSurveyList({ siteId, onCountChange }) {
+export default function AreaSurveyList({
+    siteId,
+    onCountChange,
+    isSelectionMode = false,
+    selectedAreas = {},
+    onToggleAreaSelection = () => {},
+}) {
     const [areas, setAreas] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -382,6 +389,24 @@ export default function AreaSurveyList({ siteId, onCountChange }) {
         // Check if this card is flipped
         const isFlipped = flippedCards[area._id] || false;
 
+        // Check if this area is selected in selection mode
+        const isSelected = Boolean(selectedAreas && selectedAreas[area._id]);
+
+        // Find the primary collection for this area
+        const primaryCollection = area.collections?.find((c) => c.isPrimary);
+        const firstCollection = area.collections?.[0];
+
+        // Get a collection object to pass to the selection checkbox
+        const collectionForSelection = {
+            _id:
+                primaryCollection?.collectionId ||
+                firstCollection?.collectionId ||
+                collectionsInfo[0]?.id ||
+                "",
+            firstAreaName: structureId,
+            collectionRef: collectionsInfo[0]?.ref || area.refValue,
+        };
+
         return (
             <div className="card-container">
                 <div className={`card-flipper ${isFlipped ? "flipped" : ""}`}>
@@ -395,6 +420,16 @@ export default function AreaSurveyList({ siteId, onCountChange }) {
                                 position: "relative",
                             }}
                         >
+                            {/* Show selection checkbox when in selection mode */}
+                            {isSelectionMode && (
+                                <AreaSelectionCheckbox
+                                    areaId={area._id}
+                                    collection={collectionForSelection}
+                                    isSelected={isSelected}
+                                    onToggle={onToggleAreaSelection}
+                                />
+                            )}
+
                             <div className="vertical-buttons">
                                 <Button
                                     tooltip="View Collections"
@@ -452,11 +487,10 @@ export default function AreaSurveyList({ siteId, onCountChange }) {
 
                             <div className="area-info">
                                 <h3>
-                                    Area Name: {structureId}
+                                    {structureId}
                                     {collectionsCount > 1 && (
                                         <span style={{ fontWeight: "normal" }}>
-                                            {" | in "}
-                                            {collectionsCount} surveys
+                                            <p>in {collectionsCount} surveys</p>
                                         </span>
                                     )}
                                 </h3>
@@ -467,17 +501,16 @@ export default function AreaSurveyList({ siteId, onCountChange }) {
                                         fontStyle: "italic",
                                     }}
                                 >
-                                    Survey REF: {area.refValue}
+                                    {area.refValue}
                                 </p>
                                 <p>
                                     {surveyDate &&
-                                        `Date: ${new Date(
+                                        `Surveyed: ${new Date(
                                             surveyDate
                                         ).toLocaleDateString()}`}
                                 </p>
 
                                 <p>
-                                    <strong>Type:</strong>{" "}
                                     {area.general?.surveyType ||
                                         "Kitchen Survey"}
                                 </p>

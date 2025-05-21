@@ -1,19 +1,8 @@
 // components/kitchenSurvey/equipment/CommentTextarea.jsx
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { InputTextarea } from "primereact/inputtextarea";
 
-/**
- * A simple, lightweight component for handling text input with direct updates.
- * This component maintains a local state for responsive typing but propagates
- * changes directly to the parent without complex debouncing.
- *
- * @param {string} id - Unique identifier for the comment field
- * @param {string} value - The comment text value
- * @param {function} onChange - Callback function when comment changes (id, value) => void
- * @param {string} label - Optional label for the comment field
- * @param {string} placeholder - Optional placeholder text
- */
 const CommentTextarea = ({
     id,
     value = "",
@@ -23,20 +12,38 @@ const CommentTextarea = ({
 }) => {
     // Local state for immediate UI feedback
     const [localValue, setLocalValue] = useState(value);
+    const textareaRef = useRef(null);
 
     // Update local state when prop value changes
     useEffect(() => {
         setLocalValue(value || "");
     }, [value]);
 
-    // Handle text input directly without complex debouncing
+    // Apply border highlight when content changes
+    useEffect(() => {
+        if (textareaRef.current) {
+            const hasContent = localValue && localValue.trim().length > 0;
+            const textareaElement =
+                textareaRef.current.querySelector("textarea");
+
+            if (textareaElement) {
+                if (hasContent) {
+                    textareaElement.style.setProperty(
+                        "border-color",
+                        "var(--primary-color)",
+                        "important"
+                    );
+                } else {
+                    textareaElement.style.removeProperty("border-color");
+                }
+            }
+        }
+    }, [localValue]);
+
+    // Handle text input directly
     const handleChange = (e) => {
         const newValue = e.target.value;
-
-        // Update local state immediately for responsive typing
         setLocalValue(newValue);
-
-        // Notify parent component directly with ID and value (matching CanopyComments pattern)
         onChange(id, newValue);
     };
 
@@ -47,17 +54,22 @@ const CommentTextarea = ({
                     {label}
                 </label>
             )}
-            <InputTextarea
-                id={id}
-                name={id}
-                value={localValue}
-                onChange={handleChange}
-                autoResize
-                rows={3}
-                style={{ width: "100%", marginTop: "0.5rem" }}
-                placeholder={placeholder}
-                aria-label={label || "Comment field"}
-            />
+            <div ref={textareaRef}>
+                <InputTextarea
+                    id={id}
+                    name={id}
+                    value={localValue}
+                    onChange={handleChange}
+                    autoResize
+                    rows={3}
+                    style={{
+                        width: "100%",
+                        marginTop: "0.5rem",
+                    }}
+                    placeholder={placeholder}
+                    aria-label={label || "Comment field"}
+                />
+            </div>
         </div>
     );
 };

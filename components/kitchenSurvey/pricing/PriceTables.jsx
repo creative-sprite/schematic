@@ -3,6 +3,7 @@
 "use client";
 import React from "react";
 import "../../../styles/priceList.css";
+import { computeStructureTotal } from "./PricingUtils";
 
 export default function PriceTables({
     structureTotal,
@@ -22,7 +23,14 @@ export default function PriceTables({
     schematicItemsTotal = 0,
     greaseTotal = 0,
     specialistEquipmentData = [],
+    // NEW: Add parameters for parking cost and post-service report
+    parkingCost = 0,
+    postServiceReport = "No",
+    postServiceReportPrice = 0,
     areaLabel,
+    // NEW: Add parameters for structure entries
+    structureEntries = [],
+    structureItems = [],
 }) {
     // Calculate modification factor
     const factor = 1 + modify / 100;
@@ -30,8 +38,83 @@ export default function PriceTables({
     // Create data for each section
     const sections = [];
 
-    // Structure section
-    if (structureTotal > 0) {
+    // NEW: Helper to get a unique name for each structure entry
+    const getStructureEntryName = (entry, index) => {
+        if (entry.selectionData && entry.selectionData.length > 0) {
+            const typeNames = entry.selectionData
+                .map((item) => item.type)
+                .filter((type) => type && type !== "")
+                .join(", ");
+
+            return typeNames || `Structure ${index + 1}`;
+        }
+        return `Structure ${index + 1}`;
+    };
+
+    // NEW: Calculate structure price for a single entry
+    const calculateStructureEntryPrice = (entry) => {
+        if (
+            !entry ||
+            !entry.selectionData ||
+            !Array.isArray(structureItems) ||
+            structureItems.length === 0
+        ) {
+            return 0;
+        }
+
+        // Calculate type temp (sum of prices for ceiling, wall, floor)
+        const typeTemp = entry.selectionData.reduce((acc, row) => {
+            let price = 0;
+            if (row.item && row.grade) {
+                const found = structureItems.find(
+                    (itm) =>
+                        itm.subcategory === row.type && itm.item === row.item
+                );
+                if (found && found.prices && found.prices[row.grade] != null) {
+                    price = Number(found.prices[row.grade]);
+                }
+            }
+            return acc + price;
+        }, 0);
+
+        // Calculate size temp (product of dimensions)
+        const dimensionsLength = entry.dimensions?.length || 1;
+        const dimensionsWidth = entry.dimensions?.width || 1;
+        const dimensionsHeight = entry.dimensions?.height || 1;
+
+        const sizeTemp = dimensionsLength * dimensionsWidth * dimensionsHeight;
+
+        // Total for this entry is type temp * size temp
+        return typeTemp * sizeTemp;
+    };
+
+    // Structure section - UPDATED to handle multiple entries
+    if (
+        Array.isArray(structureEntries) &&
+        structureEntries.length > 0 &&
+        Array.isArray(structureItems) &&
+        structureItems.length > 0
+    ) {
+        // Show individual structure entries
+        structureEntries.forEach((entry, index) => {
+            const entryPrice = calculateStructureEntryPrice(entry) * factor;
+            if (entryPrice > 0) {
+                sections.push({
+                    title: "Structure",
+                    items: [
+                        {
+                            name: getStructureEntryName(entry, index),
+                            value: entryPrice,
+                            details: entry.comments,
+                        },
+                    ],
+                    total: entryPrice,
+                    hasDetails: !!entry.comments,
+                });
+            }
+        });
+    } else if (structureTotal > 0) {
+        // Fallback to single structure total
         sections.push({
             title: "Structure",
             items: [
@@ -231,7 +314,30 @@ export default function PriceTables({
         });
     }
 
-    // Calculate grand total for this area
+    // NEW: Add Parking Cost section
+    if (parkingCost > 0) {
+        sections.push({
+            title: "Parking",
+            items: [{ name: "Parking Cost", value: parkingCost * factor }],
+            total: parkingCost * factor,
+        });
+    }
+
+    // NEW: Add Post-Service Report section
+    if (postServiceReport === "Yes" && postServiceReportPrice > 0) {
+        sections.push({
+            title: "Additional Services",
+            items: [
+                {
+                    name: "Post-Service Report",
+                    value: postServiceReportPrice * factor,
+                },
+            ],
+            total: postServiceReportPrice * factor,
+        });
+    }
+
+    // Calculate grand total for this area - UPDATED to include new fields
     const areaGrandTotal = sections.reduce(
         (total, section) => total + section.total,
         0
@@ -267,10 +373,10 @@ export default function PriceTables({
                             <thead>
                                 <tr>
                                     <th style={{ textAlign: "left" }}>
-                                        Section
+                                        Service
                                     </th>
                                     <th style={{ textAlign: "right" }}>
-                                        Total (£)
+                                        Total
                                     </th>
                                 </tr>
                             </thead>
@@ -279,7 +385,7 @@ export default function PriceTables({
                                     <tr key={index}>
                                         <td>{section.title}</td>
                                         <td style={{ textAlign: "right" }}>
-                                            {section.total.toFixed(2)}
+                                            £{section.total.toFixed(2)}
                                         </td>
                                     </tr>
                                 ))}
@@ -291,7 +397,7 @@ export default function PriceTables({
                                 >
                                     <td>{displayAreaName} Total</td>
                                     <td style={{ textAlign: "right" }}>
-                                        {areaGrandTotal.toFixed(2)}
+                                        £{areaGrandTotal.toFixed(2)}
                                     </td>
                                 </tr>
                             </tbody>

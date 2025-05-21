@@ -135,8 +135,14 @@ function Schematic({
         initialFanPartsPrice || 0
     );
     const [airInExTotal, setAirInExTotal] = useState(initialAirInExTotal || 0);
+
+    // FIXED: Store schematicItemsTotal as object with breakdown
     const [schematicItemsTotal, setSchematicItemsTotal] = useState(
-        initialSchematicItemsTotal || 0
+        typeof initialSchematicItemsTotal === "object" &&
+            initialSchematicItemsTotal !== null &&
+            initialSchematicItemsTotal.breakdown
+            ? initialSchematicItemsTotal
+            : { overall: initialSchematicItemsTotal || 0, breakdown: {} }
     );
 
     // Pan mode handling states and refs
@@ -268,10 +274,43 @@ function Schematic({
             prevValuesRef.current.airInExTotal = initialAirInExTotal;
         }
 
-        if (schematicItemsTotal === 0 && initialSchematicItemsTotal > 0) {
+        // FIXED: Handle schematicItemsTotal initialization with breakdown preservation
+        if (
+            typeof schematicItemsTotal === "object" &&
+            (!schematicItemsTotal.breakdown ||
+                Object.keys(schematicItemsTotal.breakdown).length === 0) &&
+            typeof initialSchematicItemsTotal === "object" &&
+            initialSchematicItemsTotal !== null &&
+            initialSchematicItemsTotal.breakdown &&
+            Object.keys(initialSchematicItemsTotal.breakdown).length > 0
+        ) {
+            // Preserve the breakdown if available
             setSchematicItemsTotal(initialSchematicItemsTotal);
             prevValuesRef.current.schematicItemsTotal =
                 initialSchematicItemsTotal;
+            console.log(
+                "Initialized schematicItemsTotal with breakdown:",
+                Object.keys(initialSchematicItemsTotal.breakdown)
+            );
+        } else if (
+            (typeof schematicItemsTotal !== "object" ||
+                !schematicItemsTotal.overall) &&
+            initialSchematicItemsTotal
+        ) {
+            // Set as a number if that's all we have
+            const initialValue =
+                typeof initialSchematicItemsTotal === "object"
+                    ? initialSchematicItemsTotal.overall || 0
+                    : initialSchematicItemsTotal || 0;
+
+            setSchematicItemsTotal({
+                overall: initialValue,
+                breakdown: {},
+            });
+            prevValuesRef.current.schematicItemsTotal = {
+                overall: initialValue,
+                breakdown: {},
+            };
         }
 
         // Initialize flexi-duct selections
@@ -292,7 +331,7 @@ function Schematic({
 
         setInitialized(true);
         console.log("Schematic initialization complete");
-    }, [initialized]);
+    }, [initialized, initialSchematicItemsTotal, schematicItemsTotal]);
 
     // Listen for structure ID changes
     useEffect(() => {
@@ -530,24 +569,71 @@ function Schematic({
         }, 50);
     }, []);
 
+    // FIXED: Update schematicItemsTotal with breakdown
     const safeUpdateSchematicItemsTotal = useCallback((newTotal) => {
-        // Skip if already updating or no change
+        // Skip if already updating
         if (updatingStateRef.current) return;
 
-        let totalToCompare;
+        // Handle both object and number formats
+        let newTotalObject;
+        let hasChanged = false;
+
         if (typeof newTotal === "object" && newTotal !== null) {
-            totalToCompare = newTotal.overall || 0;
+            newTotalObject = newTotal;
+
+            // Compare with previous value to detect change
+            if (
+                typeof prevValuesRef.current.schematicItemsTotal === "object" &&
+                prevValuesRef.current.schematicItemsTotal !== null
+            ) {
+                // Compare overall value
+                if (
+                    Math.abs(
+                        (prevValuesRef.current.schematicItemsTotal.overall ||
+                            0) - (newTotal.overall || 0)
+                    ) > 0.001
+                ) {
+                    hasChanged = true;
+                }
+
+                // Compare breakdown categories
+                if (
+                    newTotal.breakdown &&
+                    (!prevValuesRef.current.schematicItemsTotal.breakdown ||
+                        JSON.stringify(newTotal.breakdown) !==
+                            JSON.stringify(
+                                prevValuesRef.current.schematicItemsTotal
+                                    .breakdown
+                            ))
+                ) {
+                    hasChanged = true;
+                }
+            } else {
+                hasChanged = true;
+            }
         } else {
-            totalToCompare = Number(newTotal) || 0;
+            // Convert simple number to object format
+            newTotalObject = {
+                overall: Number(newTotal) || 0,
+                breakdown: {},
+            };
+
+            // Check if the overall value has changed
+            if (
+                Math.abs(
+                    (typeof prevValuesRef.current.schematicItemsTotal ===
+                    "object"
+                        ? prevValuesRef.current.schematicItemsTotal.overall
+                        : prevValuesRef.current.schematicItemsTotal) ||
+                        0 - (Number(newTotal) || 0)
+                ) > 0.001
+            ) {
+                hasChanged = true;
+            }
         }
 
-        // If no meaningful change, skip update
-        if (
-            Math.abs(
-                prevValuesRef.current.schematicItemsTotal - totalToCompare
-            ) < 0.001
-        )
-            return;
+        // Skip update if nothing significant changed
+        if (!hasChanged) return;
 
         // Clear any existing timer
         if (debounceTimersRef.current.schematic) {
@@ -558,11 +644,26 @@ function Schematic({
         debounceTimersRef.current.schematic = setTimeout(() => {
             updatingStateRef.current = true;
 
-            setSchematicItemsTotal(newTotal);
-            prevValuesRef.current.schematicItemsTotal = totalToCompare;
+            console.log(
+                `[Schematic] Updating schematic items total:`,
+                typeof newTotalObject === "object" && newTotalObject.breakdown
+                    ? `Object with ${
+                          Object.keys(newTotalObject.breakdown).length
+                      } categories`
+                    : newTotalObject.overall
+            );
 
+            // Update local state
+            setSchematicItemsTotal(newTotalObject);
+
+            // Update reference
+            prevValuesRef.current.schematicItemsTotal = newTotalObject;
+
+            // Notify parent component
             if (callbackRefsRef.current.onSchematicItemsTotalChange) {
-                callbackRefsRef.current.onSchematicItemsTotalChange(newTotal);
+                callbackRefsRef.current.onSchematicItemsTotalChange(
+                    newTotalObject
+                );
             }
 
             setTimeout(() => {
@@ -590,10 +691,23 @@ function Schematic({
         }
     }, [airInExTotal, safeUpdateAirInExTotal]);
 
+    // FIXED: Handle schematicItemsTotal updates with breakdown preservation
     useEffect(() => {
-        if (schematicItemsTotal !== prevValuesRef.current.schematicItemsTotal) {
-            safeUpdateSchematicItemsTotal(schematicItemsTotal);
+        // Skip if already sent or no significant change
+        if (
+            typeof schematicItemsTotal === "object" &&
+            typeof prevValuesRef.current.schematicItemsTotal === "object" &&
+            schematicItemsTotal.overall ===
+                prevValuesRef.current.schematicItemsTotal.overall &&
+            JSON.stringify(schematicItemsTotal.breakdown || {}) ===
+                JSON.stringify(
+                    prevValuesRef.current.schematicItemsTotal.breakdown || {}
+                )
+        ) {
+            return;
         }
+
+        safeUpdateSchematicItemsTotal(schematicItemsTotal);
     }, [schematicItemsTotal, safeUpdateSchematicItemsTotal]);
 
     // Make sure we have a structure ID selected if we have placed items
@@ -706,7 +820,7 @@ function Schematic({
                 }, 10);
             }
         },
-        [accessDoorSelections]
+        [accessDoorSelections, setAccessDoorSelections]
     );
 
     // NEW: Effect to calculate access door price from selections

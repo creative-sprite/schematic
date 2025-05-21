@@ -2,8 +2,9 @@
 
 "use client";
 import React, { useEffect, useState, useRef } from "react";
+import { InputNumber } from "primereact/inputnumber";
 
-// DimensionInputs: renders the three input rows for Length, Width, and Height
+// DimensionInputs: renders the input rows for Length, Width, Height, and Inaccessible
 // Props:
 // - item: the actual item object containing dimension values
 // - handleDimensionChange: function to call when an input value changes
@@ -19,18 +20,26 @@ const DimensionInputs = ({ item, handleDimensionChange }) => {
     const [heightValue, setHeightValue] = useState(
         item?.height !== undefined ? String(item.height) : ""
     );
+    // New state for inaccessible as a number input
+    const [inaccessibleValue, setInaccessibleValue] = useState(
+        item?.inaccessible !== undefined ? String(item.inaccessible) : ""
+    );
 
     // Add refs to track if input is currently being edited
     const lengthInputRef = useRef(null);
     const widthInputRef = useRef(null);
     const heightInputRef = useRef(null);
+    const inaccessibleInputRef = useRef(null);
 
     // Track which field is being edited
     const [editingField, setEditingField] = useState(null);
 
+    // Ref to track if we're in a tab sequence between fields
+    const isChangingFieldsRef = useRef(false);
+
     // Update local state when props change, but only if we're not actively editing
     useEffect(() => {
-        if (item && !editingField) {
+        if (item && !editingField && !isChangingFieldsRef.current) {
             // Only update if the values have changed to prevent unnecessary re-renders
             // Convert all values to strings for consistent comparisons
             const itemLengthStr =
@@ -45,6 +54,10 @@ const DimensionInputs = ({ item, handleDimensionChange }) => {
                 item.height !== undefined && item.height !== null
                     ? String(item.height)
                     : "";
+            const itemInaccessibleStr =
+                item.inaccessible !== undefined && item.inaccessible !== null
+                    ? String(item.inaccessible)
+                    : "";
 
             if (itemLengthStr !== lengthValue) {
                 setLengthValue(itemLengthStr);
@@ -55,172 +68,220 @@ const DimensionInputs = ({ item, handleDimensionChange }) => {
             if (itemHeightStr !== heightValue) {
                 setHeightValue(itemHeightStr);
             }
+            if (itemInaccessibleStr !== inaccessibleValue) {
+                setInaccessibleValue(itemInaccessibleStr);
+            }
         }
-    }, [item, lengthValue, widthValue, heightValue, editingField]);
+    }, [
+        item,
+        lengthValue,
+        widthValue,
+        heightValue,
+        inaccessibleValue,
+        editingField,
+    ]);
 
     // Handle dimension input changes - ensuring consistent string handling
     const handleLengthChange = (e) => {
-        // Ensure we're working with strings to prevent controlled/uncontrolled issues
-        const stringValue = e.target.value ? e.target.value.toString() : "";
+        const stringValue = e.value !== null ? String(e.value) : "";
         setLengthValue(stringValue);
+        // Update parent immediately when value changes
         handleDimensionChange(item, "length", stringValue);
     };
 
     const handleWidthChange = (e) => {
-        const stringValue = e.target.value ? e.target.value.toString() : "";
+        const stringValue = e.value !== null ? String(e.value) : "";
         setWidthValue(stringValue);
+        // Update parent immediately when value changes
         handleDimensionChange(item, "width", stringValue);
     };
 
     const handleHeightChange = (e) => {
-        const stringValue = e.target.value ? e.target.value.toString() : "";
+        const stringValue = e.value !== null ? String(e.value) : "";
         setHeightValue(stringValue);
+        // Update parent immediately when value changes
         handleDimensionChange(item, "height", stringValue);
+    };
+
+    // Handler for inaccessible number input
+    const handleInaccessibleChange = (e) => {
+        const stringValue = e.value !== null ? String(e.value) : "";
+        setInaccessibleValue(stringValue);
+        // Update parent immediately when value changes
+        handleDimensionChange(item, "inaccessible", stringValue);
     };
 
     // Handle focus on input fields
     const handleFocus = (field) => {
+        // Clear the changing fields flag when a new field gets focus
+        isChangingFieldsRef.current = false;
         setEditingField(field);
     };
 
-    // Handle blur (losing focus) on input fields
+    // Handle blur (losing focus) on input fields with a small delay
     const handleBlur = (field, value) => {
-        // When blurring, we want to update the parent and mark as no longer editing
-        setEditingField(null);
+        // Set flag to indicate we might be changing between fields
+        isChangingFieldsRef.current = true;
 
-        // Ensure value is committed to parent on blur
-        if (field === "length" && value !== String(item.length)) {
-            handleDimensionChange(item, "length", value);
-        } else if (field === "width" && value !== String(item.width)) {
-            handleDimensionChange(item, "width", value);
-        } else if (field === "height" && value !== String(item.height)) {
-            handleDimensionChange(item, "height", value);
-        }
-    };
-
-    // Handle click to ensure text is selected when clicking into field
-    const handleClick = (inputRef) => {
-        if (inputRef && inputRef.current) {
-            // Select all text when clicking on the field
-            inputRef.current.select();
-        }
+        // Use a small timeout to allow the next focus event to happen first
+        // This prevents the component from resetting during field transitions
+        setTimeout(() => {
+            // Only clear editing state if no new field has focus
+            if (isChangingFieldsRef.current) {
+                setEditingField(null);
+                isChangingFieldsRef.current = false;
+            }
+        }, 50);
     };
 
     return (
         <div
             style={{
                 display: "flex",
-                flexDirection: "column",
-                gap: "0.5rem",
+                flexDirection: "row",
+                flexWrap: "wrap",
+                gap: "1.5rem",
                 width: "100%",
+                marginTop: "1rem",
             }}
         >
-            {/* Length Row */}
+            {/* Length field */}
             <div
                 style={{
                     display: "flex",
-                    alignItems: "center",
-                    justifyContent: "flex-end",
-                    width: "100%",
+                    flexDirection: "column",
+                    width: "124px",
                 }}
             >
                 <label
+                    htmlFor={`length-${item.id || item._id}`}
                     style={{
-                        marginRight: "20px",
-                        width: "50px",
-                        textAlign: "right",
-                        marginBottom: "5px",
+                        marginBottom: "8px",
+                        textAlign: "center",
                     }}
                 >
-                    Length:
+                    Length
                 </label>
-                <input
-                    type="number"
-                    value={lengthValue}
-                    onChange={handleLengthChange}
-                    // Add data attributes for direct item ID
-                    data-item-id={item.id || item._id}
-                    data-dimension-field="length"
-                    ref={lengthInputRef}
+                <InputNumber
+                    value={lengthValue === "" ? null : Number(lengthValue)}
+                    onValueChange={handleLengthChange}
+                    inputId={`length-${item.id || item._id}`}
+                    inputRef={lengthInputRef}
                     onFocus={() => handleFocus("length")}
                     onBlur={() => handleBlur("length", lengthValue)}
-                    onClick={() => handleClick(lengthInputRef)}
-                    style={{
-                        textAlign: "right",
-                        width: "200px",
+                    useGrouping={false}
+                    buttonLayout="none"
+                    inputStyle={{
+                        textAlign: "center",
+                        width: "100%",
                     }}
+                    style={{ width: "100%" }}
                 />
             </div>
-            {/* Width Row */}
+
+            {/* Width field */}
             <div
                 style={{
                     display: "flex",
-                    alignItems: "center",
-                    justifyContent: "flex-end",
-                    width: "100%",
+                    flexDirection: "column",
+                    width: "124px",
                 }}
             >
                 <label
+                    htmlFor={`width-${item.id || item._id}`}
                     style={{
-                        marginRight: "20px",
-                        width: "50px",
-                        textAlign: "right",
-                        marginBottom: "5px",
+                        marginBottom: "8px",
+                        textAlign: "center",
                     }}
                 >
-                    Width:
+                    Width
                 </label>
-                <input
-                    type="number"
-                    value={widthValue}
-                    onChange={handleWidthChange}
-                    // Add data attributes for direct item ID
-                    data-item-id={item.id || item._id}
-                    data-dimension-field="width"
-                    ref={widthInputRef}
+                <InputNumber
+                    value={widthValue === "" ? null : Number(widthValue)}
+                    onValueChange={handleWidthChange}
+                    inputId={`width-${item.id || item._id}`}
+                    inputRef={widthInputRef}
                     onFocus={() => handleFocus("width")}
                     onBlur={() => handleBlur("width", widthValue)}
-                    onClick={() => handleClick(widthInputRef)}
-                    style={{
-                        textAlign: "right",
-                        width: "200px",
+                    useGrouping={false}
+                    buttonLayout="none"
+                    inputStyle={{
+                        textAlign: "center",
+                        width: "100%",
                     }}
+                    style={{ width: "100%" }}
                 />
             </div>
-            {/* Height Row */}
+
+            {/* Height field */}
             <div
                 style={{
                     display: "flex",
-                    alignItems: "center",
-                    justifyContent: "flex-end",
-                    width: "100%",
+                    flexDirection: "column",
+                    width: "124px",
                 }}
             >
                 <label
+                    htmlFor={`height-${item.id || item._id}`}
                     style={{
-                        marginRight: "20px",
-                        width: "50px",
-                        textAlign: "right",
-                        marginBottom: "5px",
+                        marginBottom: "8px",
+                        textAlign: "center",
                     }}
                 >
-                    Height:
+                    Height
                 </label>
-                <input
-                    type="number"
-                    value={heightValue}
-                    onChange={handleHeightChange}
-                    // Add data attributes for direct item ID
-                    data-item-id={item.id || item._id}
-                    data-dimension-field="height"
-                    ref={heightInputRef}
+                <InputNumber
+                    value={heightValue === "" ? null : Number(heightValue)}
+                    onValueChange={handleHeightChange}
+                    inputId={`height-${item.id || item._id}`}
+                    inputRef={heightInputRef}
                     onFocus={() => handleFocus("height")}
                     onBlur={() => handleBlur("height", heightValue)}
-                    onClick={() => handleClick(heightInputRef)}
-                    style={{
-                        textAlign: "right",
-                        width: "200px",
+                    useGrouping={false}
+                    buttonLayout="none"
+                    inputStyle={{
+                        textAlign: "center",
+                        width: "100%",
                     }}
+                    style={{ width: "100%" }}
+                />
+            </div>
+
+            {/* Inaccessible field */}
+            <div
+                style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    width: "124px",
+                }}
+            >
+                <label
+                    htmlFor={`inaccessible-${item.id || item._id}`}
+                    style={{
+                        marginBottom: "8px",
+                        textAlign: "center",
+                    }}
+                >
+                    Inaccessible
+                </label>
+                <InputNumber
+                    value={
+                        inaccessibleValue === ""
+                            ? null
+                            : Number(inaccessibleValue)
+                    }
+                    onValueChange={handleInaccessibleChange}
+                    inputId={`inaccessible-${item.id || item._id}`}
+                    inputRef={inaccessibleInputRef}
+                    onFocus={() => handleFocus("inaccessible")}
+                    onBlur={() => handleBlur("inaccessible", inaccessibleValue)}
+                    useGrouping={false}
+                    buttonLayout="none"
+                    inputStyle={{
+                        textAlign: "center",
+                        width: "100%",
+                    }}
+                    style={{ width: "100%" }}
                 />
             </div>
         </div>

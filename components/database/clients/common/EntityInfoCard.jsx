@@ -225,11 +225,6 @@ const EntityInfoCard = ({ entity, entityType, contacts = [] }) => {
                     <div style={{ marginBottom: "0.5rem" }}>
                         <div style={{ display: "flex", alignItems: "center" }}>
                             <strong>Primary Email:</strong>
-                            <Badge
-                                value="Primary"
-                                severity="success"
-                                style={{ marginLeft: "0.5rem" }}
-                            />
                         </div>
                         <div>{primaryEmail.email}</div>
                         {primaryEmail.location && (
@@ -270,16 +265,11 @@ const EntityInfoCard = ({ entity, entityType, contacts = [] }) => {
 
         return (
             <>
-                {/* Display primary phone with badge */}
+                {/* Display primary phone */}
                 {primaryPhone && (
                     <div style={{ marginBottom: "0.5rem" }}>
                         <div style={{ display: "flex", alignItems: "center" }}>
                             <strong>Primary Phone:</strong>
-                            <Badge
-                                value="Primary"
-                                severity="success"
-                                style={{ marginLeft: "0.5rem" }}
-                            />
                         </div>
                         <div>{primaryPhone.phoneNumber}</div>
                         {primaryPhone.extension && (
@@ -325,40 +315,11 @@ const EntityInfoCard = ({ entity, entityType, contacts = [] }) => {
             case "site":
                 return (
                     <>
-                        <p>
-                            <strong>Site Name:</strong> {entity.siteName}
-                        </p>
-
-                        {/* Display primary relationships */}
-                        {primaryGroup && (
-                            <p>
-                                <strong>Primary Group:</strong>{" "}
-                                <Link
-                                    href={`/database/clients/group/${primaryGroup._id}`}
-                                >
-                                    {primaryGroup.groupName}
-                                </Link>
-                            </p>
-                        )}
-
-                        {primaryChain && (
-                            <p>
-                                <strong>Primary Chain:</strong>{" "}
-                                <Link
-                                    href={`/database/clients/chain/${primaryChain._id}`}
-                                >
-                                    {primaryChain.chainName}
-                                </Link>
-                            </p>
-                        )}
-
+                        {/* <p>{entity.siteName}</p> */}
                         {/* Display emails using the helper function */}
                         {renderEmailsSection(entity.siteEmails, "site")}
 
-                        <p>
-                            <strong>Website:</strong>{" "}
-                            {entity.siteWebsite || "N/A"}
-                        </p>
+                        <p>{entity.siteWebsite || "no website added"}</p>
 
                         {/* Display phone numbers using the helper function */}
                         {renderPhoneNumbersSection(
@@ -383,40 +344,23 @@ const EntityInfoCard = ({ entity, entityType, contacts = [] }) => {
 
                         {entity.addresses && entity.addresses.length > 0 && (
                             <div>
-                                <h3>Addresses</h3>
                                 {entity.addresses.map((addr, index) => (
                                     <div
                                         key={index}
                                         style={{ marginBottom: "1rem" }}
                                     >
-                                        <p>
-                                            <strong>
-                                                Address Name/Number:
-                                            </strong>{" "}
-                                            {addr.addressNameNumber}
-                                        </p>
-                                        <p>
-                                            <strong>Address Line 1:</strong>{" "}
-                                            {addr.addressLine1}
-                                        </p>
-                                        <p>
-                                            <strong>Address Line 2:</strong>{" "}
-                                            {addr.addressLine2}
-                                        </p>
-                                        <p>
-                                            <strong>Town:</strong> {addr.town}
-                                        </p>
-                                        <p>
-                                            <strong>County:</strong>{" "}
-                                            {addr.county}
-                                        </p>
-                                        <p>
-                                            <strong>Country:</strong>{" "}
-                                            {addr.country}
-                                        </p>
-                                        <p>
-                                            <strong>Post Code:</strong>{" "}
-                                            {addr.postCode}
+                                        <p style={{ whiteSpace: "pre-line" }}>
+                                            {[
+                                                addr.addressNameNumber,
+                                                addr.addressLine1,
+                                                addr.addressLine2,
+                                                addr.town,
+                                                addr.county,
+                                                addr.country,
+                                                addr.postCode,
+                                            ]
+                                                .filter(Boolean)
+                                                .join("\n")}
                                         </p>
                                     </div>
                                 ))}
@@ -424,12 +368,11 @@ const EntityInfoCard = ({ entity, entityType, contacts = [] }) => {
                         )}
 
                         <p>
-                            <strong>Site Type:</strong>{" "}
-                            {entity.siteType || "N/A"}
+                            <strong>Site Type:</strong> {entity.siteType || ""}
                         </p>
                         <p>
                             <strong>Client Type:</strong>{" "}
-                            {entity.clientType || "N/A"}
+                            {entity.clientType || ""}
                         </p>
                     </>
                 );
@@ -605,7 +548,7 @@ const EntityInfoCard = ({ entity, entityType, contacts = [] }) => {
                                     <strong>Primary Contact Status:</strong>{" "}
                                     <Badge
                                         value="Primary Contact for Site"
-                                        severity="success"
+                                        // severity="success"
                                     />
                                 </p>
                             )}
@@ -615,7 +558,7 @@ const EntityInfoCard = ({ entity, entityType, contacts = [] }) => {
                                     <strong>Primary Contact Status:</strong>{" "}
                                     <Badge
                                         value="Primary Contact for Group"
-                                        severity="success"
+                                        // severity="success"
                                     />
                                 </p>
                             )}
@@ -625,7 +568,7 @@ const EntityInfoCard = ({ entity, entityType, contacts = [] }) => {
                                     <strong>Primary Contact Status:</strong>{" "}
                                     <Badge
                                         value="Primary Contact for Chain"
-                                        severity="success"
+                                        // severity="success"
                                     />
                                 </p>
                             )}
@@ -635,7 +578,7 @@ const EntityInfoCard = ({ entity, entityType, contacts = [] }) => {
                                     <strong>Primary Contact Status:</strong>{" "}
                                     <Badge
                                         value="Primary Contact for Supplier"
-                                        severity="success"
+                                        // severity="success"
                                     />
                                 </p>
                             )}
@@ -645,7 +588,7 @@ const EntityInfoCard = ({ entity, entityType, contacts = [] }) => {
                                     <strong>Walk Around Status:</strong>{" "}
                                     <Badge
                                         value="Walk Around Contact for Site"
-                                        severity="info"
+                                        // severity="info"
                                     />
                                 </p>
                             )}
@@ -661,7 +604,10 @@ const EntityInfoCard = ({ entity, entityType, contacts = [] }) => {
                             {entity.isWalkAroundContact && (
                                 <p>
                                     <strong>Legacy Walk Around Contact:</strong>{" "}
-                                    <Badge value="Yes" severity="warning" />
+                                    <Badge
+                                        value="Yes"
+                                        // severity="warning"
+                                    />
                                 </p>
                             )}
                         </div>
@@ -793,17 +739,10 @@ const EntityInfoCard = ({ entity, entityType, contacts = [] }) => {
                         justifyContent: "center",
                     }}
                 >
-                    <div style={{ display: "flex", alignItems: "center" }}>
-                        <h3 style={{ margin: "0.5rem 0" }}>
-                            {contact.contactFirstName} {contact.contactLastName}
-                        </h3>
-                        <Badge
-                            value="Primary"
-                            severity="success"
-                            style={{ marginLeft: "0.5rem" }}
-                        />
-                    </div>
-
+                    <p>
+                        <strong>Name: </strong>
+                        {contact.contactFirstName} {contact.contactLastName}
+                    </p>
                     {contact.position && (
                         <p style={{ margin: "0.5rem 0" }}>
                             <strong>Position:</strong> {contact.position}
@@ -819,6 +758,14 @@ const EntityInfoCard = ({ entity, entityType, contacts = [] }) => {
                         "contact"
                     )}
                 </div>
+                <Badge
+                    value="Primary Contact"
+                    style={{
+                        width: "140px",
+                        marginLeft: "0.5rem",
+                        color: "white",
+                    }}
+                />
 
                 {/* Right side - 25% width for button */}
                 <div
@@ -861,6 +808,7 @@ const EntityInfoCard = ({ entity, entityType, contacts = [] }) => {
                 }}
             >
                 {/* Left side - 75% width for content */}
+
                 <div
                     style={{
                         width: "75%",
@@ -869,32 +817,31 @@ const EntityInfoCard = ({ entity, entityType, contacts = [] }) => {
                         justifyContent: "center",
                     }}
                 >
-                    <div style={{ display: "flex", alignItems: "center" }}>
-                        <h3 style={{ margin: "0.5rem 0" }}>
-                            {contact.contactFirstName} {contact.contactLastName}
-                        </h3>
-                        <Badge
-                            value="Walk Around"
-                            severity="info"
-                            style={{ marginLeft: "0.5rem" }}
-                        />
-                    </div>
-
+                    <p>
+                        <strong>Name: </strong>
+                        {contact.contactFirstName} {contact.contactLastName}
+                    </p>
                     {contact.position && (
                         <p style={{ margin: "0.5rem 0" }}>
                             <strong>Position:</strong> {contact.position}
                         </p>
                     )}
-
                     {/* Display contact emails */}
                     {renderEmailsSection(contact.contactEmails, "contact")}
-
                     {/* Display contact phone numbers */}
                     {renderPhoneNumbersSection(
                         contact.contactPhoneNumbers,
                         "contact"
                     )}
                 </div>
+                <Badge
+                    value="Walk around"
+                    style={{
+                        width: "140px",
+                        backgroundColor: "#9BC531",
+                        color: "white",
+                    }}
+                />
 
                 {/* Right side - 25% width for button */}
                 <div
@@ -949,11 +896,6 @@ const EntityInfoCard = ({ entity, entityType, contacts = [] }) => {
                         <h3 style={{ margin: "0.5rem 0" }}>
                             {group.groupName}
                         </h3>
-                        <Badge
-                            value="Primary"
-                            severity="success"
-                            style={{ marginLeft: "0.5rem" }}
-                        />
                     </div>
 
                     {/* Display address details */}
@@ -1036,11 +978,6 @@ const EntityInfoCard = ({ entity, entityType, contacts = [] }) => {
                         <h3 style={{ margin: "0.5rem 0" }}>
                             {chain.chainName}
                         </h3>
-                        <Badge
-                            value="Primary"
-                            severity="success"
-                            style={{ marginLeft: "0.5rem" }}
-                        />
                     </div>
 
                     {/* Display address details */}
@@ -1097,20 +1034,27 @@ const EntityInfoCard = ({ entity, entityType, contacts = [] }) => {
         switch (entityType) {
             case "site":
                 return (
-                    <>
-                        {/* Column 2: Primary Contact and Walk Around Contact - 25% width */}
+                    // Main container with 100% width and gap between columns
+                    <div
+                        style={{
+                            display: "flex",
+                            gap: "1rem",
+                            width: "100%",
+                            marginTop: "1rem",
+                        }}
+                    >
+                        {/* Left column - 50% width */}
                         <div
                             style={{
                                 display: "flex",
                                 flexDirection: "column",
                                 gap: "1rem",
-                                width: "25%",
+                                width: "calc(50% - 0.5rem)",
                             }}
                         >
                             <Card
                                 style={{
                                     flex: "1",
-                                    height: "50%",
                                     display: "flex",
                                     flexDirection: "column",
                                     justifyContent: "center",
@@ -1122,7 +1066,6 @@ const EntityInfoCard = ({ entity, entityType, contacts = [] }) => {
                             <Card
                                 style={{
                                     flex: "1",
-                                    height: "50%",
                                     display: "flex",
                                     flexDirection: "column",
                                     justifyContent: "center",
@@ -1132,19 +1075,18 @@ const EntityInfoCard = ({ entity, entityType, contacts = [] }) => {
                             </Card>
                         </div>
 
-                        {/* Column 3: Primary Group and Primary Chain - 25% width */}
+                        {/* Right column - 50% width */}
                         <div
                             style={{
                                 display: "flex",
                                 flexDirection: "column",
                                 gap: "1rem",
-                                width: "25%",
+                                width: "calc(50% - 0.5rem)",
                             }}
                         >
                             <Card
                                 style={{
                                     flex: "1",
-                                    height: "50%",
                                     display: "flex",
                                     flexDirection: "column",
                                     justifyContent: "center",
@@ -1156,7 +1098,6 @@ const EntityInfoCard = ({ entity, entityType, contacts = [] }) => {
                             <Card
                                 style={{
                                     flex: "1",
-                                    height: "50%",
                                     display: "flex",
                                     flexDirection: "column",
                                     justifyContent: "center",
@@ -1165,16 +1106,18 @@ const EntityInfoCard = ({ entity, entityType, contacts = [] }) => {
                                 {renderChainCard(primaryChain)}
                             </Card>
                         </div>
-                    </>
+                    </div>
                 );
 
             case "group":
             case "chain":
             case "supplier":
                 return (
-                    <Card style={{ width: "25%" }}>
-                        {renderContactCard(primaryContact)}
-                    </Card>
+                    <div style={{ width: "100%", marginTop: "1rem" }}>
+                        <Card style={{ width: "100%" }}>
+                            {renderContactCard(primaryContact)}
+                        </Card>
+                    </div>
                 );
 
             default:
@@ -1183,9 +1126,12 @@ const EntityInfoCard = ({ entity, entityType, contacts = [] }) => {
     };
 
     return (
-        <div style={{ display: "flex", gap: "1rem" }}>
+        <div style={{ width: "100%" }}>
             {/* Main information card */}
-            <Card title="General Information" style={{ flex: "1" }}>
+            <Card
+                title="Details"
+                style={{ width: "100%", marginBottom: "1rem" }}
+            >
                 {renderContent()}
             </Card>
 

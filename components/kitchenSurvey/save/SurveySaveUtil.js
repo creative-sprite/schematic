@@ -234,6 +234,11 @@ export const buildSavePayload = (
         hasEquipmentData: !!surveyData?.surveyData && Array.isArray(surveyData.surveyData),
         hasCanopyData: !!surveyData?.canopyEntries && Array.isArray(surveyData.canopyEntries),
         hasSchematicData: !!surveyData?.placedItems && Array.isArray(surveyData.placedItems),
+        // NEW: Check for structure entries array
+        hasStructureEntries: !!surveyData?.structureEntries && Array.isArray(surveyData.structureEntries),
+        structureEntriesCount: (surveyData?.structureEntries || []).length,
+        // NEW: Log if additional services data is present
+        hasAdditionalServices: !!surveyData?.parkingCost || !!surveyData?.postServiceReport,
         surveyDataKeys: Object.keys(surveyData || {})
     });
 
@@ -262,6 +267,7 @@ export const buildSavePayload = (
     if (typeof surveyData.schematicItemsTotal === 'object' && surveyData.schematicItemsTotal !== null) {
         // If it has breakdown property, preserve the entire object
         if (surveyData.schematicItemsTotal.breakdown && 
+            typeof surveyData.schematicItemsTotal.breakdown === 'object' &&
             Object.keys(surveyData.schematicItemsTotal.breakdown).length > 0) {
             schematicItemsTotalForSave = {
                 overall: extractNumericValue(surveyData.schematicItemsTotal.overall, 0),
@@ -331,6 +337,61 @@ export const buildSavePayload = (
         collectionsArray[0].isPrimary = true;
     }
 
+    // NEW: Extract parking cost and post-service report data
+    const parkingCost = extractNumericValue(surveyData.parkingCost, 0);
+    const postServiceReport = surveyData.postServiceReport || "No";
+    const postServiceReportPrice = extractNumericValue(surveyData.postServiceReportPrice, 0);
+
+    // UPDATED: Process structure entries for saving
+    let structureEntriesForSave = [];
+    
+    // Check if we have entries in the structure data
+    if (surveyData.structureEntries && Array.isArray(surveyData.structureEntries) && surveyData.structureEntries.length > 0) {
+        console.log("[SurveySaveUtil] Using structure entries array with", surveyData.structureEntries.length, "entries");
+        
+        // Make a deep copy of the entries array to avoid reference issues
+        structureEntriesForSave = surveyData.structureEntries.map(entry => {
+            // Ensure each entry has properly formatted data
+            const processedEntry = {
+                id: entry.id || `entry-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                selectionData: Array.isArray(entry.selectionData) 
+                    ? entry.selectionData.map(row => ({
+                        type: row.type || "",
+                        item: row.item || "",
+                        grade: row.grade || ""
+                      }))
+                    : [],
+                dimensions: entry.dimensions 
+                    ? {
+                        length: Number(entry.dimensions.length) || 0,
+                        width: Number(entry.dimensions.width) || 0,
+                        height: Number(entry.dimensions.height) || 0
+                      } 
+                    : {
+                        length: 0,
+                        width: 0,
+                        height: 0
+                      },
+                comments: entry.comments || ""
+            };
+            
+            return processedEntry;
+        });
+        
+        console.log("[SurveySaveUtil] Processed structure entries:");
+        console.log(JSON.stringify(structureEntriesForSave.map(e => ({
+            id: e.id,
+            selectionData: e.selectionData.length,
+            dimensions: e.dimensions
+        }))));
+    }
+    
+    // Log what we're saving
+    console.log("[SurveySaveUtil] Saving structure data:", {
+        entriesCount: structureEntriesForSave.length,
+        structureTotal: extractNumericValue(surveyData.structureTotal)
+    });
+
     // Build the complete payload with all data
     const savePayload = {
         // Basic info
@@ -356,13 +417,19 @@ export const buildSavePayload = (
             permit: surveyData.access?.permit || "No",
         },
         
-        // Structure section
+        // NEW: Include additional services section
+        additionalServices: {
+            parkingCost: parkingCost,
+            postServiceReport: postServiceReport,
+            postServiceReportPrice: postServiceReportPrice,
+        },
+        
+        // UPDATED: Structure section with entries array as primary storage
         structure: {
             structureId: surveyData.structureId || "",
             structureTotal: extractNumericValue(surveyData.structureTotal),
-            selectionData: surveyData.structureSelectionData || [],
-            dimensions: surveyData.structureDimensions || {},
-            structureComments: surveyData.structureComments || "",
+            // NEW PRIMARY WAY: Store all entries in the entries array
+            entries: structureEntriesForSave,
         },
         
         // Equipment survey with merged comments
@@ -395,7 +462,15 @@ export const buildSavePayload = (
             // Visual data
             gridSpaces: surveyData.gridSpaces || 26,
             cellSize: surveyData.cellSize || 40,
-            placedItems: surveyData.placedItems || [],
+            // FIXED: Explicitly process placedItems to ensure inaccessible field is included
+            placedItems: (surveyData.placedItems || []).map(item => ({
+                ...item,
+                // Ensure all dimension fields are properly stringified
+                length: item.length !== undefined ? String(item.length) : "",
+                width: item.width !== undefined ? String(item.width) : "",
+                height: item.height !== undefined ? String(item.height) : "",
+                inaccessible: item.inaccessible !== undefined ? String(item.inaccessible) : "",
+            })),
             specialItems: surveyData.specialItems || [],
             accessDoorSelections: surveyData.accessDoorSelections || {},
             flexiDuctSelections: surveyData.flexiDuctSelections || {},
@@ -427,6 +502,7 @@ export const buildSavePayload = (
         },
         
         // FIXED: Totals section - now preserving schematicItemsTotal format in mainArea and grandTotal
+        // NEW: Include parking cost and post-service report price in totals
         totals: {
             mainArea: {
                 structureTotal: extractNumericValue(surveyData.structureTotal),
@@ -438,6 +514,8 @@ export const buildSavePayload = (
                 fanPartsPrice: extractNumericValue(surveyData.fanPartsPrice),
                 airInExTotal: extractNumericValue(surveyData.airInExTotal),
                 schematicItemsTotal: schematicItemsTotalForSave, // Now preserving the full object if available
+                parkingCost: parkingCost,
+                postServiceReportPrice: postServiceReportPrice,
                 modify: extractNumericValue(surveyData.modify),
                 groupingId: surveyData.selectedGroupId || ""
             },
@@ -450,7 +528,9 @@ export const buildSavePayload = (
                 airPrice: extractNumericValue(surveyData.airPrice),
                 fanPartsPrice: extractNumericValue(surveyData.fanPartsPrice),
                 airInExTotal: extractNumericValue(surveyData.airInExTotal),
-                schematicItemsTotal: schematicItemsTotalForSave // Now preserving the full object if available
+                schematicItemsTotal: schematicItemsTotalForSave, // Now preserving the full object if available
+                parkingCost: parkingCost,
+                postServiceReportPrice: postServiceReportPrice,
             },
             modify: extractNumericValue(surveyData.modify)
         },
@@ -471,11 +551,16 @@ export const buildSavePayload = (
         equipmentEntryCount: (surveyData.surveyData || []).length,
         canopyEntryCount: (surveyData.canopyEntries || []).length,
         placedItemCount: (surveyData.placedItems || []).length,
+        structureEntryCount: structureEntriesForSave.length,
         collectionsCount: collectionsArray.length,
         schematicItemsTotal: typeof schematicItemsTotalForSave === 'object' ? 
             `Object with breakdown (${Object.keys(schematicItemsTotalForSave.breakdown || {}).length} categories)` : 
             `Number: ${schematicItemsTotalForSave}`,
-        accessDoorPrice: accessDoorPriceValue
+        accessDoorPrice: accessDoorPriceValue,
+        // NEW: Log additional services values
+        parkingCost: parkingCost,
+        postServiceReport: postServiceReport,
+        postServiceReportPrice: postServiceReportPrice,
     });
 
     return savePayload;
@@ -528,6 +613,16 @@ export const saveSurveyWithHandshake = async (
         } else {
             log("Survey does not belong to any collections");
         }
+
+        // Log structure entries information
+        if (savePayload.structure && Array.isArray(savePayload.structure.entries)) {
+            log(`Structure entries: ${savePayload.structure.entries.length} entries saved`);
+            savePayload.structure.entries.forEach((entry, index) => {
+                log(`  Entry ${index + 1}: ID=${entry.id}, selectionData=${entry.selectionData ? entry.selectionData.length : 0} rows, dimensions=${JSON.stringify(entry.dimensions)}`);
+            });
+        } else {
+            log("No structure entries to save");
+        }
         
         // Log payload size and key sections for debugging
         log(`Save payload prepared with: 
@@ -535,11 +630,14 @@ export const saveSurveyWithHandshake = async (
             - ${Object.keys(savePayload.specialistEquipmentSurvey.categoryComments).length} specialist comments
             - ${savePayload.equipmentSurvey.entries.length} equipment entries
             - ${savePayload.canopySurvey.entries.length} canopy entries
+            - ${savePayload.structure.entries.length} structure entries 
             - ${savePayload.schematic.placedItems.length} placed schematic items
             - ${savePayload.collections ? savePayload.collections.length : 0} collection memberships
             - schematicItemsTotal: ${typeof savePayload.schematic.schematicItemsTotal === 'object' ? 
                 'Object with breakdown' : savePayload.schematic.schematicItemsTotal}
-            - accessDoorPrice: ${savePayload.schematic.accessDoorPrice}`);
+            - accessDoorPrice: ${savePayload.schematic.accessDoorPrice}
+            - parkingCost: ${savePayload.additionalServices.parkingCost}
+            - postServiceReportPrice: ${savePayload.additionalServices.postServiceReportPrice}`);
         
         // 3. Send the update to the API
         updateProgress("Sending data to server...", 40);
@@ -596,6 +694,38 @@ export const saveSurveyWithHandshake = async (
                     warn("Warning: Structure data missing or incomplete in verification");
                 }
                 
+                // UPDATED: Check structure entries array
+                const savedStructureEntries = savedData.structure?.entries || [];
+                const expectedStructureEntries = savePayload.structure.entries.length;
+                
+                if (savedStructureEntries.length < expectedStructureEntries) {
+                    warn(`Warning: Expected ${expectedStructureEntries} structure entries, but found ${savedStructureEntries.length} in verification`);
+                } else {
+                    log(`Successfully saved ${savedStructureEntries.length} structure entries`);
+                    
+                    // Additional verification for structure entries
+                    for (let i = 0; i < savedStructureEntries.length; i++) {
+                        const savedEntry = savedStructureEntries[i];
+                        const expectedEntry = savePayload.structure.entries.find(e => e.id === savedEntry.id);
+                        
+                        if (!expectedEntry) {
+                            warn(`Warning: Entry ${i} with ID ${savedEntry.id} not found in original data`);
+                            continue;
+                        }
+                        
+                        // Check if data was saved correctly
+                        if (!savedEntry.selectionData || !Array.isArray(savedEntry.selectionData)) {
+                            warn(`Warning: Entry ${i} has missing or invalid selectionData`);
+                        } else if (savedEntry.selectionData.length !== expectedEntry.selectionData.length) {
+                            warn(`Warning: Entry ${i} has ${savedEntry.selectionData.length} selection rows, expected ${expectedEntry.selectionData.length}`);
+                        }
+                        
+                        if (!savedEntry.dimensions) {
+                            warn(`Warning: Entry ${i} has missing dimensions`);
+                        }
+                    }
+                }
+                
                 // Check equipment comments
                 const savedCommentCount = 
                     Object.keys(savedData.equipmentSurvey?.subcategoryComments || {}).length;
@@ -636,13 +766,26 @@ export const saveSurveyWithHandshake = async (
                 if (savedPlacedItemCount < expectedPlacedItemCount) {
                     warn(`Warning: Expected ${expectedPlacedItemCount} schematic items, but found ${savedPlacedItemCount} in verification`);
                 }
+
+                // Check if placed items have inaccessible field saved correctly
+                if (savedPlacedItemCount > 0) {
+                    // Check a sample of saved items for inaccessible field
+                    const sampleItem = savedData.schematic.placedItems[0];
+                    if (sampleItem.inaccessible === undefined) {
+                        warn(`Warning: Inaccessible field is missing from saved placed items!`);
+                    } else {
+                        log(`Inaccessible field successfully saved in placed items: ${sampleItem.inaccessible}`);
+                    }
+                }
                 
                 // FIXED: Check if schematicItemsTotal breakdown was preserved
                 if (typeof savePayload.schematic.schematicItemsTotal === 'object' && 
+                    savePayload.schematic.schematicItemsTotal !== null &&
                     savePayload.schematic.schematicItemsTotal.breakdown) {
                     
                     const hasBreakdownInSavedData = 
                         typeof savedData.schematic.schematicItemsTotal === 'object' && 
+                        savedData.schematic.schematicItemsTotal !== null &&
                         savedData.schematic.schematicItemsTotal.breakdown;
                         
                     if (!hasBreakdownInSavedData) {
@@ -667,6 +810,28 @@ export const saveSurveyWithHandshake = async (
                     warn(`Warning: Access door price mismatch - expected ${expectedAccessDoorPrice}, but found ${savedAccessDoorPrice} in verification`);
                 }
 
+                // NEW: Verify parking cost and post-service report data
+                const savedParkingCost = savedData.additionalServices?.parkingCost || 0;
+                const expectedParkingCost = savePayload.additionalServices.parkingCost || 0;
+                
+                if (Math.abs(savedParkingCost - expectedParkingCost) > 0.01) {
+                    warn(`Warning: Parking cost mismatch - expected ${expectedParkingCost}, but found ${savedParkingCost} in verification`);
+                }
+                
+                const savedPostServiceReport = savedData.additionalServices?.postServiceReport || "No";
+                const expectedPostServiceReport = savePayload.additionalServices.postServiceReport || "No";
+                
+                if (savedPostServiceReport !== expectedPostServiceReport) {
+                    warn(`Warning: Post-service report toggle mismatch - expected ${expectedPostServiceReport}, but found ${savedPostServiceReport} in verification`);
+                }
+                
+                const savedPostServiceReportPrice = savedData.additionalServices?.postServiceReportPrice || 0;
+                const expectedPostServiceReportPrice = savePayload.additionalServices.postServiceReportPrice || 0;
+                
+                if (Math.abs(savedPostServiceReportPrice - expectedPostServiceReportPrice) > 0.01) {
+                    warn(`Warning: Post-service report price mismatch - expected ${expectedPostServiceReportPrice}, but found ${savedPostServiceReportPrice} in verification`);
+                }
+
                 // MULTI-COLLECTION: Verify collections data
                 const savedCollectionCount = savedData.collections?.length || 0;
                 const expectedCollectionCount = savePayload.collections?.length || 0;
@@ -688,8 +853,12 @@ export const saveSurveyWithHandshake = async (
                     - Found ${savedSpecialistCount}/${expectedSpecialistCount} specialist comments
                     - Found ${savedCanopyCount}/${expectedCanopyCount} canopy comments
                     - Found ${savedPlacedItemCount}/${expectedPlacedItemCount} schematic items
+                    - Found ${savedStructureEntries.length}/${expectedStructureEntries} structure entries
                     - Found ${savedCollectionCount}/${expectedCollectionCount} collections
                     - AccessDoorPrice: ${savedAccessDoorPrice}/${expectedAccessDoorPrice}
+                    - ParkingCost: ${savedParkingCost}/${expectedParkingCost}
+                    - PostServiceReport: ${savedPostServiceReport}/${expectedPostServiceReport}
+                    - PostServiceReportPrice: ${savedPostServiceReportPrice}/${expectedPostServiceReportPrice}
                     - SchematicItemsTotal: ${typeof savedData.schematic.schematicItemsTotal === 'object' ? 
                         'Object with breakdown' : 'Numeric value only'}`);
             }

@@ -19,7 +19,7 @@ export default function VentilationInformationAccordion({
 }) {
     const [locationInput, setLocationInput] = useState("");
 
-    // Custom CSS for highlighting fields with data
+    // Custom CSS for highlighting fields with data and controlling overflow
     const customStyles = `
         .p-multiselect-has-data .p-multiselect {
             border-color: var(--primary-color) !important;
@@ -31,18 +31,44 @@ export default function VentilationInformationAccordion({
             border-color: var(--primary-color) !important;
         }
         
-        /* Force text wrapping in all inputs */
+        /* Improved text wrapping in textareas */
         .p-inputtextarea {
             white-space: normal !important;
             word-wrap: break-word !important;
             overflow-wrap: break-word !important;
+            width: 100% !important;
+            resize: none !important;
         }
         
-        /* Control multiselect display */
+        /* Fix dropdown display */
+        .p-multiselect {
+            width: 100% !important;
+            max-width: 100% !important;
+        }
+        
         .p-multiselect-label {
             white-space: nowrap !important;
             overflow: hidden !important;
             text-overflow: ellipsis !important;
+            max-width: 100% !important;
+        }
+        
+        /* Fix dropdown items to prevent expanding */
+        .p-multiselect-item {
+            white-space: normal !important;
+            word-break: break-word !important;
+        }
+        
+        /* Control dropdown panel width */
+        .p-multiselect-panel .p-multiselect-items {
+            max-width: 100% !important;
+        }
+        
+        /* Ensure dropdown items wrap text properly */
+        .p-multiselect-panel .p-multiselect-item {
+            white-space: normal !important;
+            word-break: break-word !important;
+            padding: 0.5rem !important;
         }
     `;
 
@@ -209,6 +235,7 @@ export default function VentilationInformationAccordion({
         flexDirection: "column",
         justifyContent: "center",
         textAlign: "center",
+        maxWidth: "100%", // Prevent expanding beyond container
     };
 
     const renderObstructions = () => {
@@ -301,29 +328,27 @@ export default function VentilationInformationAccordion({
                     }
                 />
                 {ventilation.obstructionsToggle === "Yes" && (
-                    <div style={{ marginTop: "0.5rem" }}>
+                    <div style={{ marginTop: "0.5rem", width: "100%" }}>
                         <InputTextarea
                             value={ventilation.obstructionsText || ""}
                             onChange={handleObstructionsTextChange}
                             placeholder="Describe the obstructions"
                             autoResize
-                            rows={1}
-                            style={{
-                                width: "100%",
-                                overflowX: "hidden",
-                                wordWrap: "break-word",
-                                borderColor: fieldHasData("obstructionsText")
-                                    ? "var(--primary-color)"
-                                    : "",
-                            }}
+                            rows={2}
+                            className={
+                                fieldHasData("obstructionsText")
+                                    ? "p-inputtext-has-data"
+                                    : ""
+                            }
                         />
-                        <div style={{ marginTop: "0.5rem" }}>
+                        <div style={{ marginTop: "0.5rem", width: "100%" }}>
                             <div
                                 className={
                                     fieldHasData("obstructionsOptions")
                                         ? "p-multiselect-has-data"
                                         : ""
                                 }
+                                style={{ width: "100%" }}
                             >
                                 <MultiSelect
                                     value={
@@ -332,10 +357,6 @@ export default function VentilationInformationAccordion({
                                     options={obstructionsOptions}
                                     onChange={handleMultiSelectChange}
                                     placeholder="Select obstructions"
-                                    style={{
-                                        width: "100%",
-                                        overflowX: "hidden",
-                                    }}
                                 />
                             </div>
                         </div>
@@ -403,39 +424,33 @@ export default function VentilationInformationAccordion({
                     }
                 />
                 {ventilation.damageToggle === "Yes" && (
-                    <div style={{ marginTop: "0.5rem" }}>
+                    <div style={{ marginTop: "0.5rem", width: "100%" }}>
                         <InputTextarea
                             value={ventilation.damageText || ""}
                             onChange={handleDamageTextChange}
                             placeholder="Describe the damage"
                             autoResize
-                            rows={1}
-                            style={{
-                                width: "100%",
-                                overflowX: "hidden",
-                                wordWrap: "break-word",
-                                borderColor: fieldHasData("damageText")
-                                    ? "var(--primary-color)"
-                                    : "",
-                            }}
+                            rows={2}
+                            className={
+                                fieldHasData("damageText")
+                                    ? "p-inputtext-has-data"
+                                    : ""
+                            }
                         />
-                        <div style={{ marginTop: "0.5rem" }}>
+                        <div style={{ marginTop: "0.5rem", width: "100%" }}>
                             <div
                                 className={
                                     fieldHasData("damageOptions")
                                         ? "p-multiselect-has-data"
                                         : ""
                                 }
+                                style={{ width: "100%" }}
                             >
                                 <MultiSelect
                                     value={ventilation.damageOptions || []}
                                     options={damageOptions}
                                     onChange={handleDamageMultiSelectChange}
                                     placeholder="Select damage options"
-                                    style={{
-                                        width: "100%",
-                                        overflowX: "hidden",
-                                    }}
                                 />
                             </div>
                         </div>
@@ -471,29 +486,27 @@ export default function VentilationInformationAccordion({
                 }
             />
             {ventilation.inaccessibleAreasToggle === "Yes" && (
-                <div style={{ marginTop: "0.5rem" }}>
+                <div style={{ marginTop: "0.5rem", width: "100%" }}>
                     <InputTextarea
                         value={ventilation.inaccessibleAreasText || ""}
                         onChange={handleInaccessibleAreasTextChange}
                         placeholder="Describe the inaccessible areas"
                         autoResize
-                        rows={1}
-                        style={{
-                            width: "100%",
-                            overflowX: "hidden",
-                            wordWrap: "break-word",
-                            borderColor: fieldHasData("inaccessibleAreasText")
-                                ? "var(--primary-color)"
-                                : "",
-                        }}
+                        rows={2}
+                        className={
+                            fieldHasData("inaccessibleAreasText")
+                                ? "p-inputtext-has-data"
+                                : ""
+                        }
                     />
-                    <div style={{ marginTop: "0.5rem" }}>
+                    <div style={{ marginTop: "0.5rem", width: "100%" }}>
                         <div
                             className={
                                 fieldHasData("inaccessibleAreasOptions")
                                     ? "p-multiselect-has-data"
                                     : ""
                             }
+                            style={{ width: "100%" }}
                         >
                             <MultiSelect
                                 value={
@@ -513,7 +526,6 @@ export default function VentilationInformationAccordion({
                                     handleInaccessibleAreasMultiSelectChange
                                 }
                                 placeholder="Select inaccessible area options"
-                                style={{ width: "100%", overflowX: "hidden" }}
                             />
                         </div>
                     </div>
@@ -548,29 +560,27 @@ export default function VentilationInformationAccordion({
                 }
             />
             {ventilation.clientActionsToggle === "Yes" && (
-                <div style={{ marginTop: "0.5rem" }}>
+                <div style={{ marginTop: "0.5rem", width: "100%" }}>
                     <InputTextarea
                         value={ventilation.clientActionsText || ""}
                         onChange={handleClientActionsTextChange}
                         placeholder="Describe client actions"
                         autoResize
-                        rows={1}
-                        style={{
-                            width: "100%",
-                            overflowX: "hidden",
-                            wordWrap: "break-word",
-                            borderColor: fieldHasData("clientActionsText")
-                                ? "var(--primary-color)"
-                                : "",
-                        }}
+                        rows={2}
+                        className={
+                            fieldHasData("clientActionsText")
+                                ? "p-inputtext-has-data"
+                                : ""
+                        }
                     />
-                    <div style={{ marginTop: "0.5rem" }}>
+                    <div style={{ marginTop: "0.5rem", width: "100%" }}>
                         <div
                             className={
                                 fieldHasData("clientActionsOptions")
                                     ? "p-multiselect-has-data"
                                     : ""
                             }
+                            style={{ width: "100%" }}
                         >
                             <MultiSelect
                                 value={ventilation.clientActionsOptions || []}
@@ -602,7 +612,6 @@ export default function VentilationInformationAccordion({
                                 ]}
                                 onChange={handleClientActionsMultiSelectChange}
                                 placeholder="Select client action options"
-                                style={{ width: "100%", overflowX: "hidden" }}
                             />
                         </div>
                     </div>
@@ -633,15 +642,9 @@ export default function VentilationInformationAccordion({
                 placeholder="Enter detailed description"
                 autoResize
                 rows={3}
-                style={{
-                    width: "100%",
-                    minHeight: "80px",
-                    overflow: "hidden",
-                    wordWrap: "break-word",
-                    borderColor: fieldHasData("description")
-                        ? "var(--primary-color)"
-                        : "",
-                }}
+                className={
+                    fieldHasData("description") ? "p-inputtext-has-data" : ""
+                }
             />
         </div>
     );
