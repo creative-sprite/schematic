@@ -6,6 +6,7 @@ import React, { useState } from "react";
 import { AutoComplete } from "primereact/autocomplete";
 import "primereact/resources/primereact.min.css"; // Core CSS
 import "primeicons/primeicons.css"; // Icons
+import { storeSiteForPDF } from "../save/savePDF/siteDataHandler";
 
 export default function SiteSelect({ onSiteSelect }) {
     const [selectedSite, setSelectedSite] = useState(null);
@@ -51,6 +52,8 @@ export default function SiteSelect({ onSiteSelect }) {
     const onSelect = (e) => {
         setSelectedSite(e.value);
         if (e.value && typeof onSiteSelect === "function") {
+            // Store for PDF generation
+            storeSiteForPDF(e.value);
             // Pass the complete site object to the parent
             onSiteSelect(e.value);
         }

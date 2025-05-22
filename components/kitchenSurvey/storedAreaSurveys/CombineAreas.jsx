@@ -153,7 +153,7 @@ export default function CombineAreas({
 
             const collectionData = {
                 collectionRef: newRefId,
-                name: newSurveyName,
+                name: newSurveyName, // This is where the name is set
                 site: siteId,
                 surveys: [], // We'll add surveys after they're created
                 totalAreas: 0,
@@ -209,6 +209,23 @@ export default function CombineAreas({
             setProgressMessage("Finalizing combined survey...");
             setProgressValue(95);
 
+            // Update the collection with the total number of areas
+            try {
+                await fetch(`/api/surveys/collections/${newCollectionId}`, {
+                    method: "PUT",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                        name: newSurveyName, // Explicitly set the name again
+                        totalAreas: areaDetails.length,
+                    }),
+                });
+            } catch (error) {
+                console.error("Error updating collection totals:", error);
+                // Don't throw error here, we can still continue
+            }
+
             // Success! Navigate to the first survey in the new collection
             setProgressValue(100);
             setProgressMessage("Survey combination complete!");
@@ -222,6 +239,9 @@ export default function CombineAreas({
 
             // Allow time for the user to see the success message
             setTimeout(() => {
+                // Clean up selection mode
+                setIsSelectionMode(false);
+
                 // Navigate to the first survey in the new collection
                 if (areaDetails.length > 0) {
                     const firstSurveyId = areaDetails[0]._id;

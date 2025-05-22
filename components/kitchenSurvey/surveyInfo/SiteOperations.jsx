@@ -107,7 +107,7 @@ export default function SiteOperationsAccordion({
         typeOfCooking: "",
         coversPerDay: "",
         bestServiceTime: "",
-        bestServiceDay: "Weekdays",
+        bestServiceDay: "",
         serviceDue: null,
         approxServiceDue: false,
     };
@@ -257,7 +257,7 @@ export default function SiteOperationsAccordion({
                     <Dropdown
                         value={safeOperations.bestServiceDay}
                         options={[
-                            { label: "Mon - Fri", value: "Weekdays" },
+                            { label: "Mon - Fri", value: "Mon - Fri" },
                             { label: "Weekend", value: "Weekend" },
                         ]}
                         onChange={(e) => {

@@ -665,7 +665,7 @@ export default function AddNewArea({
                     typeOfCooking: operations?.typeOfCooking || "",
                     coversPerDay: operations?.coversPerDay || "",
                     bestServiceTime: operations?.bestServiceTime || "",
-                    bestServiceDay: operations?.bestServiceDay || "Weekdays",
+                    bestServiceDay: operations?.bestServiceDay || "",
                     eightHoursAvailable:
                         operations?.eightHoursAvailable || "No",
                     eightHoursAvailableDetails:

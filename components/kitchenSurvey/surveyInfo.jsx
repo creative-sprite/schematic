@@ -101,7 +101,7 @@ export default function SurveyInfo({
             typeOfCooking: "",
             coversPerDay: "",
             bestServiceTime: "",
-            bestServiceDay: "Weekdays",
+            bestServiceDay: "",
             eightHoursAvailable: "No",
             eightHoursAvailableDetails: "",
             serviceDue: null,

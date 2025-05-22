@@ -373,12 +373,14 @@ export default function KitchenSurveyList({ siteId, onCountChange }) {
                             }
                         }
 
+                        // Include the reference value for the area
                         areas.push({
                             id: surveyId,
                             name: areaName,
                             date: json.data.surveyDate || json.data.createdAt,
                             areaIndex: areaIndex,
                             collections: json.data.collections || [],
+                            refValue: json.data.refValue || "", // Added reference value
                         });
                     }
                 }
@@ -798,6 +800,17 @@ export default function KitchenSurveyList({ siteId, onCountChange }) {
                                         >
                                             <div>
                                                 <strong>{area.name}</strong>
+                                                {area.refValue && (
+                                                    <div
+                                                        style={{
+                                                            fontSize: "0.85rem",
+                                                            color: "#666",
+                                                            fontStyle: "italic",
+                                                        }}
+                                                    >
+                                                        REF: {area.refValue}
+                                                    </div>
+                                                )}
                                                 {area.collections?.length >
                                                     1 && (
                                                     <span
