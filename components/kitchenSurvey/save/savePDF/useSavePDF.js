@@ -11,43 +11,63 @@ import generateEquipmentSection from "./sections/equipmentSection";
 import generateSpecialistSection from "./sections/specialistSection";
 import generateSchematicSection from "./sections/schematicSection";
 import generateCanopySection from "./sections/canopySection";
-import generatePriceBreakdownSection, { calculateSubtotal } from "./sections/priceBreakdownSection";
-import generateAdditionalInfoSection from "./sections/additionalInfoSection";
+import generatePriceBreakdownSection from "./sections/priceBreakdownSection";
+import generateAccessRequirementsSection from "./sections/accessRequirementsSection";
 import generateVentilationInformationSection from "./sections/ventilationInformationSection";
+import generateImageSection from "./sections/imageSection";
 import generateNotesSection from "./sections/notesSection";
 import { generateSiteOperationsSection } from "./sections/siteOperations";
+import generateAdditionalSection from "./sections/additionalSection";
 
 // Import template utilities
 import { createDocumentWrapper, combineHtmlSections } from "./templateUtils";
 
 /**
- * Generates complete HTML for PDF from survey data
+ * Generates complete HTML for PDF from survey data (ASYNC for image processing)
  * @param {Object} surveyData Survey data
  * @param {String} schematicHtml Optional HTML for schematic
- * @returns {String} Complete HTML document as string
+ * @returns {Promise<String>} Complete HTML document as string
  */
-export const generateStyledHtml = (surveyData, schematicHtml = null) => {
-  // Generate all sections
-  const sections = {
-    header: generateHeaderSection(surveyData),
-    siteInfo: generateSiteInfoSection(surveyData),
-    siteOperations: generateSiteOperationsSection(surveyData),
-    notes: generateNotesSection(surveyData),
-    structure: generateStructureSection(surveyData),
-    equipment: generateEquipmentSection(surveyData),
-    specialist: generateSpecialistSection(surveyData),
-    schematic: generateSchematicSection(surveyData),
-    canopy: generateCanopySection(surveyData),
-    ventilationInformation: generateVentilationInformationSection(surveyData),
-    priceBreakdown: generatePriceBreakdownSection(surveyData),
-    additionalInfo: generateAdditionalInfoSection(surveyData)
-  };
+export const generateStyledHtml = async (surveyData, schematicHtml = null) => {
+  console.log('Starting HTML generation for PDF...');
   
-  // Combine sections into content
-  const contentHtml = combineHtmlSections(sections);
-  
-  // Wrap content in document template
-  return createDocumentWrapper(contentHtml, surveyData?.refValue);
+  try {
+    // Generate all sections - images section is async for base64 conversion
+    const sections = {
+      header: generateHeaderSection(surveyData),
+      siteInfo: generateSiteInfoSection(surveyData),
+      siteOperations: generateSiteOperationsSection(surveyData),
+      notes: generateNotesSection(surveyData),
+      structure: generateStructureSection(surveyData),
+      equipment: generateEquipmentSection(surveyData),
+      specialist: generateSpecialistSection(surveyData),
+      schematic: generateSchematicSection(surveyData),
+      canopy: generateCanopySection(surveyData),
+      ventilationInformation: generateVentilationInformationSection(surveyData),
+      accessRequirements: generateAccessRequirementsSection(surveyData),
+      images: await generateImageSection(surveyData),
+      additionalServices: generateAdditionalSection(surveyData),
+      priceBreakdown: generatePriceBreakdownSection(surveyData),
+    };
+    
+    console.log('All sections generated, combining HTML...');
+    
+    // Combine sections into content
+    const contentHtml = combineHtmlSections(sections);
+    
+    // Wrap content in document template
+    const finalHtml = createDocumentWrapper(contentHtml, surveyData?.refValue);
+    
+    console.log('HTML generation complete, length:', finalHtml?.length || 0);
+    return finalHtml;
+    
+  } catch (error) {
+    console.error('Error generating HTML:', error);
+    return createDocumentWrapper(
+      '<div>Error generating PDF content. Please try again.</div>', 
+      surveyData?.refValue || 'Error'
+    );
+  }
 };
 
 /**
@@ -55,8 +75,7 @@ export const generateStyledHtml = (surveyData, schematicHtml = null) => {
  * @returns {Object} PDF generation methods and state
  */
 export const useSavePDF = () => {
-  // State to track PDF module loading
-  const [pdfState, setPdfState] = useState({
+  const [pdfState] = useState({
     isLoading: false,
     isReady: true,
     error: null,
@@ -68,54 +87,11 @@ export const useSavePDF = () => {
       return null;
     }
 
-    // Get the element's outerHTML
     const htmlContent = elementRef.current.outerHTML;
-
-    // Normalize the HTML to ensure it's valid
     const parser = new DOMParser();
     const doc = parser.parseFromString(htmlContent, "text/html");
-
-    // Return the cleaned HTML
     return doc.body.innerHTML;
   }, []);
-
-  // Helper function to upload PDF to Cloudinary
-  const uploadPdfToCloudinary = useCallback(
-    async (pdfDataUrl, fileName, folder) => {
-      try {
-        // Create file from base64 data
-        const file = await fetch(pdfDataUrl).then((res) => res.blob());
-
-        // Create FormData object for upload
-        const formData = new FormData();
-        formData.append("file", file, fileName);
-        formData.append("folder", folder);
-        formData.append("resource_type", "auto");
-        formData.append("preserveFilename", "true");
-
-        // Upload to Cloudinary via backend route
-        const response = await fetch("/api/cloudinary/upload", {
-          method: "POST",
-          body: formData,
-        });
-
-        const result = await response.json();
-
-        if (!result.success) {
-          throw new Error(result.message || "Upload failed");
-        }
-
-        return result;
-      } catch (error) {
-        console.error("Error uploading to Cloudinary:", error);
-        return {
-          success: false,
-          message: error.message || "Upload failed",
-        };
-      }
-    },
-    []
-  );
 
   // Calculate equipment total
   const computeEquipmentTotal = useCallback((surveyData, equipmentItems) => {
@@ -127,7 +103,7 @@ export const useSavePDF = () => {
     );
   }, []);
 
-  // Main function to generate PDF quote using server-side puppeteer
+  // Main function to generate PDF quote
   const generateQuote = useCallback(
     async (
       surveyId,
@@ -136,7 +112,6 @@ export const useSavePDF = () => {
       computeTotalPrice,
       toast
     ) => {
-      // Prevent duplicate generation
       if (window.__generating_quote) {
         return {
           success: false,
@@ -146,164 +121,123 @@ export const useSavePDF = () => {
       window.__generating_quote = true;
 
       try {
-        console.log("PDF Generation: Starting quote generation for survey:", surveyId);
+        console.log("Starting quote generation for survey:", surveyId);
 
-        // FIXED: Fetch complete survey data from database instead of relying on passed data
+        // Get complete survey data from database
         let completeSurveyData = surveyData;
         
         if (surveyId) {
           try {
-            console.log("PDF Generation: Fetching complete survey data from database...");
             const response = await fetch(`/api/surveys/kitchenSurveys/viewAll/${surveyId}`);
             
             if (response.ok) {
               const apiResult = await response.json();
               if (apiResult.success && apiResult.data) {
-                console.log("PDF Generation: Successfully fetched survey data from database");
-                console.log("PDF Generation: Equipment comments found:", apiResult.data.equipmentSurvey?.subcategoryComments);
-                
-                // Use the database data as the primary source, merge with passed data for any missing fields
                 completeSurveyData = {
-                  ...surveyData, // Keep any additional data passed from the form
-                  ...apiResult.data, // Override with complete database data
+                  ...surveyData, // Keep form data (including File objects for images)
+                  ...apiResult.data, // Override with database data
                   
-                  // Ensure we have the equipment survey data with comments
+                  // CRITICAL: Preserve form images which have File objects for preview
+                  images: surveyData.images || surveyData.surveyImages || apiResult.data.images || {},
+                  surveyImages: surveyData.surveyImages || surveyData.images || apiResult.data.images || {},
+                  
+                  // Ensure equipment survey data
                   equipmentSurvey: apiResult.data.equipmentSurvey || {},
-                  
-                  // For backward compatibility, also set surveyData to the equipment entries
                   surveyData: apiResult.data.equipmentSurvey?.entries || [],
-                  
-                  // Ensure specialist equipment data is available
                   specialistEquipmentSurvey: apiResult.data.specialistEquipmentSurvey || {},
                   specialistEquipmentData: apiResult.data.specialistEquipmentSurvey?.entries || [],
+                  
+                  // Include structure entries for pricing calculations
+                  structureEntries: apiResult.data.structure?.entries || surveyData.structureEntries || [],
                 };
-                
-                console.log("PDF Generation: Final survey data prepared with:", {
-                  hasEquipmentSurvey: !!completeSurveyData.equipmentSurvey,
-                  equipmentEntriesCount: completeSurveyData.equipmentSurvey?.entries?.length || 0,
-                  subcategoryCommentsCount: Object.keys(completeSurveyData.equipmentSurvey?.subcategoryComments || {}).length,
-                  subcategoryComments: completeSurveyData.equipmentSurvey?.subcategoryComments
-                });
-              } else {
-                console.warn("PDF Generation: Failed to fetch survey data, using passed data");
               }
-            } else {
-              console.warn("PDF Generation: API request failed, using passed data");
             }
           } catch (fetchError) {
-            console.error("PDF Generation: Error fetching survey data:", fetchError);
-            console.log("PDF Generation: Falling back to passed data");
+            console.error("Error fetching survey data:", fetchError);
           }
         }
 
-        // Extract basic info for filename and folder
+        // Fetch equipment and structure items for price calculations if not already included
+        try {
+          if (!completeSurveyData.equipmentItems) {
+            const equipmentResponse = await fetch('/api/equipment/kitchenEquipment');
+            if (equipmentResponse.ok) {
+              const equipmentData = await equipmentResponse.json();
+              completeSurveyData.equipmentItems = equipmentData || [];
+            }
+          }
+
+          if (!completeSurveyData.structureItems) {
+            const structureResponse = await fetch('/api/structure/kitchenStructure');
+            if (structureResponse.ok) {
+              const structureData = await structureResponse.json();
+              completeSurveyData.structureItems = structureData || [];
+            }
+          }
+        } catch (fetchError) {
+          console.error("Error fetching equipment/structure items:", fetchError);
+        }
+
+        // Extract basic info
         const { refValue, siteDetails } = completeSurveyData || {};
 
-        // Calculate the grand total price
+        // Calculate total price
         let totalPrice = 0;
         if (typeof computeTotalPrice === "function") {
           const priceResult = computeTotalPrice();
-          totalPrice =
-            typeof priceResult === "number"
-              ? priceResult
-              : typeof priceResult === "object" &&
-                priceResult?.grandTotal
-              ? priceResult.grandTotal
-              : 0;
+          totalPrice = typeof priceResult === "number" ? priceResult : priceResult?.grandTotal || 0;
         }
 
-        // Capture schematic HTML if available
+        // Capture schematic if available
         let schematicHtml = null;
         if (schematicRef && schematicRef.current) {
           schematicHtml = await captureElementAsHtml(schematicRef);
         }
 
-        // MODIFIED: Remove timestamp from PDF filename
+        // Generate HTML content (ASYNC - converts File objects to base64)
+        console.log("Converting images to base64 and generating HTML...");
+        const htmlContent = await generateStyledHtml(completeSurveyData, schematicHtml);
+
+        // Prepare file info
         const pdfName = `Quote-${refValue || ""}.pdf`;
+        const siteName = siteDetails?.siteName || siteDetails?.name || "unknown-site";
+        const pdfFolder = getSurveyPdfFolder(siteName, refValue || "unknown");
 
-        // Get folder for storage - UPDATED TO USE IMPORTED FUNCTION
-        const siteName =
-          siteDetails?.siteName ||
-          siteDetails?.name ||
-          "unknown-site";
-        const pdfFolder = getSurveyPdfFolder(
-          siteName,
-          refValue || "unknown"
-        );
+        console.log("Calling server-side PDF API...");
 
-        console.log("PDF Generation: Generating HTML content...");
-
-        // Generate the HTML content for the PDF using the complete survey data
-        const htmlContent = generateStyledHtml(
-          completeSurveyData,
-          schematicHtml
-        );
-
-        console.log("PDF Generation: Calling server-side PDF API...");
-
-        // Call server-side API to generate PDF
+        // Generate PDF
         const response = await fetch("/api/quotes/generate", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             html: htmlContent,
             fileName: pdfName,
             options: {
               format: "A4",
               printBackground: true,
-              margin: {
-                top: "1cm",
-                right: "1cm",
-                bottom: "1cm",
-                left: "1cm",
-              },
-              displayHeaderFooter: true,
-              headerTemplate: `
-              <div style="width: 100%; font-size: 9px; font-family: Arial; color: #777; padding: 0 10mm; display: flex; justify-content: center;">
-                  Kitchen Survey Quote - ${
-                    refValue || "Unknown"
-                  } - Page <span class="pageNumber"></span> of <span class="totalPages"></span>
-              </div>`,
-              footerTemplate: `
-              <div style="width: 100%; font-size: 9px; font-family: Arial; color: #777; padding: 0 10mm; display: flex; justify-content: center;">
-                  Reference: ${
-                    refValue || "N/A"
-                  } - Page <span class="pageNumber"></span> of <span class="totalPages"></span>
-              </div>`,
+              margin: { top: "1cm", right: "1cm", bottom: "1cm", left: "1cm" },
+              waitUntil: ['networkidle0', 'load'],
+              timeout: 90000, // Increased timeout for base64 images
             },
             folder: pdfFolder,
           }),
         });
 
         if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(`PDF generation failed: ${errorText}`);
+          throw new Error(`PDF generation failed: ${await response.text()}`);
         }
 
         const result = await response.json();
-
         if (!result.success) {
           throw new Error(result.message || "PDF generation failed");
         }
 
-        // Get the correct PDF URL using our standard function
-        const pdfPublicId = result.publicId;
-        const pdfUrl = getCloudinaryPdfUrl(pdfPublicId);
-
-        console.log("PDF Debug Info:", {
-          publicId: pdfPublicId,
-          generatedUrl: pdfUrl,
-          originalUrl: result.pdfUrl,
-        });
-
-        // Prepare quote data for saving to database
+        // Save quote to database
         const quotePayload = {
           name: `Quote-${refValue || ""}`,
           cloudinary: {
-            publicId: pdfPublicId, // Store the publicId as received from API
-            url: pdfUrl, // Store the URL generated with our standard function
+            publicId: result.publicId,
+            url: getCloudinaryPdfUrl(result.publicId),
           },
           surveyId: surveyId,
           refValue: refValue,
@@ -311,7 +245,6 @@ export const useSavePDF = () => {
           createdAt: new Date(),
         };
 
-        // Save quote to database
         const saveResponse = await fetch("/api/quotes", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -324,14 +257,12 @@ export const useSavePDF = () => {
           toast?.current?.show({
             severity: "success",
             summary: "Quote Created",
-            detail: "Quote has been saved successfully",
+            detail: "Quote with images has been saved successfully",
             life: 3000,
           });
           return { success: true, data: saveResult.data };
         } else {
-          throw new Error(
-            saveResult.message || "Failed to save quote"
-          );
+          throw new Error(saveResult.message || "Failed to save quote");
         }
       } catch (error) {
         console.error("Error generating quote:", error);
@@ -349,17 +280,13 @@ export const useSavePDF = () => {
     [captureElementAsHtml, computeEquipmentTotal]
   );
 
-  // Return safe versions of functions and state
   return {
     generateQuote,
     captureElementAsHtml,
-    uploadPdfToCloudinary,
-    getSurveyPdfFolder,
     computeEquipmentTotal,
     isLoading: pdfState.isLoading,
     isReady: pdfState.isReady,
     error: pdfState.error,
-    // Also expose the HTML generation function
     generateStyledHtml,
   };
 };

@@ -11,8 +11,9 @@ import {
     getSurveyImageFolder,
     getSurveyPdfFolder,
     uploadPdfToCloudinary,
+    getCloudinaryPdfUrl,
 } from "@/lib/cloudinary";
-import { useSavePDF } from "./SavePDF"; // Import our updated PDF component
+import { generateStyledHtml } from "./savePDF/useSavePDF"; // Import the same function preview uses
 
 // Utility function to generate Cloudinary URLs consistently
 const getCloudinaryUrl = (publicId) => {
@@ -23,6 +24,7 @@ const getCloudinaryUrl = (publicId) => {
 
 /**
  * Component for handling survey saving functionality with automatic quote generation
+ * UPDATED: Now uses the same quote generation process as preview for 1:1 consistency
  */
 export default function SaveSurvey({
     // Reference to the form content for PDF capture
@@ -74,6 +76,7 @@ export default function SaveSurvey({
     accessDoorSelections = {},
     fanGradeSelections = {},
     flexiDuctSelections = {},
+    groupDimensions = {},
     // Collection-related props
     collectionId = null,
     collections = [],
@@ -83,6 +86,8 @@ export default function SaveSurvey({
     createSurveyIfNeeded = null,
     // Optional function to update parent pagination
     updateParentPagination = null,
+    // ENHANCED: Force sync components function (same as preview)
+    forceSyncComponents = () => true,
 }) {
     const router = useRouter();
     const toast = useRef(null);
@@ -106,9 +111,6 @@ export default function SaveSurvey({
         hasSubcategoryComments: false,
         commentCount: 0,
     });
-
-    // Initialize the PDF generator component with our updated hook
-    const { generateQuote, captureSchematic } = useSavePDF();
 
     // Update the debug ref when equipment changes
     useEffect(() => {
@@ -181,48 +183,444 @@ export default function SaveSurvey({
     };
 
     /**
-     * Simplified function to generate a quote PDF using the updated hook
-     * Now only passes minimal required data for efficiency
+     * FIXED: Function to directly capture equipment comments from DOM
+     * This serves as a fallback if state-based comments are missing
      */
-    const generateQuotePDF = async (savedSurveyId) => {
+    const captureEquipmentCommentsFromDOM = () => {
+        const capturedComments = {};
+
+        if (typeof document !== "undefined") {
+            try {
+                // Target all subcategory comment textareas by their ID pattern
+                const commentTextareas = document.querySelectorAll(
+                    '[id^="subcategory-comment-"]'
+                );
+
+                commentTextareas.forEach((textarea) => {
+                    if (textarea.value && textarea.value.trim()) {
+                        // Extract subcategory from ID by removing the prefix and converting hyphens back to spaces
+                        const idParts = textarea.id.split("-");
+                        if (idParts.length >= 3) {
+                            const subcategoryId = idParts.slice(2).join("-");
+                            const subcategory = subcategoryId.replace(
+                                /-/g,
+                                " "
+                            );
+                            capturedComments[subcategory] =
+                                textarea.value.trim();
+                        }
+                    }
+                });
+
+                // Also check for orphaned comments (those without equipment entries)
+                const orphanedCommentTextareas = document.querySelectorAll(
+                    '[id^="orphaned-comment-"]'
+                );
+
+                orphanedCommentTextareas.forEach((textarea) => {
+                    if (textarea.value && textarea.value.trim()) {
+                        const idParts = textarea.id.split("-");
+                        if (idParts.length >= 3) {
+                            const subcategoryId = idParts.slice(2).join("-");
+                            const subcategory = subcategoryId.replace(
+                                /-/g,
+                                " "
+                            );
+                            capturedComments[subcategory] =
+                                textarea.value.trim();
+                        }
+                    }
+                });
+            } catch (error) {
+                console.error("Error capturing comments from DOM:", error);
+            }
+        }
+
+        return capturedComments;
+    };
+
+    /**
+     * FIXED: Function to directly capture specialist equipment category comments from DOM with dynamic categories
+     */
+    const captureSpecialistCategoryCommentsFromDOM = () => {
+        const capturedComments = {};
+
+        if (typeof document !== "undefined") {
+            try {
+                // Get actual categories from specialist equipment data
+                let actualCategories = [];
+                if (
+                    specialistEquipmentData &&
+                    Array.isArray(specialistEquipmentData)
+                ) {
+                    actualCategories = [
+                        ...new Set(
+                            specialistEquipmentData.map((item) => item.category)
+                        ),
+                    ];
+                }
+
+                console.log(
+                    "[SaveSurvey] Looking for specialist category comments, actual categories:",
+                    actualCategories
+                );
+
+                // Target all category comment textareas by their ID pattern
+                const commentTextareas = document.querySelectorAll(
+                    '[id^="category-comment-"]'
+                );
+
+                console.log(
+                    "[SaveSurvey] Found",
+                    commentTextareas.length,
+                    "specialist category comment textareas in DOM"
+                );
+
+                commentTextareas.forEach((textarea) => {
+                    if (textarea.value && textarea.value.trim()) {
+                        // Use the same logic as SpecialistEquipmentList
+                        const categoryName = textareaIdToCategory(
+                            textarea.id,
+                            actualCategories
+                        );
+
+                        if (categoryName) {
+                            capturedComments[categoryName] =
+                                textarea.value.trim();
+                            console.log(
+                                "[SaveSurvey] Captured comment for category:",
+                                categoryName,
+                                "from textarea ID:",
+                                textarea.id
+                            );
+                        } else {
+                            console.warn(
+                                "[SaveSurvey] Could not parse category from textarea ID:",
+                                textarea.id
+                            );
+                        }
+                    }
+                });
+
+                console.log(
+                    "[SaveSurvey] Directly captured",
+                    Object.keys(capturedComments).length,
+                    "specialist category comments from DOM:",
+                    capturedComments
+                );
+            } catch (error) {
+                console.error(
+                    "Error capturing specialist category comments from DOM:",
+                    error
+                );
+            }
+        }
+
+        return capturedComments;
+    };
+
+    // SIMPLE: Dynamic category comment capture functions (same as SurveySaveUtil)
+    const categoryToTextareaId = (categoryName) => {
+        return `category-comment-${categoryName
+            .replace(/\s+/g, "-")
+            .toLowerCase()}`;
+    };
+
+    const textareaIdToCategory = (textareaId, actualCategories) => {
+        // Remove prefix and convert back
+        const idPart = textareaId.replace("category-comment-", "");
+
+        // Find matching category from actual categories (case-insensitive match)
+        const matchingCategory = actualCategories.find(
+            (category) => category.replace(/\s+/g, "-").toLowerCase() === idPart
+        );
+
+        return matchingCategory || idPart.replace(/-/g, " ");
+    };
+
+    /**
+     * IMPROVED: Simplified function to sync comments before saving
+     * This directly calls component methods to force updates
+     */
+    const syncComponentStates = () => {
+        // Try to sync canopy comments using Area1Logic's method
+        let canopySynced = false;
+        if (
+            typeof window !== "undefined" &&
+            window.area1LogicInstance &&
+            typeof window.area1LogicInstance.syncCanopyComments === "function"
+        ) {
+            canopySynced = window.area1LogicInstance.syncCanopyComments();
+        }
+
+        // Try to sync equipment subcategory comments
+        let equipmentSynced = false;
+        if (
+            typeof window !== "undefined" &&
+            window.equipmentComponentInstance &&
+            typeof window.equipmentComponentInstance.syncSubcategoryComments ===
+                "function"
+        ) {
+            equipmentSynced =
+                window.equipmentComponentInstance.syncSubcategoryComments();
+        }
+
+        // Try to sync specialist equipment category comments
+        let specialistSynced = false;
+        if (
+            typeof window !== "undefined" &&
+            window.specialistEquipmentInstance &&
+            typeof window.specialistEquipmentInstance.syncChanges === "function"
+        ) {
+            specialistSynced = window.specialistEquipmentInstance.syncChanges();
+        }
+
+        // Try to sync schematic pricing breakdown
+        if (
+            typeof window !== "undefined" &&
+            window.schematicInstance &&
+            typeof window.schematicInstance.syncDoorPrices === "function"
+        ) {
+            const schematicSynced = window.schematicInstance.syncDoorPrices();
+        }
+
+        // Try direct component access as fallback
+        if (
+            !canopySynced &&
+            typeof window !== "undefined" &&
+            window.canopyComponentInstance
+        ) {
+            if (
+                typeof window.canopyComponentInstance.forceUpdateComments ===
+                "function"
+            ) {
+                canopySynced =
+                    window.canopyComponentInstance.forceUpdateComments();
+            }
+        }
+
+        // Increase delay to ensure updates have been processed
+        return new Promise((resolve) => setTimeout(resolve, 300));
+    };
+
+    /**
+     * NEW: Simplified quote generation using EXACT same process as preview
+     * This ensures 1:1 consistency between preview and saved PDF
+     */
+    const generateQuotePDFLikePreview = async (savedSurveyId) => {
         // Skip if already generating or no schematic ref
         if (window.__generating_quote || !schematicRef?.current) {
+            console.log(
+                "SaveSurvey: Skipping quote generation - already in progress or no schematic ref"
+            );
             return;
         }
 
         try {
-            // Gather minimal essential data for the quote generation
-            const essentialData = {
+            console.log(
+                "SaveSurvey: Starting quote generation using PREVIEW process"
+            );
+            window.__generating_quote = true;
+
+            // STEP 1: Force sync components (SAME AS PREVIEW)
+            if (typeof forceSyncComponents === "function") {
+                console.log(
+                    "SaveSurvey: Force syncing components like preview"
+                );
+                forceSyncComponents();
+            }
+
+            // STEP 2: Capture schematic HTML (SAME AS PREVIEW)
+            let schematicHtml = null;
+            if (schematicRef && schematicRef.current) {
+                schematicHtml = schematicRef.current.outerHTML;
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(schematicHtml, "text/html");
+                schematicHtml = doc.body.innerHTML;
+                console.log("SaveSurvey: Captured schematic HTML like preview");
+            }
+
+            // STEP 3: Build consolidated survey data (SAME AS PREVIEW)
+            const consolidatedSurveyData = {
+                // Basic info
+                surveyId: savedSurveyId,
                 refValue,
                 surveyDate,
+                parking,
                 siteDetails,
+                contacts,
+                primaryContactIndex,
+                walkAroundContactIndex,
+
+                // Structure data
                 structureId,
+                structureTotal,
+                structureEntries, // Use current form data, not database data
+
+                // Equipment data
+                surveyData: surveyData || [],
+                equipmentItems,
+                specialistEquipmentData,
+
+                // Canopy data
+                canopyTotal,
+                canopyEntries,
+                canopyComments,
+
+                // Pricing data
+                accessDoorPrice,
+                ventilationPrice,
+                airPrice,
+                fanPartsPrice,
+                airInExTotal,
+                schematicItemsTotal,
+                selectedGroupId,
+                modify,
+
+                // NEW: Additional services (same as preview)
+                parkingCost,
+                postServiceReport,
+                postServiceReportPrice,
+
+                // Form sections
+                operations,
+                access,
+                equipment,
+                notes,
+                ventilation,
+
+                // Images and visual data (USE CURRENT FORM DATA)
+                surveyImages,
+                images: surveyImages, // Alias for compatibility
+
+                // Schematic visual data (USE CURRENT FORM DATA)
                 placedItems,
                 specialItems,
                 gridSpaces,
                 cellSize,
-                // NEW: Include parking cost and post-service report data
-                parkingCost,
-                postServiceReport,
-                postServiceReportPrice,
+                flexiDuctSelections,
+                accessDoorSelections,
+                groupDimensions,
+                fanGradeSelections,
             };
 
-            // Call the streamlined generateQuote function from our updated hook
-            await generateQuote(
-                savedSurveyId,
-                schematicRef,
-                essentialData,
-                computedGrandTotals,
-                toast
+            console.log(
+                "SaveSurvey: Built consolidated survey data using CURRENT FORM DATA (not database)"
             );
+
+            // STEP 4: Generate HTML using SAME function as preview
+            const htmlContent = await generateStyledHtml(
+                consolidatedSurveyData,
+                schematicHtml
+            );
+            console.log(
+                "SaveSurvey: Generated HTML using SAME function as preview, length:",
+                htmlContent?.length || 0
+            );
+
+            // STEP 5: Calculate total price (same calculation as preview would use)
+            const totalPrice = computedGrandTotals()?.grandTotal || 0;
+
+            // STEP 6: Generate PDF using server-side API (only difference from preview)
+            const siteName =
+                siteDetails?.siteName || siteDetails?.name || "unknown-site";
+            const pdfFolder = getSurveyPdfFolder(
+                siteName,
+                refValue || "unknown"
+            );
+            const pdfName = `Quote-${refValue || ""}.pdf`;
+
+            console.log("SaveSurvey: Calling server-side PDF generation...");
+
+            const response = await fetch("/api/quotes/generate", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    html: htmlContent,
+                    fileName: pdfName,
+                    options: {
+                        format: "A4",
+                        printBackground: true,
+                        margin: {
+                            top: "1cm",
+                            right: "1cm",
+                            bottom: "1cm",
+                            left: "1cm",
+                        },
+                        waitUntil: ["networkidle0", "load"],
+                        timeout: 90000,
+                    },
+                    folder: pdfFolder,
+                }),
+            });
+
+            if (!response.ok) {
+                throw new Error(
+                    `PDF generation failed: ${await response.text()}`
+                );
+            }
+
+            const result = await response.json();
+            if (!result.success) {
+                throw new Error(result.message || "PDF generation failed");
+            }
+
+            // Validate that we have the required Cloudinary data
+            if (!result.publicId) {
+                throw new Error(
+                    "Cloudinary data is required - no publicId returned from PDF generation"
+                );
+            }
+
+            // STEP 7: Save quote to database
+            const quotePayload = {
+                name: `Quote-${refValue || ""}`,
+                cloudinary: {
+                    publicId: result.publicId,
+                    url: getCloudinaryPdfUrl(result.publicId), // Use proper URL generation
+                },
+                surveyId: savedSurveyId,
+                refValue: refValue,
+                totalPrice: totalPrice,
+                createdAt: new Date(),
+            };
+
+            const saveResponse = await fetch("/api/quotes", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(quotePayload),
+            });
+
+            const saveResult = await saveResponse.json();
+
+            if (saveResult.success) {
+                console.log(
+                    "SaveSurvey: Quote generated successfully using PREVIEW process"
+                );
+                toast.current?.show({
+                    severity: "success",
+                    summary: "Quote Created",
+                    detail: "Quote generated with same styling as preview",
+                    life: 3000,
+                });
+                return { success: true, data: saveResult.data };
+            } else {
+                throw new Error(saveResult.message || "Failed to save quote");
+            }
         } catch (error) {
-            console.error("Error in quote generation:", error);
+            console.error(
+                "SaveSurvey: Error generating quote using preview process:",
+                error
+            );
             toast.current?.show({
                 severity: "error",
                 summary: "Quote Error",
                 detail: error.message || "Error creating quote",
                 life: 5000,
             });
+            return { success: false, error };
+        } finally {
+            window.__generating_quote = false;
         }
     };
 
@@ -372,165 +770,7 @@ export default function SaveSurvey({
     };
 
     /**
-     * IMPROVED: Function to directly capture equipment comments from DOM
-     * This serves as a fallback if state-based comments are missing
-     */
-    const captureEquipmentCommentsFromDOM = () => {
-        const capturedComments = {};
-
-        if (typeof document !== "undefined") {
-            try {
-                // Target all subcategory comment textareas by their ID pattern
-                const commentTextareas = document.querySelectorAll(
-                    '[id^="subcategory-comment-"]'
-                );
-
-                commentTextareas.forEach((textarea) => {
-                    if (textarea.value && textarea.value.trim()) {
-                        // Extract subcategory from ID by removing the prefix and converting hyphens back to spaces
-                        const idParts = textarea.id.split("-");
-                        if (idParts.length >= 3) {
-                            const subcategoryId = idParts.slice(2).join("-");
-                            const subcategory = subcategoryId.replace(
-                                /-/g,
-                                " "
-                            );
-                            capturedComments[subcategory] =
-                                textarea.value.trim();
-                        }
-                    }
-                });
-
-                // Also check for orphaned comments (those without equipment entries)
-                const orphanedCommentTextareas = document.querySelectorAll(
-                    '[id^="orphaned-comment-"]'
-                );
-
-                orphanedCommentTextareas.forEach((textarea) => {
-                    if (textarea.value && textarea.value.trim()) {
-                        const idParts = textarea.id.split("-");
-                        if (idParts.length >= 3) {
-                            const subcategoryId = idParts.slice(2).join("-");
-                            const subcategory = subcategoryId.replace(
-                                /-/g,
-                                " "
-                            );
-                            capturedComments[subcategory] =
-                                textarea.value.trim();
-                        }
-                    }
-                });
-            } catch (error) {
-                console.error("Error capturing comments from DOM:", error);
-            }
-        }
-
-        return capturedComments;
-    };
-
-    /**
-     * NEW: Function to directly capture specialist equipment category comments from DOM
-     * This serves as a fallback if state-based comments are missing
-     */
-    const captureSpecialistCategoryCommentsFromDOM = () => {
-        const capturedComments = {};
-
-        if (typeof document !== "undefined") {
-            try {
-                // Target all category comment textareas by their ID pattern
-                const commentTextareas = document.querySelectorAll(
-                    '[id^="category-comment-"]'
-                );
-
-                commentTextareas.forEach((textarea) => {
-                    if (textarea.value && textarea.value.trim()) {
-                        // Extract category from ID by removing the prefix and converting hyphens back to spaces
-                        const idParts = textarea.id.split("-");
-                        if (idParts.length >= 3) {
-                            const categoryId = idParts.slice(2).join("-");
-                            const category = categoryId.replace(/-/g, " ");
-                            capturedComments[category] = textarea.value.trim();
-                        }
-                    }
-                });
-            } catch (error) {
-                console.error(
-                    "Error capturing specialist category comments from DOM:",
-                    error
-                );
-            }
-        }
-
-        return capturedComments;
-    };
-
-    /**
-     * IMPROVED: Simplified function to sync comments before saving
-     * This directly calls component methods to force updates
-     */
-    const syncComponentStates = () => {
-        // Try to sync canopy comments using Area1Logic's method
-        let canopySynced = false;
-        if (
-            typeof window !== "undefined" &&
-            window.area1LogicInstance &&
-            typeof window.area1LogicInstance.syncCanopyComments === "function"
-        ) {
-            canopySynced = window.area1LogicInstance.syncCanopyComments();
-        }
-
-        // Try to sync equipment subcategory comments
-        let equipmentSynced = false;
-        if (
-            typeof window !== "undefined" &&
-            window.equipmentComponentInstance &&
-            typeof window.equipmentComponentInstance.syncSubcategoryComments ===
-                "function"
-        ) {
-            equipmentSynced =
-                window.equipmentComponentInstance.syncSubcategoryComments();
-        }
-
-        // Try to sync specialist equipment category comments
-        let specialistSynced = false;
-        if (
-            typeof window !== "undefined" &&
-            window.specialistEquipmentInstance &&
-            typeof window.specialistEquipmentInstance.syncChanges === "function"
-        ) {
-            specialistSynced = window.specialistEquipmentInstance.syncChanges();
-        }
-
-        // Try to sync schematic pricing breakdown
-        if (
-            typeof window !== "undefined" &&
-            window.schematicInstance &&
-            typeof window.schematicInstance.syncDoorPrices === "function"
-        ) {
-            const schematicSynced = window.schematicInstance.syncDoorPrices();
-        }
-
-        // Try direct component access as fallback
-        if (
-            !canopySynced &&
-            typeof window !== "undefined" &&
-            window.canopyComponentInstance
-        ) {
-            if (
-                typeof window.canopyComponentInstance.forceUpdateComments ===
-                "function"
-            ) {
-                canopySynced =
-                    window.canopyComponentInstance.forceUpdateComments();
-            }
-        }
-
-        // Increase delay to ensure updates have been processed
-        return new Promise((resolve) => setTimeout(resolve, 300));
-    };
-
-    /**
-     * FIXED: Simplified save survey function with improved structure entries handling
+     * UPDATED: Simplified save survey function using enhanced sync (same as preview)
      */
     const handleSaveSurvey = async (
         shouldRedirect = true,
@@ -555,11 +795,16 @@ export default function SaveSurvey({
         setIsSubmitting(true);
 
         try {
-            // IMPROVED: Sync component states before proceeding
-            await syncComponentStates();
+            // UPDATED: Use same sync function as preview (comprehensive sync)
+            if (typeof forceSyncComponents === "function") {
+                console.log(
+                    "SaveSurvey: Force syncing components using SAME function as preview"
+                );
+                forceSyncComponents();
+            }
 
             // Short pause to ensure all state updates have been processed
-            await new Promise((resolve) => setTimeout(resolve, 500));
+            await new Promise((resolve) => setTimeout(resolve, 300));
 
             // Extract site info for folder structure
             const siteName =
@@ -575,20 +820,10 @@ export default function SaveSurvey({
                 cleanRef
             );
 
-            // 2. Extract the site ID properly for MongoDB reference
-            const siteId = siteDetails._id || siteDetails.id;
-
-            // 3. Process contacts with the primary/walkAround flags
-            const processedContacts = contacts.map((contact, index) => ({
-                ...contact,
-                isPrimaryContact: index === primaryContactIndex,
-                isWalkAroundContact: index === walkAroundContactIndex,
-            }));
-
-            // IMPROVED: Direct capture of equipment comments from DOM
+            // IMPROVED: Direct capture of equipment comments from DOM as fallback
             const domCapturedComments = captureEquipmentCommentsFromDOM();
 
-            // NEW: Direct capture of specialist category comments from DOM
+            // FIXED: Direct capture of specialist category comments from DOM with dynamic categories
             const domCapturedSpecialistComments =
                 captureSpecialistCategoryCommentsFromDOM();
 
@@ -600,7 +835,7 @@ export default function SaveSurvey({
                 ...domCapturedComments,
             };
 
-            // NEW: Create a final specialist categoryComments object with prioritized sources
+            // FIXED: Create a final specialist categoryComments object with dynamic category support
             const finalSpecialistCategoryComments = {
                 // Start with any existing comments from equipment object
                 ...(equipment?.categoryComments || {}),
@@ -608,10 +843,23 @@ export default function SaveSurvey({
                 ...domCapturedSpecialistComments,
             };
 
+            console.log(
+                "[SaveSurvey] Final specialist category comments:",
+                finalSpecialistCategoryComments
+            );
+            const siteId = siteDetails._id || siteDetails.id;
+
+            // 3. Process contacts with the primary/walkAround flags
+            const processedContacts = contacts.map((contact, index) => ({
+                ...contact,
+                isPrimaryContact: index === primaryContactIndex,
+                isWalkAroundContact: index === walkAroundContactIndex,
+            }));
+
             // Use provided collection ID if available
             const effectiveCollectionId = manualCollectionId || collectionId;
 
-            // 5. Prepare collection data - NEW APPROACH
+            // 4. Prepare collection data - NEW APPROACH
             let collectionsArray = [];
 
             // If collections array is provided, use it
@@ -697,7 +945,7 @@ export default function SaveSurvey({
                 );
             }
 
-            // 6. Create the survey payload with simplified structure
+            // 5. Create the survey payload with simplified structure
             const surveyPayload = {
                 // Basic info
                 refValue: refValue,
@@ -759,19 +1007,19 @@ export default function SaveSurvey({
                     entries: structureEntriesForSave,
                 },
 
-                // IMPROVED: Use finalSubcategoryComments that combines state and DOM captures
+                // Equipment survey with merged comments (form + DOM capture)
                 equipmentSurvey: {
                     entries: surveyData,
                     subcategoryComments: finalSubcategoryComments,
                 },
 
-                // IMPROVED: Use finalSpecialistCategoryComments that combines state and DOM captures
+                // Specialist equipment with merged comments (form + DOM capture)
                 specialistEquipmentSurvey: {
                     entries: specialistEquipmentData,
                     categoryComments: finalSpecialistCategoryComments,
                 },
 
-                // IMPROVED: Canopy Survey with proper structure for entries
+                // Canopy Survey with proper structure for entries
                 canopySurvey: {
                     entries:
                         canopyEntries && canopyEntries.length > 0
@@ -801,7 +1049,7 @@ export default function SaveSurvey({
                                   },
                               ]
                             : [],
-                    comments: canopyComments || {}, // Use current state
+                    comments: canopyComments || {},
                 },
 
                 // FIXED: Preserve the full schematicItemsTotal object with breakdown
@@ -811,7 +1059,7 @@ export default function SaveSurvey({
                     airPrice,
                     fanPartsPrice,
                     airInExTotal,
-                    schematicItemsTotal: schematicItemsTotalForSave, // Now preserving object structure
+                    schematicItemsTotal: schematicItemsTotalForSave,
                     selectedGroupId,
                     gridSpaces,
                     cellSize,
@@ -840,7 +1088,7 @@ export default function SaveSurvey({
                         equipment?.flexiHoseCircumference || "",
                     flexiHoseLength: equipment?.flexiHoseLength || "",
                     mewp: equipment?.mewp || "No",
-                    // Store category comments in the specialistEquipment section too
+                    // FIXED: Store merged dynamic category comments
                     categoryComments: finalSpecialistCategoryComments,
                 },
 
@@ -858,7 +1106,7 @@ export default function SaveSurvey({
                         airPrice,
                         fanPartsPrice,
                         airInExTotal,
-                        schematicItemsTotal: schematicItemsTotalForSave, // Now preserving object structure
+                        schematicItemsTotal: schematicItemsTotalForSave,
                         // NEW: Add parking cost and post-service report price to main area totals
                         parkingCost: parkingCost,
                         postServiceReportPrice: postServiceReportPrice,
@@ -876,24 +1124,6 @@ export default function SaveSurvey({
                         fanPartsPrice,
                         airInExTotal,
                         schematicItemsTotal: schematicItemsTotalForSave,
-
-                        parkingCost: parkingCost,
-                        postServiceReportPrice: postServiceReportPrice,
-                        modify,
-                        groupingId: selectedGroupId,
-                    },
-                    duplicatedAreas: [], // FIXED: Use empty array instead of mongoose Schema reference
-                    grandTotal: {
-                        structureTotal,
-                        equipmentTotal: computedEquipmentTotal(),
-                        canopyTotal,
-                        accessDoorPrice,
-                        ventilationPrice,
-                        airPrice,
-                        fanPartsPrice,
-                        airInExTotal,
-                        schematicItemsTotal: schematicItemsTotalForSave, // Now preserving object structure
-                        // NEW: Add parking cost and post-service report price to grand total
                         parkingCost: parkingCost,
                         postServiceReportPrice: postServiceReportPrice,
                     },
@@ -941,18 +1171,20 @@ export default function SaveSurvey({
                         : "Survey saved successfully!",
                 });
 
-                // Generate quote with a delay
+                // UPDATED: Generate quote IMMEDIATELY using preview process (no delay)
                 if (json.data && (json.data._id || json.data.id)) {
                     const savedId = json.data._id || json.data.id;
+                    console.log(
+                        "SaveSurvey: Generating quote immediately using PREVIEW process"
+                    );
 
-                    // Use a timer to delay quote generation
+                    // Clear any existing timer
                     if (quoteGenerationTimerRef.current) {
                         clearTimeout(quoteGenerationTimerRef.current);
                     }
 
-                    quoteGenerationTimerRef.current = setTimeout(() => {
-                        generateQuotePDF(savedId);
-                    }, 500);
+                    // Generate quote IMMEDIATELY (no delay like preview)
+                    await generateQuotePDFLikePreview(savedId);
                 }
 
                 // Only redirect if shouldRedirect is true

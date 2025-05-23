@@ -6,7 +6,7 @@ import { Card } from "primereact/card";
 import { Button } from "primereact/button";
 import { ProgressSpinner } from "primereact/progressspinner";
 import { Toast } from "primereact/toast";
-import { ConfirmDialog, confirmDialog } from "primereact/confirmdialog";
+import { confirmDialog } from "primereact/confirmdialog";
 import { useRouter } from "next/navigation";
 import { AreaSelectionCheckbox } from "./CombineAreas";
 
@@ -30,7 +30,7 @@ export default function AreaSurveyList({
     const router = useRouter();
     const toast = useRef(null);
 
-    // Add CSS for card flip animation and horizontal layout - IDENTICAL TO KITCHENSURVEYLIST
+    // Add CSS for card flip animation and horizontal layout
     useEffect(() => {
         // Create style element for card flip animation
         const style = document.createElement("style");
@@ -263,8 +263,28 @@ export default function AreaSurveyList({
         }));
     };
 
-    // Function to handle deleting an area
+    // FIXED: Improved delete function with better URL handling and error checking
     const handleDeleteArea = async (areaId) => {
+        if (isDeleting) {
+            return; // Prevent multiple deletes
+        }
+
+        // Validate areaId
+        if (!areaId || typeof areaId !== "string") {
+            toast.current.show({
+                severity: "error",
+                summary: "Error",
+                detail: "Invalid area ID",
+                life: 3000,
+            });
+            return;
+        }
+
+        // Clean the areaId - remove any trailing slashes or whitespace
+        const cleanAreaId = areaId.toString().trim().replace(/\/+$/, "");
+
+        console.log("Attempting to delete area:", cleanAreaId);
+
         confirmDialog({
             message:
                 "Are you sure you want to delete this area? This action cannot be undone.",
@@ -274,16 +294,35 @@ export default function AreaSurveyList({
             accept: async () => {
                 setIsDeleting(true);
                 try {
+                    // Construct the URL properly
+                    const deleteUrl = `/api/surveys/kitchenSurveys/viewAll/${cleanAreaId}`;
+                    console.log("DELETE URL:", deleteUrl);
+
                     // Call the delete endpoint
-                    const res = await fetch(
-                        `/api/surveys/kitchenSurveys/viewAll/${areaId}`,
-                        {
-                            method: "DELETE",
-                        }
-                    );
+                    const res = await fetch(deleteUrl, {
+                        method: "DELETE",
+                        headers: {
+                            "Content-Type": "application/json",
+                        },
+                    });
+
+                    console.log("DELETE response status:", res.status);
 
                     if (!res.ok) {
-                        throw new Error(`HTTP error! Status: ${res.status}`);
+                        const errorText = await res.text();
+                        console.error("DELETE error response:", errorText);
+                        throw new Error(
+                            `HTTP error! Status: ${res.status} - ${errorText}`
+                        );
+                    }
+
+                    const result = await res.json();
+                    console.log("DELETE result:", result);
+
+                    if (!result.success) {
+                        throw new Error(
+                            result.message || "Delete operation failed"
+                        );
                     }
 
                     // Refresh the area list
@@ -315,9 +354,12 @@ export default function AreaSurveyList({
     const handleCreateVersion = async (areaId, collectionId) => {
         setIsCreatingVersion(true);
         try {
+            // Clean the areaId
+            const cleanAreaId = areaId.toString().trim().replace(/\/+$/, "");
+
             // Call the PATCH endpoint to create a new version
             const res = await fetch(
-                `/api/surveys/kitchenSurveys/viewAll/${areaId}`,
+                `/api/surveys/kitchenSurveys/viewAll/${cleanAreaId}`,
                 {
                     method: "PATCH",
                     headers: {
@@ -631,7 +673,7 @@ export default function AreaSurveyList({
     return (
         <div className="kitchen-survey-list">
             <Toast ref={toast} />
-            <ConfirmDialog />
+            {/* No ConfirmDialog here - handled at page level */}
 
             <div className="horizontal-container">
                 {areas.map((area) => (

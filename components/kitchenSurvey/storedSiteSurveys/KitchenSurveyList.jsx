@@ -6,7 +6,7 @@ import { Card } from "primereact/card";
 import { Button } from "primereact/button";
 import { ProgressSpinner } from "primereact/progressspinner";
 import { Toast } from "primereact/toast";
-import { ConfirmDialog, confirmDialog } from "primereact/confirmdialog";
+import { confirmDialog } from "primereact/confirmdialog";
 import { useRouter } from "next/navigation";
 import QuoteModal from "@/components/kitchenSurvey/quote/QuoteModal";
 import { Tooltip } from "primereact/tooltip";
@@ -131,6 +131,12 @@ export default function KitchenSurveyList({ siteId, onCountChange }) {
         };
     }, []);
 
+    // Helper function to clean and validate IDs
+    const cleanId = (id) => {
+        if (!id || typeof id !== "string") return null;
+        return id.toString().trim().replace(/\/+$/, "");
+    };
+
     // Function to fetch collections for a site (can be called to refresh the list)
     const fetchCollections = async () => {
         if (!siteId) return;
@@ -175,26 +181,31 @@ export default function KitchenSurveyList({ siteId, onCountChange }) {
                                             ? collection.surveys[0]
                                             : collection.surveys[0]._id;
 
-                                    const surveyRes = await fetch(
-                                        `/api/surveys/kitchenSurveys/viewAll/${surveyId}`
-                                    );
-                                    if (surveyRes.ok) {
-                                        const surveyData =
-                                            await surveyRes.json();
-                                        if (
-                                            surveyData.success &&
-                                            surveyData.data
-                                        ) {
-                                            collection.firstAreaName =
-                                                surveyData.data.structure
-                                                    ?.structureId || "Area 1";
-                                            collection.surveyDate =
-                                                surveyData.data.surveyDate ||
-                                                surveyData.data.createdAt;
-                                            collection.surveyType =
-                                                surveyData.data.general
-                                                    ?.surveyType ||
-                                                "Kitchen Survey";
+                                    const cleanSurveyId = cleanId(surveyId);
+                                    if (cleanSurveyId) {
+                                        const surveyRes = await fetch(
+                                            `/api/surveys/kitchenSurveys/viewAll/${cleanSurveyId}`
+                                        );
+                                        if (surveyRes.ok) {
+                                            const surveyData =
+                                                await surveyRes.json();
+                                            if (
+                                                surveyData.success &&
+                                                surveyData.data
+                                            ) {
+                                                collection.firstAreaName =
+                                                    surveyData.data.structure
+                                                        ?.structureId ||
+                                                    "Area 1";
+                                                collection.surveyDate =
+                                                    surveyData.data
+                                                        .surveyDate ||
+                                                    surveyData.data.createdAt;
+                                                collection.surveyType =
+                                                    surveyData.data.general
+                                                        ?.surveyType ||
+                                                    "Kitchen Survey";
+                                            }
                                         }
                                     }
                                 } catch (err) {
@@ -253,8 +264,13 @@ export default function KitchenSurveyList({ siteId, onCountChange }) {
         }
 
         try {
+            const cleanCollectionId = cleanId(editingCollection._id);
+            if (!cleanCollectionId) {
+                throw new Error("Invalid collection ID");
+            }
+
             const res = await fetch(
-                `/api/surveys/collections/${editingCollection._id}`,
+                `/api/surveys/collections/${cleanCollectionId}`,
                 {
                     method: "PUT",
                     headers: {
@@ -347,41 +363,47 @@ export default function KitchenSurveyList({ siteId, onCountChange }) {
             for (const survey of collection.surveys) {
                 const surveyId =
                     typeof survey === "string" ? survey : survey._id;
-                const res = await fetch(
-                    `/api/surveys/kitchenSurveys/viewAll/${surveyId}`
-                );
+                const cleanSurveyId = cleanId(surveyId);
 
-                if (res.ok) {
-                    const json = await res.json();
-                    if (json.success && json.data) {
-                        const areaName =
-                            json.data.structure?.structureId ||
-                            json.data.structureId ||
-                            "Unnamed Area";
+                if (cleanSurveyId) {
+                    const res = await fetch(
+                        `/api/surveys/kitchenSurveys/viewAll/${cleanSurveyId}`
+                    );
 
-                        // Find the area index for this specific collection
-                        let areaIndex = 0;
-                        if (json.data.collections) {
-                            const collectionEntry = json.data.collections.find(
-                                (entry) =>
-                                    entry.collectionId &&
-                                    entry.collectionId.toString() ===
-                                        collectionId.toString()
-                            );
-                            if (collectionEntry) {
-                                areaIndex = collectionEntry.areaIndex || 0;
+                    if (res.ok) {
+                        const json = await res.json();
+                        if (json.success && json.data) {
+                            const areaName =
+                                json.data.structure?.structureId ||
+                                json.data.structureId ||
+                                "Unnamed Area";
+
+                            // Find the area index for this specific collection
+                            let areaIndex = 0;
+                            if (json.data.collections) {
+                                const collectionEntry =
+                                    json.data.collections.find(
+                                        (entry) =>
+                                            entry.collectionId &&
+                                            entry.collectionId.toString() ===
+                                                collectionId.toString()
+                                    );
+                                if (collectionEntry) {
+                                    areaIndex = collectionEntry.areaIndex || 0;
+                                }
                             }
-                        }
 
-                        // Include the reference value for the area
-                        areas.push({
-                            id: surveyId,
-                            name: areaName,
-                            date: json.data.surveyDate || json.data.createdAt,
-                            areaIndex: areaIndex,
-                            collections: json.data.collections || [],
-                            refValue: json.data.refValue || "", // Added reference value
-                        });
+                            // Include the reference value for the area
+                            areas.push({
+                                id: cleanSurveyId,
+                                name: areaName,
+                                date:
+                                    json.data.surveyDate || json.data.createdAt,
+                                areaIndex: areaIndex,
+                                collections: json.data.collections || [],
+                                refValue: json.data.refValue || "", // Added reference value
+                            });
+                        }
                     }
                 }
             }
@@ -409,7 +431,8 @@ export default function KitchenSurveyList({ siteId, onCountChange }) {
 
     // Function to create a new version of the first survey in a collection
     const handleCreateVersion = async (collectionId, firstSurveyId) => {
-        if (!firstSurveyId) {
+        const cleanSurveyId = cleanId(firstSurveyId);
+        if (!cleanSurveyId) {
             toast.current.show({
                 severity: "error",
                 summary: "Error",
@@ -423,7 +446,7 @@ export default function KitchenSurveyList({ siteId, onCountChange }) {
         try {
             // Call the PATCH endpoint to create a new version
             const res = await fetch(
-                `/api/surveys/kitchenSurveys/viewAll/${firstSurveyId}`,
+                `/api/surveys/kitchenSurveys/viewAll/${cleanSurveyId}`,
                 {
                     method: "PATCH",
                     headers: {
@@ -433,7 +456,10 @@ export default function KitchenSurveyList({ siteId, onCountChange }) {
             );
 
             if (!res.ok) {
-                throw new Error(`HTTP error! Status: ${res.status}`);
+                const errorText = await res.text();
+                throw new Error(
+                    `HTTP error! Status: ${res.status} - ${errorText}`
+                );
             }
 
             const json = await res.json();
@@ -466,8 +492,26 @@ export default function KitchenSurveyList({ siteId, onCountChange }) {
         }
     };
 
-    // Function to handle deleting a collection
+    // FIXED: Improved delete function with better URL handling and error checking
     const handleDeleteCollection = async (collectionId) => {
+        if (deleting) {
+            return; // Prevent multiple deletes
+        }
+
+        // Validate and clean the collection ID
+        const cleanCollectionId = cleanId(collectionId);
+        if (!cleanCollectionId) {
+            toast.current.show({
+                severity: "error",
+                summary: "Error",
+                detail: "Invalid collection ID",
+                life: 3000,
+            });
+            return;
+        }
+
+        console.log("Attempting to delete collection:", cleanCollectionId);
+
         confirmDialog({
             message:
                 "Are you sure you want to delete this entire collection? This will delete all areas within this collection.",
@@ -478,50 +522,100 @@ export default function KitchenSurveyList({ siteId, onCountChange }) {
                 setDeleting(true);
                 try {
                     // First, get all surveys in the collection
-                    const surveysRes = await fetch(
-                        `/api/surveys/kitchenSurveys/viewAll?collectionId=${collectionId}`
-                    );
+                    const surveysUrl = `/api/surveys/kitchenSurveys/viewAll?collectionId=${cleanCollectionId}`;
+                    console.log("Fetching surveys from:", surveysUrl);
+
+                    const surveysRes = await fetch(surveysUrl);
 
                     if (!surveysRes.ok) {
+                        const errorText = await surveysRes.text();
+                        console.error("Error fetching surveys:", errorText);
                         throw new Error(
-                            `HTTP error! Status: ${surveysRes.status}`
+                            `HTTP error! Status: ${surveysRes.status} - ${errorText}`
                         );
                     }
 
                     const surveysJson = await surveysRes.json();
+                    console.log("Surveys response:", surveysJson);
 
                     if (
                         surveysJson.success &&
                         Array.isArray(surveysJson.data)
                     ) {
+                        console.log(
+                            `Found ${surveysJson.data.length} surveys to process`
+                        );
+
                         // Delete each survey in the collection
                         for (const survey of surveysJson.data) {
+                            const cleanSurveyId = cleanId(survey._id);
+                            if (!cleanSurveyId) {
+                                console.warn(
+                                    "Skipping survey with invalid ID:",
+                                    survey._id
+                                );
+                                continue;
+                            }
+
+                            console.log("Processing survey:", cleanSurveyId);
+
                             // Check if this survey is in multiple collections
                             if (
                                 survey.collections &&
                                 survey.collections.length > 1
                             ) {
+                                console.log(
+                                    `Survey ${cleanSurveyId} is in multiple collections, removing from this collection only`
+                                );
+
                                 // Only remove this survey from this collection
-                                await fetch(
-                                    `/api/surveys/collections/${collectionId}`,
-                                    {
-                                        method: "DELETE",
-                                        headers: {
-                                            "Content-Type": "application/json",
-                                        },
-                                        body: JSON.stringify({
-                                            surveyId: survey._id,
-                                        }),
-                                    }
+                                const removeUrl = `/api/surveys/collections/${cleanCollectionId}`;
+                                console.log(
+                                    "Removing from collection URL:",
+                                    removeUrl
                                 );
+
+                                const removeRes = await fetch(removeUrl, {
+                                    method: "DELETE",
+                                    headers: {
+                                        "Content-Type": "application/json",
+                                    },
+                                    body: JSON.stringify({
+                                        surveyId: cleanSurveyId,
+                                    }),
+                                });
+
+                                if (!removeRes.ok) {
+                                    const errorText = await removeRes.text();
+                                    console.error(
+                                        `Failed to remove survey ${cleanSurveyId} from collection:`,
+                                        errorText
+                                    );
+                                }
                             } else {
-                                // Delete the survey completely if it's only in this collection
-                                await fetch(
-                                    `/api/surveys/kitchenSurveys/viewAll/${survey._id}`,
-                                    {
-                                        method: "DELETE",
-                                    }
+                                console.log(
+                                    `Survey ${cleanSurveyId} is only in this collection, deleting completely`
                                 );
+
+                                // Delete the survey completely if it's only in this collection
+                                const deleteUrl = `/api/surveys/kitchenSurveys/viewAll/${cleanSurveyId}`;
+                                console.log("Deleting survey URL:", deleteUrl);
+
+                                const deleteRes = await fetch(deleteUrl, {
+                                    method: "DELETE",
+                                    headers: {
+                                        "Content-Type": "application/json",
+                                    },
+                                });
+
+                                if (!deleteRes.ok) {
+                                    const errorText = await deleteRes.text();
+                                    console.error(
+                                        `Failed to delete survey ${cleanSurveyId}:`,
+                                        errorText
+                                    );
+                                    // Continue with other surveys even if one fails
+                                }
                             }
                         }
 
@@ -565,6 +659,9 @@ export default function KitchenSurveyList({ siteId, onCountChange }) {
                     : collection.surveys[0]._id
                 : null;
 
+        // Clean the first survey ID
+        const cleanFirstSurveyId = cleanId(firstSurveyId);
+
         // Check if this card is flipped
         const isFlipped = flippedCards[collection._id] || false;
 
@@ -603,9 +700,9 @@ export default function KitchenSurveyList({ siteId, onCountChange }) {
                                     icon="pi pi-file-edit"
                                     className="p-button-primary"
                                     onClick={() => {
-                                        if (firstSurveyId) {
+                                        if (cleanFirstSurveyId) {
                                             router.push(
-                                                `/surveys/kitchenSurvey?id=${firstSurveyId}&collection=${collection._id}`
+                                                `/surveys/kitchenSurvey?id=${cleanFirstSurveyId}&collection=${collection._id}`
                                             );
                                         } else {
                                             toast.current.show({
@@ -616,7 +713,7 @@ export default function KitchenSurveyList({ siteId, onCountChange }) {
                                             });
                                         }
                                     }}
-                                    disabled={!firstSurveyId}
+                                    disabled={!cleanFirstSurveyId}
                                 />
                                 <Button
                                     tooltip="Create New Version"
@@ -625,10 +722,10 @@ export default function KitchenSurveyList({ siteId, onCountChange }) {
                                     onClick={() =>
                                         handleCreateVersion(
                                             collection._id,
-                                            firstSurveyId
+                                            cleanFirstSurveyId
                                         )
                                     }
-                                    disabled={creating || !firstSurveyId}
+                                    disabled={creating || !cleanFirstSurveyId}
                                 />
                                 <Button
                                     tooltip="View Quotes"
@@ -636,9 +733,9 @@ export default function KitchenSurveyList({ siteId, onCountChange }) {
                                     className="p-button-info"
                                     onClick={() => {
                                         // For now, just show quotes for the first survey in the collection
-                                        if (firstSurveyId) {
+                                        if (cleanFirstSurveyId) {
                                             setSelectedSurvey({
-                                                _id: firstSurveyId,
+                                                _id: cleanFirstSurveyId,
                                                 refValue:
                                                     collection.collectionRef,
                                             });
@@ -652,7 +749,7 @@ export default function KitchenSurveyList({ siteId, onCountChange }) {
                                             });
                                         }
                                     }}
-                                    disabled={!firstSurveyId}
+                                    disabled={!cleanFirstSurveyId}
                                 />
                                 <Button
                                     tooltip="Delete Collection"
@@ -892,7 +989,7 @@ export default function KitchenSurveyList({ siteId, onCountChange }) {
     return (
         <div className="kitchen-survey-list">
             <Toast ref={toast} />
-            <ConfirmDialog />
+            {/* No ConfirmDialog here - handled at page level */}
             <Tooltip target=".shared-area-badge" />
 
             <div className="horizontal-container">

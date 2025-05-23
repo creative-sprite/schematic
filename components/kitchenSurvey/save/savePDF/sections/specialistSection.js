@@ -27,46 +27,31 @@ export const generateSpecialistSection = (data) => {
   }
   
   console.log('Specialist Equipment Comments Debug:', {
-    hasSpecialistEquipmentSurvey: !!specialistEquipmentSurvey,
-    specialistEquipmentSurveyKeys: Object.keys(specialistEquipmentSurvey),
-    categoryComments: categoryComments,
     categoryKeys: Object.keys(categoryComments),
     specialistEquipmentDataCount: specialistEquipmentData.length,
     allCategories: [...new Set(specialistEquipmentData.map(item => item.category))]
   });
   
-  // Function to find relevant specialist equipment comments by category - improved matching
+  // Function to find relevant specialist equipment comments by category - clean version
   const findSpecialistCommentsByCategory = (category) => {
     const matchingComments = {};
-    console.log(`Looking for comments for category: "${category}"`);
     
     Object.entries(categoryComments).forEach(([key, comment]) => {
       if (hasContent(comment)) {
-        // Normalize both strings for comparison - remove spaces, special chars, make lowercase
-        const normalizeString = (str) => str.toLowerCase().replace(/[^a-z0-9]/g, '');
-        const normalizedKey = normalizeString(key);
-        const normalizedCategory = normalizeString(category);
+        // Normalize both strings for comparison
+        const normalizedKey = key.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const normalizedCategory = category.toLowerCase().replace(/[^a-z0-9]/g, '');
         
-        console.log(`  Comparing comment key "${key}" (normalized: "${normalizedKey}") with category "${category}" (normalized: "${normalizedCategory}")`);
-        
-        // Try multiple matching strategies
-        const exactMatch = normalizedKey === normalizedCategory;
-        const keyContainsCategory = normalizedKey.includes(normalizedCategory);
-        const categoryContainsKey = normalizedCategory.includes(normalizedKey);
-        const partialMatch = normalizedKey.split('').some((char, i) => 
-          normalizedCategory.charAt(i) === char
-        ) && Math.abs(normalizedKey.length - normalizedCategory.length) <= 3;
-        
-        if (exactMatch || keyContainsCategory || categoryContainsKey || partialMatch) {
-          console.log(`    ✓ MATCH FOUND: "${key}" matches "${category}"`);
-          matchingComments[key] = comment;
-        } else {
-          console.log(`    ✗ No match: "${key}" does not match "${category}"`);
+        // Try exact match first, then partial matches
+        if (normalizedKey === normalizedCategory || 
+            normalizedKey.includes(normalizedCategory) || 
+            normalizedCategory.includes(normalizedKey)) {
+          // Use the category name as the key to avoid duplicates
+          matchingComments[category] = comment;
         }
       }
     });
     
-    console.log(`Final matches for "${category}":`, Object.keys(matchingComments));
     return matchingComments;
   };
   
@@ -154,7 +139,6 @@ export const generateSpecialistSection = (data) => {
                         ? `
                 ${Object.entries(specialistByCategory).map(([category, items]) => {
                   const categoryCommentsForCategory = findSpecialistCommentsByCategory(category);
-                  console.log(`Rendering category "${category}" with ${Object.keys(categoryCommentsForCategory).length} comments:`, categoryCommentsForCategory);
                   
                   return `
                     <h3>${category}</h3>
@@ -191,13 +175,10 @@ export const generateSpecialistSection = (data) => {
                     </div>
                     
                     ${Object.keys(categoryCommentsForCategory).length > 0 ? `
-                    ${Object.entries(categoryCommentsForCategory).map(([key, comment]) => `
                     <div class="comment">
-                        <strong>Comments for ${category}:</strong><br>
-                        ${comment}
-                    </div>
-                    `).join('')}` : `
-                    <!-- No comments found for category: ${category} -->`}
+                        <strong>Comments:</strong><br>
+                        ${Object.values(categoryCommentsForCategory)[0]}
+                    </div>` : ''}
                   `;
                 }).join('')}`
                         : ""

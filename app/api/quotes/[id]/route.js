@@ -103,6 +103,39 @@ export async function PUT(request, { params }) {
   }
 }
 
+// Helper function to determine if a Cloudinary asset is a PDF
+function isPdfAsset(publicId, url) {
+  // Check if publicId ends with .pdf or contains .pdf
+  if (publicId && publicId.toLowerCase().includes('.pdf')) {
+    return true;
+  }
+  
+  // Check if URL contains /raw/upload/ (indicator of raw resource type)
+  if (url && url.includes('/raw/upload/')) {
+    return true;
+  }
+  
+  // Check if URL ends with .pdf
+  if (url && url.toLowerCase().endsWith('.pdf')) {
+    return true;
+  }
+  
+  return false;
+}
+
+// Helper function to clean publicId for Cloudinary deletion
+function cleanPublicIdForDeletion(publicId) {
+  if (!publicId) return publicId;
+  
+  // For PDFs, we need to remove the .pdf extension from the publicId for deletion
+  // Cloudinary stores PDFs without the extension in the publicId
+  if (publicId.toLowerCase().endsWith('.pdf')) {
+    return publicId.replace(/\.pdf$/i, '');
+  }
+  
+  return publicId;
+}
+
 // DELETE a quote by ID
 export async function DELETE(request, { params }) {
   try {
@@ -110,53 +143,137 @@ export async function DELETE(request, { params }) {
     const resolvedParams = await params;
     const id = resolvedParams.id;
 
+    if (!id) {
+      console.log("No ID provided in DELETE request");
+      return NextResponse.json(
+        { success: false, message: "Quote ID is required" },
+        { status: 400 }
+      );
+    }
+
+    console.log(`DELETE request for quote ID: ${id}`);
+
     await dbConnect();
-    const quote = await Quote.findById(id);
+    
+    // Try to find the quote with more flexible ID handling
+    let quote;
+    try {
+      quote = await Quote.findById(id);
+      console.log(`Quote lookup result:`, quote ? `Found: ${quote.name || quote._id}` : 'Not found');
+    } catch (dbError) {
+      console.error("Database error during quote lookup:", dbError);
+      return NextResponse.json(
+        { success: false, message: `Database error: ${dbError.message}` },
+        { status: 500 }
+      );
+    }
     
     if (!quote) {
+      console.log(`Quote not found with ID: ${id}`);
+      // Let's also try to list some quotes for debugging
+      try {
+        const allQuotes = await Quote.find({}).limit(5).select('_id name');
+        console.log("Sample quotes in database:", allQuotes.map(q => ({ id: q._id.toString(), name: q.name })));
+      } catch (err) {
+        console.log("Could not fetch sample quotes for debugging");
+      }
+      
       return NextResponse.json(
         { success: false, message: "Quote not found" },
         { status: 404 }
       );
     }
     
-    // Get Cloudinary publicId for potential deletion
+    console.log(`Found quote to delete: ${quote.name || 'Unnamed'} (ID: ${quote._id})`);
+    
+    // Get Cloudinary publicId and URL for potential deletion
     const cloudinaryPublicId = quote.cloudinary?.publicId;
+    const cloudinaryUrl = quote.cloudinary?.url;
     const hasCloudinaryFile = !!cloudinaryPublicId;
     
-    // Delete the quote from MongoDB
-    await Quote.findByIdAndDelete(id);
+    console.log(`Quote has Cloudinary file: ${hasCloudinaryFile}, PublicID: ${cloudinaryPublicId}`);
+    
+    // Delete the quote from MongoDB first
+    try {
+      await Quote.findByIdAndDelete(id);
+      console.log(`Successfully deleted quote from database: ${id}`);
+    } catch (deleteError) {
+      console.error("Error deleting quote from database:", deleteError);
+      return NextResponse.json(
+        { success: false, message: `Failed to delete quote: ${deleteError.message}` },
+        { status: 500 }
+      );
+    }
     
     // If this quote has a Cloudinary file, attempt to delete it
     let cloudinaryResult = { deleted: false, message: "No Cloudinary file to delete" };
     
     if (hasCloudinaryFile) {
       try {
-        // Delete the file from Cloudinary
-        const result = await cloudinary.uploader.destroy(cloudinaryPublicId);
+        // Determine if this is a PDF or image file
+        const isPdf = isPdfAsset(cloudinaryPublicId, cloudinaryUrl);
+        console.log(`Cloudinary file is PDF: ${isPdf}`);
+        
+        // Clean the publicId for deletion (remove .pdf extension for PDFs)
+        const cleanedPublicId = cleanPublicIdForDeletion(cloudinaryPublicId);
+        console.log(`Cleaned publicId: ${cleanedPublicId} (from: ${cloudinaryPublicId})`);
+        
+        // Set the appropriate resource type for deletion
+        const deleteOptions = {
+          resource_type: isPdf ? 'raw' : 'image'
+        };
+        
+        console.log(`Attempting Cloudinary deletion with options:`, deleteOptions);
+        
+        // Delete the file from Cloudinary with the correct resource type
+        const result = await cloudinary.uploader.destroy(cleanedPublicId, deleteOptions);
+        
+        console.log(`Cloudinary deletion result:`, result);
         
         if (result.result === 'ok') {
-          cloudinaryResult = { deleted: true, message: "Cloudinary file deleted successfully" };
+          cloudinaryResult = { 
+            deleted: true, 
+            message: `Cloudinary ${isPdf ? 'PDF' : 'image'} deleted successfully`,
+            resourceType: deleteOptions.resource_type,
+            originalPublicId: cloudinaryPublicId,
+            cleanedPublicId: cleanedPublicId
+          };
+        } else if (result.result === 'not found') {
+          cloudinaryResult = { 
+            deleted: false, 
+            message: `Cloudinary file not found (may have been already deleted)`,
+            resourceType: deleteOptions.resource_type,
+            originalPublicId: cloudinaryPublicId,
+            cleanedPublicId: cleanedPublicId
+          };
         } else {
-          cloudinaryResult = { deleted: false, message: `Failed to delete Cloudinary file: ${result.result}` };
+          cloudinaryResult = { 
+            deleted: false, 
+            message: `Failed to delete Cloudinary file: ${result.result}`,
+            resourceType: deleteOptions.resource_type,
+            originalPublicId: cloudinaryPublicId,
+            cleanedPublicId: cleanedPublicId
+          };
         }
       } catch (cloudinaryError) {
         console.error("Error deleting from Cloudinary:", cloudinaryError);
         cloudinaryResult = { 
           deleted: false, 
           message: "Error deleting Cloudinary file",
-          error: cloudinaryError.message 
+          error: cloudinaryError.message,
+          originalPublicId: cloudinaryPublicId
         };
       }
     }
 
+    console.log("DELETE operation completed successfully");
     return NextResponse.json({ 
       success: true, 
       message: "Quote deleted successfully",
       cloudinaryResult
     }, { status: 200 });
   } catch (error) {
-    console.error("Error deleting quote:", error);
+    console.error("Unexpected error in DELETE operation:", error);
     return NextResponse.json(
       { success: false, message: error.message || "Failed to delete quote" },
       { status: 500 }

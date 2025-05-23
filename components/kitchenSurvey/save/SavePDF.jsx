@@ -1,11 +1,10 @@
 // components/kitchenSurvey/save/SavePDF.jsx
 
-// Import required hooks and utilities
-import { useSavePDF, generateStyledHtml } from "./savePDF/useSavePDF";
+import useSavePDF, { generateStyledHtml } from "./savePDF/useSavePDF";
 import { getSurveyPdfFolder, getCloudinaryPdfUrl } from "@/lib/cloudinary";
 
 // Re-export for backward compatibility
-export { generateStyledHtml, useSavePDF };
+export { useSavePDF, generateStyledHtml };
 
 /**
  * Main SavePDF component that serves as an entry point for PDF generation
@@ -37,7 +36,7 @@ const SavePDF = ({
         );
     }
 
-    return null; // or actual component JSX
+    return null;
 };
 
 export default SavePDF;

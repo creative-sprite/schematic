@@ -1,13 +1,13 @@
 // components/kitchenSurvey/storedQuotes/QuotesList.jsx
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Card } from "primereact/card";
 import { Button } from "primereact/button";
 import { DataScroller } from "primereact/datascroller";
 import { ProgressSpinner } from "primereact/progressspinner";
 import { Toast } from "primereact/toast";
-import { confirmDialog, ConfirmDialog } from "primereact/confirmdialog";
+import { confirmDialog } from "primereact/confirmdialog";
 import { useRouter } from "next/navigation";
 import { Dialog } from "primereact/dialog";
 import { InputTextarea } from "primereact/inputtextarea";
@@ -21,7 +21,7 @@ export default function QuotesList({ siteId, onCountChange }) {
     const [visibleQuotes, setVisibleQuotes] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
-    const [deleting, setDeleting] = useState(false);
+    const [deleting, setDeleting] = useState(null);
     const [selectedQuote, setSelectedQuote] = useState(null);
     const [surveyModalVisible, setSurveyModalVisible] = useState(false);
     const [quoteModalVisible, setQuoteModalVisible] = useState(false);
@@ -93,6 +93,11 @@ export default function QuotesList({ siteId, onCountChange }) {
             
             .p-datascroller-content {
                 overflow-y: hidden !important;
+            }
+            
+            .deleting-quote {
+                opacity: 0.5;
+                pointer-events: none;
             }
         `;
         document.head.appendChild(style);
@@ -283,11 +288,16 @@ export default function QuotesList({ siteId, onCountChange }) {
     };
 
     // Function to open the notes modal
-    const handleOpenNotes = (quote) => {
+    const handleOpenNotes = useCallback((quote, event) => {
+        if (event) {
+            event.stopPropagation();
+            event.preventDefault();
+        }
+        
         setCurrentQuoteId(quote._id);
         setNoteText(orphanedQuotes[quote._id] || "");
         setNotesModalVisible(true);
-    };
+    }, [orphanedQuotes]);
 
     // Function to check if surveys still exist and get their references
     const fetchSurveyRefs = async (quotesData) => {
@@ -346,7 +356,7 @@ export default function QuotesList({ siteId, onCountChange }) {
         setSurveyRefs(refsMap);
     };
 
-    // UPDATED: Function to get quote PDF URL using the standard function
+    // Function to get quote PDF URL using the standard function
     const getQuotePdfUrl = (quote) => {
         if (!quote || !quote.cloudinary?.publicId) return null;
 
@@ -363,8 +373,13 @@ export default function QuotesList({ siteId, onCountChange }) {
         return url;
     };
 
-    // UPDATED: Function to view PDF directly using the new component
-    const handleViewPdf = (quote) => {
+    // Function to view PDF directly using the new component
+    const handleViewPdf = useCallback((quote, event) => {
+        if (event) {
+            event.stopPropagation();
+            event.preventDefault();
+        }
+
         if (!quote) {
             toast.current.show({
                 severity: "error",
@@ -390,7 +405,7 @@ export default function QuotesList({ siteId, onCountChange }) {
 
         setSelectedQuote(quote);
         setPdfModalVisible(true);
-    };
+    }, []);
 
     // Fetch quotes when component mounts or siteId changes
     useEffect(() => {
@@ -457,32 +472,54 @@ export default function QuotesList({ siteId, onCountChange }) {
     };
 
     // Function to handle viewing a survey
-    const handleViewSurvey = async (quote) => {
+    const handleViewSurvey = useCallback(async (quote, event) => {
+        if (event) {
+            event.stopPropagation();
+            event.preventDefault();
+        }
+
         setSelectedQuote(quote);
         const survey = await fetchSurvey(quote.surveyId);
         if (survey) {
             setSelectedSurvey(survey);
             setSurveyModalVisible(true);
         }
-    };
+    }, [missingSurveyIds]);
 
     // Function to handle viewing a quote
-    const handleViewQuote = (quote) => {
+    const handleViewQuote = useCallback((quote, event) => {
+        if (event) {
+            event.stopPropagation();
+            event.preventDefault();
+        }
+
         setSelectedQuote(quote);
         setQuoteModalVisible(true);
-    };
+    }, []);
 
-    // Function to handle deleting a quote
-    const handleDeleteQuote = async (quoteId) => {
+    // CLEAN: Simple delete function without complex guards
+    const handleDeleteQuote = useCallback((quote, event) => {
+        if (event) {
+            event.stopPropagation();
+            event.preventDefault();
+        }
+
+        // Prevent delete if already deleting this quote
+        if (deleting === quote._id) {
+            return;
+        }
+
+        const quoteName = quote.refValue || quote.name || 'Untitled Quote';
+
         confirmDialog({
-            message: "Are you sure you want to delete this quote?",
-            header: "Delete Confirmation",
+            message: `Are you sure you want to delete the quote "${quoteName}"? This action cannot be undone.`,
+            header: "Delete Quote Confirmation",
             icon: "pi pi-exclamation-triangle",
             acceptClassName: "p-button-danger",
             accept: async () => {
-                setDeleting(true);
+                setDeleting(quote._id);
                 try {
-                    const res = await fetch(`/api/quotes/${quoteId}`, {
+                    const res = await fetch(`/api/quotes/${quote._id}`, {
                         method: "DELETE",
                     });
 
@@ -500,23 +537,18 @@ export default function QuotesList({ siteId, onCountChange }) {
                     // Refresh the quotes list
                     fetchQuotes();
                 } catch (error) {
-                    // Only log in development
-                    if (process.env.NODE_ENV !== "production") {
-                        console.warn("Error deleting quote:", error);
-                    }
-
                     toast.current.show({
                         severity: "error",
-                        summary: "Error",
-                        detail: error.message || "Failed to delete quote",
+                        summary: "Error", 
+                        detail: "Failed to delete quote",
                         life: 3000,
                     });
                 } finally {
-                    setDeleting(false);
+                    setDeleting(null);
                 }
-            },
+            }
         });
-    };
+    }, [deleting]);
 
     // Render a quote item in the list
     const quoteTemplate = (quote) => {
@@ -524,12 +556,13 @@ export default function QuotesList({ siteId, onCountChange }) {
         const surveyRef = surveyRefs[quote.surveyId];
         const isSurveyMissing = !surveyRef && quote.surveyId;
         const hasNotes = orphanedQuotes[quote._id];
+        const isDeleting = deleting === quote._id;
 
         // Check if the quote has a PDF using our updated function
         const hasPdf = !!getQuotePdfUrl(quote);
 
         return (
-            <div className="quote-card-container">
+            <div className={`quote-card-container ${isDeleting ? 'deleting-quote' : ''}`}>
                 <Card
                     className={`quote-card ${
                         isSurveyMissing ? "orphaned-quote" : ""
@@ -541,30 +574,32 @@ export default function QuotesList({ siteId, onCountChange }) {
                             tooltip="View Quote PDF"
                             icon="pi pi-file-pdf"
                             className="p-button-success"
-                            onClick={() => handleViewPdf(quote)}
-                            disabled={!hasPdf}
+                            onClick={(e) => handleViewPdf(quote, e)}
+                            disabled={!hasPdf || isDeleting}
                         />
                         {isSurveyMissing ? (
                             <Button
                                 tooltip="Add Notes"
                                 icon="pi pi-pencil"
                                 className="p-button-warning"
-                                onClick={() => handleOpenNotes(quote)}
+                                onClick={(e) => handleOpenNotes(quote, e)}
+                                disabled={isDeleting}
                             />
                         ) : (
                             <Button
                                 tooltip="View Related Survey"
                                 icon="pi pi-file-edit"
                                 className="p-button-primary"
-                                onClick={() => handleViewSurvey(quote)}
+                                onClick={(e) => handleViewSurvey(quote, e)}
+                                disabled={isDeleting}
                             />
                         )}
                         <Button
-                            tooltip="Delete Quote"
-                            icon="pi pi-trash"
+                            tooltip={isDeleting ? "Deleting..." : "Delete Quote"}
+                            icon={isDeleting ? "pi pi-spin pi-spinner" : "pi pi-trash"}
                             className="p-button-danger"
-                            onClick={() => handleDeleteQuote(quote._id)}
-                            disabled={deleting}
+                            onClick={(e) => handleDeleteQuote(quote, e)}
+                            disabled={isDeleting}
                         />
                     </div>
 
@@ -598,15 +633,11 @@ export default function QuotesList({ siteId, onCountChange }) {
                                 ? `£${quote.totalPrice.toFixed(2)}`
                                 : "N/A"}
                         </p>
-                        {/* {quote.cloudinary?.publicId && (
-                            <p>
-                                <span
-                                    className="pi pi-cloud-upload"
-                                    style={{ color: "#4CAF50" }}
-                                ></span>{" "}
-                                PDF in Cloudinary
+                        {isDeleting && (
+                            <p style={{ color: "#ff6b6b", fontStyle: "italic" }}>
+                                Deleting...
                             </p>
-                        )} */}
+                        )}
                     </div>
                 </Card>
             </div>
@@ -827,7 +858,7 @@ export default function QuotesList({ siteId, onCountChange }) {
     return (
         <div className="quotes-list">
             <Toast ref={toast} />
-            <ConfirmDialog />
+            {/* No ConfirmDialog here - handled at page level */}
 
             <div className="horizontal-container">
                 {visibleQuotes.map((quote) => (

@@ -47,13 +47,13 @@ const EquipmentItem = memo(
             height: "",
         };
 
-        // Calculate quantity based on dimensions
-        let computedQuantity = 0;
+        // Calculate display value based on dimensions (for display only)
+        let computedDisplayValue = 0;
         if (isDimension) {
             const length = parseFloat(dims.length) || 0;
             const width = parseFloat(dims.width) || 0;
             const height = parseFloat(dims.height) || 0;
-            computedQuantity = effectiveIsVolume
+            computedDisplayValue = effectiveIsVolume
                 ? length * width * height
                 : length * width;
         }
@@ -121,18 +121,16 @@ const EquipmentItem = memo(
                     item: item.item,
                     grade: currentGrade,
                     subcategory: surveyForm.subcategory,
+                    number: 1, // FIXED: Always set to 1 for all items
                 };
 
-                // Add dimensions if needed
+                // Add dimensions if needed (but keep number as 1)
                 if (isDimension) {
-                    newEntry.number = computedQuantity;
                     newEntry.length = dims.length;
                     newEntry.width = dims.width;
                     if (effectiveIsVolume) {
                         newEntry.height = dims.height;
                     }
-                } else {
-                    newEntry.number = 1;
                 }
 
                 // Add item to survey list
@@ -153,25 +151,47 @@ const EquipmentItem = memo(
                 item.item,
                 currentGrade,
                 surveyForm.subcategory,
-                computedQuantity,
                 handleAddSurvey,
                 setDimensionInputs,
             ]
         );
 
-        // Calculate item count
+        // Calculate item count - for dimension items, count the number of entries
+        // For normal items, sum up the quantities
         const itemCount = useMemo(() => {
-            return (surveyList || []).reduce((acc, entry) => {
-                if (
-                    entry.item === item.item &&
-                    entry.grade === currentGrade &&
-                    entry.subcategory.trim() === item.subcategory.trim()
-                ) {
-                    return acc + (entry.number || 1);
-                }
-                return acc;
-            }, 0);
-        }, [surveyList, item.item, item.subcategory, currentGrade]);
+            if (isDimension) {
+                // For dimension items, count the number of separate entries
+                return (surveyList || []).filter((entry) => {
+                    return (
+                        entry.item === item.item &&
+                        entry.grade === currentGrade &&
+                        entry.subcategory.trim() === item.subcategory.trim() &&
+                        (entry.length || entry.width || entry.height) // Has dimensions
+                    );
+                }).length;
+            } else {
+                // For normal items, sum up the quantities
+                return (surveyList || []).reduce((acc, entry) => {
+                    if (
+                        entry.item === item.item &&
+                        entry.grade === currentGrade &&
+                        entry.subcategory.trim() === item.subcategory.trim() &&
+                        !entry.length &&
+                        !entry.width &&
+                        !entry.height // No dimensions
+                    ) {
+                        return acc + (entry.number || 1);
+                    }
+                    return acc;
+                }, 0);
+            }
+        }, [
+            surveyList,
+            item.item,
+            item.subcategory,
+            currentGrade,
+            isDimension,
+        ]);
 
         return (
             <div
@@ -277,9 +297,13 @@ const EquipmentItem = memo(
                                         style={{
                                             fontWeight: "bold",
                                             marginTop: "0.5rem",
+                                            fontSize: "0.9rem",
+                                            color: "#666",
                                         }}
                                     >
-                                        Total: {computedQuantity.toFixed(2)}
+                                        {effectiveIsVolume ? "Volume" : "Area"}:{" "}
+                                        {computedDisplayValue.toFixed(2)}
+                                        {effectiveIsVolume ? " m³" : " m²"}
                                     </div>
                                 )}
                             </div>

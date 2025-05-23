@@ -326,7 +326,7 @@ export default function PriceTables({
     // NEW: Add Post-Service Report section
     if (postServiceReport === "Yes" && postServiceReportPrice > 0) {
         sections.push({
-            title: "Additional Services",
+            title: "Post-Service Report",
             items: [
                 {
                     name: "Post-Service Report",

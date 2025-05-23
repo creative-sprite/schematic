@@ -17,6 +17,28 @@ const PREDEFINED_CATEGORIES = [
     "Fuel",
 ];
 
+// FIXED: Helper function to normalize category names consistently
+const normalizeCategoryName = (categoryName) => {
+    return categoryName ? categoryName.trim() : "";
+};
+
+// FIXED: Helper function to ensure all category comments use consistent keys
+const normalizeCategoryComments = (comments) => {
+    if (!comments || typeof comments !== 'object') {
+        return {};
+    }
+    
+    const normalizedComments = {};
+    Object.entries(comments).forEach(([key, value]) => {
+        const normalizedKey = normalizeCategoryName(key);
+        if (normalizedKey) {
+            normalizedComments[normalizedKey] = value;
+        }
+    });
+    
+    return normalizedComments;
+};
+
 export default function SpecialistEquipment({
     onSurveyListChange,
     structureIds = [],
@@ -29,21 +51,21 @@ export default function SpecialistEquipment({
 }) {
     // Enhanced debug logging for initial props
     useEffect(() => {
-        // console.log("SPECIALIST: Component received props:", {
-        //     initialSpecialistEquipmentData:
-        //         initialSpecialistEquipmentData?.length || 0,
-        //     initialCategoryComments: initialCategoryComments
-        //         ? `Object with ${
-        //               Object.keys(initialCategoryComments || {}).length
-        //           } keys`
-        //         : "undefined/null",
-        //     equipmentCategoryComments: equipment?.categoryComments
-        //         ? `Object with ${
-        //               Object.keys(equipment?.categoryComments || {}).length
-        //           } keys`
-        //         : "undefined/null",
-        //     commentsContent: JSON.stringify(initialCategoryComments || {}),
-        // });
+        console.log("SPECIALIST: Component received props:", {
+            initialSpecialistEquipmentData:
+                initialSpecialistEquipmentData?.length || 0,
+            initialCategoryComments: initialCategoryComments
+                ? `Object with ${
+                      Object.keys(initialCategoryComments || {}).length
+                  } keys`
+                : "undefined/null",
+            equipmentCategoryComments: equipment?.categoryComments
+                ? `Object with ${
+                      Object.keys(equipment?.categoryComments || {}).length
+                  } keys`
+                : "undefined/null",
+            commentsContent: JSON.stringify(normalizeCategoryComments(initialCategoryComments) || {}),
+        });
     }, [initialSpecialistEquipmentData, initialCategoryComments, equipment]);
 
     // State for holding product items fetched from the API.
@@ -67,7 +89,7 @@ export default function SpecialistEquipment({
         initialSpecialistEquipmentData || []
     );
 
-    // IMPROVED: State for category comments with enhanced initialization
+    // FIXED: State for category comments with enhanced initialization and normalization
     const [categoryComments, setCategoryComments] = useState(() => {
         // First priority: use initialCategoryComments if it has keys
         if (
@@ -75,13 +97,14 @@ export default function SpecialistEquipment({
             typeof initialCategoryComments === "object" &&
             Object.keys(initialCategoryComments).length > 0
         ) {
-            // console.log(
-            //     "SPECIALIST: Initializing with initialCategoryComments:",
-            //     Object.keys(initialCategoryComments).length,
-            //     "items",
-            //     JSON.stringify(initialCategoryComments)
-            // );
-            return { ...initialCategoryComments };
+            const normalizedComments = normalizeCategoryComments(initialCategoryComments);
+            console.log(
+                "SPECIALIST: Initializing with initialCategoryComments:",
+                Object.keys(normalizedComments).length,
+                "items",
+                JSON.stringify(normalizedComments)
+            );
+            return normalizedComments;
         }
         // Second priority: use equipment.categoryComments if it has keys
         else if (
@@ -89,18 +112,19 @@ export default function SpecialistEquipment({
             typeof equipment.categoryComments === "object" &&
             Object.keys(equipment.categoryComments).length > 0
         ) {
-            // console.log(
-            //     "SPECIALIST: Initializing with equipment.categoryComments:",
-            //     Object.keys(equipment.categoryComments).length,
-            //     "items",
-            //     JSON.stringify(equipment.categoryComments)
-            // );
-            return { ...equipment.categoryComments };
+            const normalizedComments = normalizeCategoryComments(equipment.categoryComments);
+            console.log(
+                "SPECIALIST: Initializing with equipment.categoryComments:",
+                Object.keys(normalizedComments).length,
+                "items",
+                JSON.stringify(normalizedComments)
+            );
+            return normalizedComments;
         }
 
-        // console.log(
-        //     "SPECIALIST: No category comments found, using empty object"
-        // );
+        console.log(
+            "SPECIALIST: No category comments found, using empty object"
+        );
         return {};
     });
 
@@ -129,21 +153,17 @@ export default function SpecialistEquipment({
     const prevInitialCommentsRef = useRef(initialCategoryComments);
     const prevEquipmentCommentsRef = useRef(equipment?.categoryComments);
 
-    // FIXED: Watch for prop changes to update comments - with stable dependencies
+    // FIXED: Watch for prop changes to update comments - with stable dependencies and normalization
     useEffect(() => {
-        // Store current values for comparison
+        // Store current values for comparison with normalization
         const currentComments = JSON.stringify(categoryComments);
-        const initialComments = JSON.stringify(initialCategoryComments);
-        const equipmentComments = JSON.stringify(equipment?.categoryComments);
+        const initialComments = JSON.stringify(normalizeCategoryComments(initialCategoryComments));
+        const equipmentComments = JSON.stringify(normalizeCategoryComments(equipment?.categoryComments));
 
-        // Store previous values for comparison
+        // Store previous values for comparison with normalization
         const prevComments = JSON.stringify(prevCommentsRef.current);
-        const prevInitialComments = JSON.stringify(
-            prevInitialCommentsRef.current
-        );
-        const prevEquipmentComments = JSON.stringify(
-            prevEquipmentCommentsRef.current
-        );
+        const prevInitialComments = JSON.stringify(normalizeCategoryComments(prevInitialCommentsRef.current));
+        const prevEquipmentComments = JSON.stringify(normalizeCategoryComments(prevEquipmentCommentsRef.current));
 
         // Update refs to current values
         prevCommentsRef.current = categoryComments;
@@ -157,12 +177,13 @@ export default function SpecialistEquipment({
             Object.keys(initialCategoryComments).length > 0 &&
             initialComments !== prevComments
         ) {
-            // console.log(
-            //     "SPECIALIST: Updating from initialCategoryComments change:",
-            //     Object.keys(initialCategoryComments).length,
-            //     "items"
-            // );
-            setCategoryComments({ ...initialCategoryComments });
+            const normalizedComments = normalizeCategoryComments(initialCategoryComments);
+            console.log(
+                "SPECIALIST: Updating from initialCategoryComments change:",
+                Object.keys(normalizedComments).length,
+                "items"
+            );
+            setCategoryComments(normalizedComments);
         }
         // If no initialCategoryComments, check if equipment.categoryComments changed and has data
         else if (
@@ -171,12 +192,13 @@ export default function SpecialistEquipment({
             Object.keys(equipment.categoryComments).length > 0 &&
             equipmentComments !== prevComments
         ) {
-            // console.log(
-            //     "SPECIALIST: Updating from equipment.categoryComments change:",
-            //     Object.keys(equipment.categoryComments).length,
-            //     "items"
-            // );
-            setCategoryComments({ ...equipment.categoryComments });
+            const normalizedComments = normalizeCategoryComments(equipment.categoryComments);
+            console.log(
+                "SPECIALIST: Updating from equipment.categoryComments change:",
+                Object.keys(normalizedComments).length,
+                "items"
+            );
+            setCategoryComments(normalizedComments);
         }
         // Empty dependency array since we're using refs for comparison
     }, []);
@@ -187,11 +209,11 @@ export default function SpecialistEquipment({
             initialSpecialistEquipmentData &&
             initialSpecialistEquipmentData.length > 0
         ) {
-            // console.log(
-            //     "SPECIALIST: Loading initial data:",
-            //     initialSpecialistEquipmentData.length,
-            //     "items"
-            // );
+            console.log(
+                "SPECIALIST: Loading initial data:",
+                initialSpecialistEquipmentData.length,
+                "items"
+            );
             setSurveyList(initialSpecialistEquipmentData);
         }
         // Use string length as dependency to keep array size consistent
@@ -207,7 +229,7 @@ export default function SpecialistEquipment({
                 setLoading(true);
                 didFetchRef.current = true; // Mark as fetched to prevent duplicates
 
-                // console.log("SPECIALIST: Fetching product items...");
+                console.log("SPECIALIST: Fetching product items...");
                 const res = await fetch("/api/database/products");
 
                 if (!res.ok) {
@@ -222,16 +244,16 @@ export default function SpecialistEquipment({
                         PREDEFINED_CATEGORIES.includes(product.category)
                     );
 
-                    // console.log(
-                    //     `SPECIALIST: Fetched ${filteredProducts.length} products in predefined categories`
-                    // );
+                    console.log(
+                        `SPECIALIST: Fetched ${filteredProducts.length} products in predefined categories`
+                    );
 
                     setProductItems(filteredProducts);
                 } else {
-                    // console.error("Failed to fetch product items:", json);
+                    console.error("Failed to fetch product items:", json);
                 }
             } catch (error) {
-                // console.error("Error fetching product items:", error);
+                console.error("Error fetching product items:", error);
             } finally {
                 setLoading(false);
             }
@@ -240,21 +262,24 @@ export default function SpecialistEquipment({
         fetchProductItems();
     }, []); // Empty dependency array ensures this only runs once
 
-    // Add watches for changes in initialCategoryComments and equipment
+    // FIXED: Add watches for changes in initialCategoryComments and equipment with normalization
     useEffect(() => {
         if (
             initialCategoryComments &&
             typeof initialCategoryComments === "object" &&
             Object.keys(initialCategoryComments).length > 0
         ) {
-            const commentStr = JSON.stringify(initialCategoryComments);
-            const currentStr = JSON.stringify(categoryComments);
+            const normalizedIncoming = normalizeCategoryComments(initialCategoryComments);
+            const normalizedCurrent = normalizeCategoryComments(categoryComments);
+            
+            const commentStr = JSON.stringify(normalizedIncoming);
+            const currentStr = JSON.stringify(normalizedCurrent);
 
             if (commentStr !== currentStr) {
-                // console.log(
-                //     "SPECIALIST: initialCategoryComments updated, syncing..."
-                // );
-                setCategoryComments({ ...initialCategoryComments });
+                console.log(
+                    "SPECIALIST: initialCategoryComments updated, syncing..."
+                );
+                setCategoryComments(normalizedIncoming);
             }
         }
     }, [initialCategoryComments]);
@@ -265,14 +290,17 @@ export default function SpecialistEquipment({
             typeof equipment.categoryComments === "object" &&
             Object.keys(equipment.categoryComments).length > 0
         ) {
-            const commentStr = JSON.stringify(equipment.categoryComments);
-            const currentStr = JSON.stringify(categoryComments);
+            const normalizedEquipment = normalizeCategoryComments(equipment.categoryComments);
+            const normalizedCurrent = normalizeCategoryComments(categoryComments);
+            
+            const commentStr = JSON.stringify(normalizedEquipment);
+            const currentStr = JSON.stringify(normalizedCurrent);
 
             if (commentStr !== currentStr) {
-                // console.log(
-                //     "SPECIALIST: equipment.categoryComments updated, syncing..."
-                // );
-                setCategoryComments({ ...equipment.categoryComments });
+                console.log(
+                    "SPECIALIST: equipment.categoryComments updated, syncing..."
+                );
+                setCategoryComments(normalizedEquipment);
             }
         }
     }, [equipment]);
@@ -299,8 +327,12 @@ export default function SpecialistEquipment({
     // handleAddSurvey: For dimension items (nonzero dimensions) always add a new row.
     // For normal items, if an entry exists, increment its count by 1 per click.
     const handleAddSurvey = (newEntry) => {
-        // Debug log the entry being added
-        // console.log("SPECIALIST: Adding entry:", newEntry.name);
+        // FIXED: Normalize the category name in the new entry
+        if (newEntry.category) {
+            newEntry.category = normalizeCategoryName(newEntry.category);
+        }
+        
+        console.log("SPECIALIST: Adding entry:", newEntry.name, "to category:", newEntry.category);
 
         setSurveyList((prev) => {
             const isDimension =
@@ -347,9 +379,11 @@ export default function SpecialistEquipment({
                 [name]: value === "" ? "" : Number(value),
             }));
         } else if (name === "category") {
+            // FIXED: Normalize category name when setting
+            const normalizedCategory = normalizeCategoryName(value);
             setSurveyForm((prev) => ({
                 ...prev,
-                category: value,
+                category: normalizedCategory,
                 item: "",
                 number: 1,
                 length: 0,
@@ -384,7 +418,7 @@ export default function SpecialistEquipment({
 
     // Remove one unit at a time for normal items; remove entire entry for dimension items.
     const handleRemoveEntry = (id) => {
-        // console.log("SPECIALIST: Removing entry with ID:", id);
+        console.log("SPECIALIST: Removing entry with ID:", id);
 
         setSurveyList((prev) =>
             prev
@@ -407,57 +441,61 @@ export default function SpecialistEquipment({
         );
     };
 
-    // Improved category comments handler with better logging
+    // FIXED: Improved category comments handler with normalization
     const handleCategoryCommentsChange = (updatedComments) => {
-        // console.log(
-        //     "SPECIALIST: Category comments changed:",
-        //     Object.keys(updatedComments).length,
-        //     "items",
-        //     JSON.stringify(updatedComments)
-        // );
+        // FIXED: Normalize all comment keys to ensure consistency
+        const normalizedComments = normalizeCategoryComments(updatedComments);
+        
+        console.log(
+            "SPECIALIST: Category comments changed:",
+            Object.keys(normalizedComments).length,
+            "items",
+            JSON.stringify(normalizedComments)
+        );
 
         // Update local state
-        setCategoryComments(updatedComments);
+        setCategoryComments(normalizedComments);
 
         // Update the parent with combined updates
         notifyParentOfChanges({
-            categoryComments: updatedComments,
+            categoryComments: normalizedComments,
         });
     };
 
     // Helper function to notify parent of changes
     const notifyParentOfChanges = (updates) => {
         if (typeof onEquipmentChange === "function" && isMountedRef.current) {
-            // Create combined update with ONLY comments
+            // FIXED: Ensure the comments are normalized before sending to parent
             const combinedUpdate = {
-                // Always include current values
-                categoryComments: updates.categoryComments || categoryComments,
+                // Always include current values with normalization
+                categoryComments: normalizeCategoryComments(updates.categoryComments || categoryComments),
             };
 
-            // console.log(
-            //     "SPECIALIST: Sending combined updates to parent:",
-            //     Object.keys(combinedUpdate).join(", "),
-            //     JSON.stringify(combinedUpdate.categoryComments)
-            // );
+            console.log(
+                "SPECIALIST: Sending combined updates to parent:",
+                Object.keys(combinedUpdate).join(", "),
+                JSON.stringify(combinedUpdate.categoryComments)
+            );
 
             onEquipmentChange(combinedUpdate);
         }
     };
 
-    // Public method to force sync changes - can be called from SaveSurvey
+    // FIXED: Public method to force sync changes - can be called from SaveSurvey with normalization
     useEffect(() => {
         if (typeof window !== "undefined") {
             window.specialistEquipmentInstance = {
                 syncChanges: () => {
-                    // console.log(
-                    //     "SPECIALIST: Force syncing all pending changes",
-                    //     JSON.stringify(categoryComments)
-                    // );
+                    console.log(
+                        "SPECIALIST: Force syncing all pending changes",
+                        JSON.stringify(categoryComments)
+                    );
 
-                    // Send current state to parent
+                    // Send current state to parent with normalization
                     if (typeof onEquipmentChange === "function") {
+                        const normalizedComments = normalizeCategoryComments(categoryComments);
                         onEquipmentChange({
-                            categoryComments: categoryComments,
+                            categoryComments: normalizedComments,
                         });
                         return true;
                     }

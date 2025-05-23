@@ -3,7 +3,8 @@
 
 import { useParams } from "next/navigation";
 import { Card } from "primereact/card";
-import { useState, useEffect, useCallback } from "react"; // Add useCallback
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { ConfirmDialog } from "primereact/confirmdialog";
 import EntityDetailLayout from "@/components/database/clients/common/EntityDetailLayout";
 import EntityTab from "@/components/database/clients/common/EntityTab";
 import EntityInfoCard from "@/components/database/clients/common/EntityInfoCard";
@@ -36,17 +37,16 @@ export default function SiteDetail() {
         relationshipOptions,
     } = useEntityData("site", id);
 
-    // Function to toggle selection mode - Wrapped in useCallback
+    // Stable callback handlers
     const handleToggleSelectionMode = useCallback((mode) => {
         setIsSelectionMode(mode);
         // Reset selections when exiting selection mode
         if (!mode) {
             setSelectedAreas({});
         }
-    }, []); // Empty dependency array since we only need to create this once
+    }, []);
 
-    // Function to toggle area selection
-    const handleAreaSelection = (areaId, collection) => {
+    const handleAreaSelection = useCallback((areaId, collection) => {
         setSelectedAreas((prev) => {
             const updated = { ...prev };
             if (updated[areaId]) {
@@ -61,11 +61,21 @@ export default function SiteDetail() {
             }
             return updated;
         });
-    };
+    }, []);
 
-    // Rest of the component remains the same...
+    const handleSurveyCountChange = useCallback((count) => {
+        setSurveyCount(count);
+    }, []);
 
-    // Fetch survey count
+    const handleAreaCountChange = useCallback((count) => {
+        setAreaCount(count);
+    }, []);
+
+    const handleQuoteCountChange = useCallback((count) => {
+        setQuoteCount(count);
+    }, []);
+
+    // Fetch survey count and other data
     useEffect(() => {
         if (site && site._id) {
             const fetchSurveyCount = async () => {
@@ -137,8 +147,8 @@ export default function SiteDetail() {
         }
     }, [site]);
 
-    // Custom header renderer for Kitchen Surveys card
-    const renderSurveyHeader = () => {
+    // Memoized header renderers to prevent unnecessary re-renders
+    const surveyHeader = useMemo(() => {
         return (
             <div
                 style={{
@@ -167,10 +177,9 @@ export default function SiteDetail() {
                 </div>
             </div>
         );
-    };
+    }, [site, surveyCount]);
 
-    // Custom header renderer for Areas card
-    const renderAreasHeader = () => {
+    const areasHeader = useMemo(() => {
         return (
             <div
                 style={{
@@ -201,10 +210,15 @@ export default function SiteDetail() {
                 </div>
             </div>
         );
-    };
+    }, [
+        site,
+        areaCount,
+        collections,
+        handleToggleSelectionMode,
+        selectedAreas,
+    ]);
 
-    // Custom header renderer for Quotes card
-    const renderQuotesHeader = () => {
+    const quotesHeader = useMemo(() => {
         return (
             <div
                 style={{
@@ -219,97 +233,105 @@ export default function SiteDetail() {
                 </span>
             </div>
         );
-    };
+    }, [quoteCount]);
+
+    // Memoize the site ID to prevent unnecessary re-renders
+    const siteId = useMemo(() => site?._id, [site?._id]);
 
     return (
-        <EntityDetailLayout
-            entity={site}
-            entityType="site"
-            id={id}
-            loading={loading}
-        >
-            <EntityTab header="General">
-                <EntityInfoCard
-                    entity={site}
-                    entityType="site"
-                    contacts={contacts} // Pass contacts to the EntityInfoCard
-                />
-            </EntityTab>
+        <>
+            {/* SINGLE ConfirmDialog instance for entire page */}
+            <ConfirmDialog />
 
-            <EntityTab header="Documents">
-                <div
-                    style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: "1rem",
-                        width: "100%",
-                    }}
-                >
-                    <Card
-                        title={renderSurveyHeader()}
+            <EntityDetailLayout
+                entity={site}
+                entityType="site"
+                id={id}
+                loading={loading}
+            >
+                <EntityTab header="General">
+                    <EntityInfoCard
+                        entity={site}
+                        entityType="site"
+                        contacts={contacts}
+                    />
+                </EntityTab>
+
+                <EntityTab header="Documents">
+                    <div
                         style={{
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: "1rem",
                             width: "100%",
-                            marginBottom: "1rem",
                         }}
                     >
-                        {site && site._id && (
-                            <KitchenSurveyList
-                                siteId={site._id}
-                                onCountChange={setSurveyCount}
-                            />
-                        )}
-                    </Card>
+                        <Card
+                            title={surveyHeader}
+                            style={{
+                                width: "100%",
+                                marginBottom: "1rem",
+                            }}
+                        >
+                            {siteId && (
+                                <KitchenSurveyList
+                                    siteId={siteId}
+                                    onCountChange={handleSurveyCountChange}
+                                />
+                            )}
+                        </Card>
 
-                    <Card
-                        title={renderAreasHeader()}
-                        style={{
-                            width: "100%",
-                            marginBottom: "1rem",
-                        }}
-                    >
-                        {site && site._id && (
-                            <AreaSurveyList
-                                siteId={site._id}
-                                onCountChange={setAreaCount}
-                                isSelectionMode={isSelectionMode}
-                                selectedAreas={selectedAreas}
-                                onToggleAreaSelection={handleAreaSelection}
-                            />
-                        )}
-                    </Card>
+                        <Card
+                            title={areasHeader}
+                            style={{
+                                width: "100%",
+                                marginBottom: "1rem",
+                            }}
+                        >
+                            {siteId && (
+                                <AreaSurveyList
+                                    siteId={siteId}
+                                    onCountChange={handleAreaCountChange}
+                                    isSelectionMode={isSelectionMode}
+                                    selectedAreas={selectedAreas}
+                                    onToggleAreaSelection={handleAreaSelection}
+                                />
+                            )}
+                        </Card>
 
-                    <Card
-                        title={renderQuotesHeader()}
-                        style={{
-                            width: "100%",
-                            marginBottom: "1rem",
-                        }}
-                    >
-                        {site && site._id && (
-                            <QuotesList
-                                siteId={site._id}
-                                onCountChange={setQuoteCount}
-                            />
-                        )}
-                    </Card>
-                </div>
-            </EntityTab>
+                        <Card
+                            title={quotesHeader}
+                            style={{
+                                width: "100%",
+                                marginBottom: "1rem",
+                            }}
+                        >
+                            {siteId && (
+                                <QuotesList
+                                    siteId={siteId}
+                                    onCountChange={handleQuoteCountChange}
+                                />
+                            )}
+                        </Card>
+                    </div>
+                </EntityTab>
 
-            <EntityTab header="Notes">
-                <NotesTab entryId={id} />
-            </EntityTab>
+                <EntityTab header="Notes">
+                    <NotesTab entryId={id} />
+                </EntityTab>
 
-            <EntityTab header="Relationships">
-                <RelationshipsTab
-                    entity={site}
-                    entityType="site"
-                    relationshipOptions={relationshipOptions}
-                    onUpdate={handleEntityUpdate}
-                    relatedGroups={groups}
-                    relatedChains={chains}
-                    relatedContacts={contacts}
-                />
-            </EntityTab>
-        </EntityDetailLayout>
+                <EntityTab header="Relationships">
+                    <RelationshipsTab
+                        entity={site}
+                        entityType="site"
+                        relationshipOptions={relationshipOptions}
+                        onUpdate={handleEntityUpdate}
+                        relatedGroups={groups}
+                        relatedChains={chains}
+                        relatedContacts={contacts}
+                    />
+                </EntityTab>
+            </EntityDetailLayout>
+        </>
     );
 }

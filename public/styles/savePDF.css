@@ -185,9 +185,9 @@ p {
 }
 
 /* Pricing table */
-.price-table .p-datatable-thead > tr > th {
+/* .price-table .p-datatable-thead > tr > th { */
     /* background-color: var(--primary-color, #1976d2); */
-}
+/* } */
 
 .price-label {
     font-weight: 600;

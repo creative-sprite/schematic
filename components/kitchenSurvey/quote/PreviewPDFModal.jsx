@@ -21,31 +21,46 @@ export default function PreviewPDFModal({
     const iframeRef = useRef(null);
 
     useEffect(() => {
-        if (visible && surveyData) {
-            setLoading(true);
-            try {
-                // Generate the HTML content for preview
-                const htmlContent = generateStyledHtml(
-                    surveyData,
-                    schematicHtml
-                );
-                setPreviewHtml(htmlContent);
+        // FIXED: Make this async and await the generateStyledHtml call
+        const generatePreview = async () => {
+            if (visible && surveyData) {
+                setLoading(true);
+                try {
+                    console.log("Starting PDF preview generation...");
 
-                // Set a brief timeout to allow the rendering to complete
-                setTimeout(() => {
+                    // FIXED: Await the async generateStyledHtml function
+                    const htmlContent = await generateStyledHtml(
+                        surveyData,
+                        schematicHtml
+                    );
+
+                    console.log(
+                        "HTML content generated successfully, length:",
+                        htmlContent?.length || 0
+                    );
+                    setPreviewHtml(htmlContent);
+
+                    // Set a brief timeout to allow the rendering to complete
+                    setTimeout(() => {
+                        setLoading(false);
+                    }, 500);
+                } catch (error) {
+                    console.error("Error generating preview:", error);
+                    toast.current?.show({
+                        severity: "error",
+                        summary: "Preview Error",
+                        detail:
+                            "Failed to generate preview: " +
+                            (error.message || "Unknown error"),
+                        life: 5000,
+                    });
                     setLoading(false);
-                }, 500);
-            } catch (error) {
-                console.error("Error generating preview:", error);
-                toast.current?.show({
-                    severity: "error",
-                    summary: "Preview Error",
-                    detail: "Failed to generate preview",
-                    life: 3000,
-                });
-                setLoading(false);
+                }
             }
-        }
+        };
+
+        // Call the async function
+        generatePreview();
     }, [visible, surveyData, schematicHtml]);
 
     // Function to handle iframe load events
@@ -76,7 +91,9 @@ export default function PreviewPDFModal({
                     <ProgressSpinner
                         style={{ width: "50px", height: "50px" }}
                     />
-                    <div className="ml-2">Generating preview...</div>
+                    <div className="ml-2">
+                        Generating preview with images...
+                    </div>
                 </div>
             );
         }

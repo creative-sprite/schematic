@@ -161,7 +161,7 @@ export default function SurveyForm() {
         setSpecialistEquipmentData,
         specialistEquipmentId,
         setSpecialistEquipmentId,
-        // Get the initialSpecialistEquipmentSurvey object
+        // CRITICAL: Get the specialist equipment survey object with category comments
         initialSpecialistEquipmentSurvey,
 
         // Structure data
@@ -1701,10 +1701,11 @@ export default function SurveyForm() {
         }
     };
 
+    // FIXED: Enhanced equipment change handler to handle dynamic category comments
     const handleEquipmentChange = (newEquipment) => {
         console.log(
-            "Page: Received equipment update:",
-            Object.keys(newEquipment).join(", ")
+            "Page: Received equipment update with keys:",
+            Object.keys(newEquipment)
         );
 
         setEquipment((prev) => {
@@ -1729,16 +1730,19 @@ export default function SurveyForm() {
                 );
             }
 
+            // CRITICAL: Handle dynamic category comments properly
             if (newEquipment.categoryComments) {
                 console.log(
                     "Page: Updating categoryComments with",
                     Object.keys(newEquipment.categoryComments).length,
-                    "entries"
+                    "entries:",
+                    Object.keys(newEquipment.categoryComments)
                 );
                 updatedEquipment.categoryComments = {};
                 Object.entries(newEquipment.categoryComments).forEach(
-                    ([key, value]) => {
-                        updatedEquipment.categoryComments[key] = value;
+                    ([categoryName, commentValue]) => {
+                        updatedEquipment.categoryComments[categoryName] = commentValue;
+                        console.log(`Page: Set comment for category "${categoryName}": "${commentValue.substring(0, 50)}${commentValue.length > 50 ? '...' : ''}"`);
                     }
                 );
             }
@@ -1793,27 +1797,84 @@ export default function SurveyForm() {
         setPostServiceReportPrice(isEnabled === "Yes" ? price : 0);
     };
 
-    // NEW: Function to force sync all component states before saving
+    // ENHANCED: Comprehensive sync function that matches preview exactly
     const forceSyncAllComponents = () => {
-        console.log("Page: Force syncing all component states before saving");
+        console.log("Page: Force syncing ALL component states for save consistency");
 
-        // Try to sync structure entries using Area1Logic's method
-        let structureSynced = false;
+        let syncResults = {
+            structure: false,
+            canopy: false,
+            equipment: false,
+            specialist: false,
+            schematic: false
+        };
+
+        // 1. Sync structure entries (same as preview)
         if (
             typeof window !== "undefined" &&
             window.area1LogicInstance &&
             typeof window.area1LogicInstance.syncStructureEntries === "function"
         ) {
-            structureSynced = window.area1LogicInstance.syncStructureEntries();
-            console.log(
-                "Page: Structure entries sync result:",
-                structureSynced
-            );
+            syncResults.structure = window.area1LogicInstance.syncStructureEntries();
+            console.log("Page: Structure entries synced:", syncResults.structure);
         }
 
-        // Try other component syncs as needed
+        // 2. Sync canopy comments
+        if (
+            typeof window !== "undefined" &&
+            window.area1LogicInstance &&
+            typeof window.area1LogicInstance.syncCanopyComments === "function"
+        ) {
+            syncResults.canopy = window.area1LogicInstance.syncCanopyComments();
+            console.log("Page: Canopy comments synced:", syncResults.canopy);
+        }
 
-        return true;
+        // 3. Sync equipment subcategory comments
+        if (
+            typeof window !== "undefined" &&
+            window.equipmentComponentInstance &&
+            typeof window.equipmentComponentInstance.syncSubcategoryComments === "function"
+        ) {
+            syncResults.equipment = window.equipmentComponentInstance.syncSubcategoryComments();
+            console.log("Page: Equipment subcategory comments synced:", syncResults.equipment);
+        }
+
+        // 4. Sync specialist equipment category comments
+        if (
+            typeof window !== "undefined" &&
+            window.specialistEquipmentInstance &&
+            typeof window.specialistEquipmentInstance.syncChanges === "function"
+        ) {
+            syncResults.specialist = window.specialistEquipmentInstance.syncChanges();
+            console.log("Page: Specialist equipment synced:", syncResults.specialist);
+        }
+
+        // 5. Sync schematic door prices
+        if (
+            typeof window !== "undefined" &&
+            window.schematicInstance &&
+            typeof window.schematicInstance.syncDoorPrices === "function"
+        ) {
+            syncResults.schematic = window.schematicInstance.syncDoorPrices();
+            console.log("Page: Schematic door prices synced:", syncResults.schematic);
+        }
+
+        // Try fallback component access as needed
+        if (
+            !syncResults.canopy &&
+            typeof window !== "undefined" &&
+            window.canopyComponentInstance
+        ) {
+            if (
+                typeof window.canopyComponentInstance.forceUpdateComments === "function"
+            ) {
+                syncResults.canopy = window.canopyComponentInstance.forceUpdateComments();
+                console.log("Page: Canopy comments synced via fallback:", syncResults.canopy);
+            }
+        }
+
+        console.log("Page: Comprehensive sync completed:", syncResults);
+        return Object.values(syncResults).some(result => result);
     };
 
     if (isLoading) {
@@ -1920,7 +1981,8 @@ export default function SurveyForm() {
         // Form sections
         operations,
         access,
-        equipment,
+        equipment, // CRITICAL: This now includes the dynamic categoryComments
+
         notes,
         ventilation,
 
@@ -2219,7 +2281,7 @@ export default function SurveyForm() {
                                     // Site details and reference
                                     siteDetails={siteDetails}
                                     refValue={refValue}
-                                    // Specialist equipment survey
+                                    // CRITICAL: Pass the specialist equipment survey object with category comments
                                     initialSpecialistEquipmentSurvey={
                                         initialSpecialistEquipmentSurvey
                                     }
